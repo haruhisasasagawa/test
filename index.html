@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シンプルリマインダー</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📝 リマインダー</h1>
+
+        <div class="add-reminder">
+            <h2>新しいリマインダーを追加</h2>
+            <input type="text" id="reminderTitle" placeholder="リマインダーのタイトル" maxlength="100">
+            <input type="datetime-local" id="reminderTime">
+            <button id="addButton" onclick="addReminder()">追加</button>
+        </div>
+
+        <div class="reminders-list">
+            <h2>リマインダー一覧</h2>
+            <div id="remindersList"></div>
+            <p id="emptyMessage" class="empty-message">リマインダーがありません</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
