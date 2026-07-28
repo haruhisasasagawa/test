@@ -25,7 +25,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
-from openpyxl.formatting.rule import CellIsRule
+from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -35,20 +35,42 @@ from openpyxl.worksheet.datavalidation import DataValidation
 # ---------------------------------------------------------------------------
 
 FONT = 'Meiryo UI'
-F_BASE = Font(name=FONT, size=11)
-F_BOLD = Font(name=FONT, size=11, bold=True)
-F_TITLE = Font(name=FONT, size=14, bold=True)
-F_NOTE = Font(name=FONT, size=9, color='FF808080')
-F_HEAD = Font(name=FONT, size=11, bold=True, color='FF404040')
-F_INPUT = Font(name=FONT, size=11, color='FF0000FF')
 
-FILL_HEAD = PatternFill('solid', fgColor='FFF3F2F2')
-FILL_INPUT = PatternFill('solid', fgColor='FFFFFFCC')
-FILL_AUTO = PatternFill('solid', fgColor='FFF7F7F7')
-FILL_ACCENT = PatternFill('solid', fgColor='FFEDF3F9')
-FILL_ALERT = PatternFill('solid', fgColor='FFFDECEA')
+# 配色は題材から取っている。客席の暗がり、スクリーンに落ちる光、
+# ポップコーンのバター色。バター色は入力欄など「人が触るところ」にだけ使い、
+# 状態を表す色（余裕／要発注／今日が期限）とは層を分けている。
+C_INK = 'FF1B1D24'
+C_TEXT2 = 'FF4E5163'
+C_TEXT3 = 'FF7A7D90'
+C_PAPER = 'FFFAF7F0'
+C_LINE = 'FFE2DCCE'
+C_BUTTER = 'FFE8B44A'
+C_BUTTER_SOFT = 'FFF9EAC6'
+C_OK = 'FF00795A'
+C_WARN = 'FFC9761A'
+C_CRIT = 'FFA32A3C'
+C_OK_SOFT = 'FFDCEBE5'
+C_WARN_SOFT = 'FFF7E7D2'
+C_CRIT_SOFT = 'FFF3DDE1'
 
-THIN = Side(style='thin', color='FFBFBFBF')
+F_BASE = Font(name=FONT, size=11, color=C_INK)
+F_BOLD = Font(name=FONT, size=11, bold=True, color=C_INK)
+F_TITLE = Font(name=FONT, size=15, bold=True, color=C_INK)
+F_NOTE = Font(name=FONT, size=9, color=C_TEXT3)
+F_HEAD = Font(name=FONT, size=10, bold=True, color=C_TEXT2)
+F_INPUT = Font(name=FONT, size=11, bold=True, color='FF7A5200')
+F_HERO = Font(name=FONT, size=36, bold=True, color=C_CRIT)
+F_HERO_UNIT = Font(name=FONT, size=13, bold=True, color=C_INK)
+F_DAY = Font(name=FONT, size=8, color=C_TEXT3)
+
+FILL_HEAD = PatternFill('solid', fgColor='FFF1ECE1')
+FILL_INPUT = PatternFill('solid', fgColor='FFFDF3D8')
+FILL_AUTO = PatternFill('solid', fgColor='FFFBFAF7')
+FILL_ACCENT = PatternFill('solid', fgColor=C_PAPER)
+FILL_ALERT = PatternFill('solid', fgColor=C_CRIT_SOFT)
+FILL_TRACK = PatternFill('solid', fgColor='FFF4F1EA')
+
+THIN = Side(style='thin', color=C_LINE)
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
 FMT_INT = '#,##0_);[Red](#,##0)'
@@ -79,6 +101,12 @@ THEATER_FIRST, THEATER_LAST = 6, 105     # 劇場マスタ
 CALC_FIRST, CALC_LAST = 6, 405           # 発注計算
 PO_FIRST, PO_LAST = 6, 1005              # 発注管理
 
+SPAN_DAYS = 14                           # タイムテーブルに表示する日数
+TT_FIRST = 10                            # タイムテーブルのデータ開始行
+TT_LAST = TT_FIRST + (CALC_LAST - CALC_FIRST)
+TT_DAY_COL = 12                          # L列から14日分のグリッド
+
+S_TT = 'タイムテーブル'
 S_SET = '設定'
 S_THEATER = '劇場マスタ'
 S_SIZE = '規模マスタ'
@@ -595,6 +623,163 @@ def build_calc(wb):
     return ws
 
 
+def build_timetable(wb):
+    """
+    在庫を上映スケジュール表の形で見せる画面。
+    横軸は今日から14日。各商品の帯は在庫が尽きるまでの日数で、
+    色が状態（余裕／要発注／今日が期限）、太い縦罫線が発注デッドラインを示す。
+    発注数を入れると、伸びた分がバター色で帯の先に足される。
+    """
+    ws = wb.create_sheet(S_TT)
+    ws.sheet_view.showGridLines = False
+    ws['B2'] = 'タイムテーブル'
+    ws['B2'].font = F_TITLE
+
+    state_col = col(S_TT, 'G', TT_FIRST, TT_LAST)
+    amount_col = col(S_TT, 'K', TT_FIRST, TT_LAST)
+
+    # ---- 結論ブロック ----
+    ws['B4'] = '今日の結論'
+    ws['B4'].font = F_NOTE
+    ws.merge_cells('B5:C5')          # 36ptの数字が「#」に潰れないよう幅を確保する
+    ws.row_dimensions[5].height = 46
+    ws['B5'] = f'=COUNTIF({state_col},"今日が期限")+COUNTIF({state_col},"要発注")'
+    ws['B5'].font = F_HERO
+    ws['B5'].alignment = Alignment(horizontal='left', vertical='center')
+    ws['D5'] = '品目に発注が必要です'
+    ws['D5'].font = F_HERO_UNIT
+    ws['D5'].alignment = Alignment(horizontal='left', vertical='center')
+    ws['B7'] = (f'=IF($B$5=0,"すべての商品が発注サイクルを越える在庫を持っています。",'
+                f'"うち "&COUNTIF({state_col},"今日が期限")&'
+                f'"品目は今日発注しないとリードタイムに間に合いません。 "&'
+                f'COUNTIF({state_col},"要発注")&"品目は次の発注サイクル（"&{S_SET}!$C$13&'
+                f'"日）内に在庫が切れます。")')
+    ws['B7'].font = Font(name=FONT, size=10, color=C_TEXT2)
+
+    ws['I4'] = '発注予定額（税抜）'
+    ws['I4'].font = F_NOTE
+    ws['I4'].alignment = Alignment(horizontal='right')
+    ws['I5'] = f'=SUM({amount_col})'
+    ws['I5'].font = Font(name=FONT, size=16, bold=True, color=C_INK)
+    ws['I5'].number_format = FMT_YEN
+    ws['I5'].alignment = Alignment(horizontal='right', vertical='center')
+
+    # ---- 見出し ----
+    headers = ['No', '商品名', '分類', '残り日数', 'デッドライン', '状態', '発注後日数',
+               '推奨(ケース)', '発注数', '金額']
+    kinds = ['自動', '自動', '自動', '自動', '自動', '自動', '自動', '自動', '入力', '自動']
+    put_headers(ws, 9, headers, kinds)
+
+    # 日付の目盛り。行9に日付、行8に日番号（条件付き書式が参照する）
+    for d in range(SPAN_DAYS):
+        letter = get_column_letter(TT_DAY_COL + d)
+        head = ws[f'{letter}9']
+        head.value = f'=IF({S_SET}!$C$6="","",{S_SET}!$C$6+{d})'
+        head.number_format = 'm/d'
+        head.font = F_DAY
+        head.alignment = Alignment(horizontal='center')
+        head.fill = FILL_HEAD
+        head.border = BORDER
+        n = ws[f'{letter}8']
+        n.value = d + 1
+        n.font = Font(name=FONT, size=8, color='FFD5D0C4')
+        n.alignment = Alignment(horizontal='center')
+        ws.column_dimensions[letter].width = 3.4
+
+    # 行8は「入力/自動」の区分行と日番号が入るため、軸の説明は凡例側に置く
+
+    # ---- データ行 ----
+    for r in range(TT_FIRST, TT_LAST + 1):
+        c = CALC_FIRST + (r - TT_FIRST)
+        ws[f'B{r}'] = r - TT_FIRST + 1
+        ws[f'C{r}'] = f'=IF({S_CALC}!$C{c}="","",{S_CALC}!$D{c})'
+        ws[f'D{r}'] = f'=IF({S_CALC}!$C{c}="","",{S_CALC}!$E{c})'
+        ws[f'E{r}'] = f'=IF({S_CALC}!$C{c}="","",{S_CALC}!$T{c})'
+        ws[f'F{r}'] = f'=IF(ISNUMBER($E{r}),$E{r}-N({S_CALC}!$I{c}),"")'
+        ws[f'G{r}'] = (f'=IF({S_CALC}!$C{c}="","",IF(NOT(ISNUMBER($F{r})),"データなし",'
+                       f'IF($F{r}<=0,"今日が期限",IF($F{r}<={S_SET}!$C$13,"要発注","余裕"))))')
+        ws[f'H{r}'] = (f'=IF(OR({S_CALC}!$C{c}="",NOT(ISNUMBER({S_CALC}!$S{c})),{S_CALC}!$S{c}<=0),"",'
+                       f'({S_CALC}!$K{c}+N($J{r})*N({S_CALC}!$G{c}))/{S_CALC}!$S{c})')
+        ws[f'I{r}'] = f'=IF({S_CALC}!$C{c}="","",{S_CALC}!$Y{c})'
+        ws[f'K{r}'] = f'=IF($J{r}="","",N($J{r})*N({S_CALC}!$H{c}))'
+
+        style_row(ws, r, 'BCDEFGHIJK', fill=FILL_AUTO)
+        ws[f'J{r}'].fill = FILL_INPUT
+        ws[f'J{r}'].font = F_INPUT
+        ws[f'E{r}'].number_format = FMT_DAYS
+        ws[f'F{r}'].number_format = FMT_DAYS
+        ws[f'H{r}'].number_format = FMT_DAYS
+        ws[f'I{r}'].number_format = FMT_INT
+        ws[f'J{r}'].number_format = FMT_INT
+        ws[f'K{r}'].number_format = FMT_YEN
+        ws[f'G{r}'].alignment = Alignment(horizontal='center')
+        for d in range(SPAN_DAYS):
+            cell = ws.cell(r, TT_DAY_COL + d)
+            cell.fill = FILL_TRACK
+            cell.border = Border(right=Side(style='hair', color='FFEDE8DC'))
+        ws.row_dimensions[r].height = 17
+
+    # ---- 帯の描画（条件付き書式） ----
+    first_day = get_column_letter(TT_DAY_COL)
+    last_day = get_column_letter(TT_DAY_COL + SPAN_DAYS - 1)
+    band = f'{first_day}{TT_FIRST}:{last_day}{TT_LAST}'
+    # 数式は範囲の左上セル基準で書く。列は相対、日番号の行8と各項目の列は固定。
+    day_ref = f'{first_day}$8'
+
+    def rule(formula, color):
+        return FormulaRule(formula=[formula],
+                           fill=PatternFill('solid', bgColor=color), stopIfTrue=False)
+
+    # 発注デッドライン（この日を過ぎるとリードタイム的に間に合わない）
+    ws.conditional_formatting.add(band, FormulaRule(
+        formula=[f'AND(ISNUMBER($F{TT_FIRST}),$F{TT_FIRST}>0,'
+                 f'{day_ref}=ROUNDUP($F{TT_FIRST},0))'],
+        border=Border(left=Side(style='medium', color=C_INK)), stopIfTrue=False))
+    ws.conditional_formatting.add(band, rule(
+        f'AND(ISNUMBER($E{TT_FIRST}),{day_ref}<=$E{TT_FIRST},$G{TT_FIRST}="今日が期限")', C_CRIT))
+    ws.conditional_formatting.add(band, rule(
+        f'AND(ISNUMBER($E{TT_FIRST}),{day_ref}<=$E{TT_FIRST},$G{TT_FIRST}="要発注")', C_WARN))
+    ws.conditional_formatting.add(band, rule(
+        f'AND(ISNUMBER($E{TT_FIRST}),{day_ref}<=$E{TT_FIRST},$G{TT_FIRST}="余裕")', C_OK))
+    # 発注すると伸びる分
+    ws.conditional_formatting.add(band, rule(
+        f'AND(ISNUMBER($H{TT_FIRST}),{day_ref}>N($E{TT_FIRST}),{day_ref}<=$H{TT_FIRST})', C_BUTTER))
+
+    # 状態列は色だけに頼らず、文字でも読めるようにする
+    for text, fill, font_color in (('今日が期限', C_CRIT_SOFT, C_CRIT),
+                                   ('要発注', C_WARN_SOFT, C_WARN),
+                                   ('余裕', C_OK_SOFT, C_OK)):
+        ws.conditional_formatting.add(
+            f'G{TT_FIRST}:G{TT_LAST}',
+            CellIsRule(operator='equal', formula=[f'"{text}"'],
+                       fill=PatternFill('solid', bgColor=fill),
+                       font=Font(name=FONT, size=10, bold=True, color=font_color)))
+
+    # ---- 凡例 ----
+    legend_row = TT_LAST + 2
+    legend = [('今日が期限（今日発注しないと間に合わない）', C_CRIT),
+              ('要発注（発注サイクル内に在庫が切れる）', C_WARN),
+              ('余裕', C_OK),
+              ('発注すると伸びる分', C_BUTTER)]
+    for i, (text, color) in enumerate(legend):
+        cell = ws.cell(legend_row + i, 12)
+        cell.fill = PatternFill('solid', fgColor=color)
+        label = ws.cell(legend_row + i, 13, text)
+        label.font = F_NOTE
+    ws.cell(legend_row + len(legend), 12, '│').font = Font(name=FONT, size=9, bold=True, color=C_INK)
+    ws.cell(legend_row + len(legend), 13, '発注デッドライン（在庫が尽きる日 − リードタイム）').font = F_NOTE
+    axis = ws.cell(legend_row + len(legend) + 2, 12,
+                   '横軸は当日基準日からの14日間です。帯の長さがその商品の在庫が持つ日数を表します。')
+    axis.font = F_NOTE
+    ws.cell(legend_row + len(legend) + 3, 12,
+            '発注数を入れると、伸びた分がバター色で帯の先に足されます。').font = F_NOTE
+
+    for c, w in zip('BCDEFGHIJK', [5, 30, 15, 11, 13, 12, 12, 12, 11, 13]):
+        ws.column_dimensions[c].width = w
+    ws.freeze_panes = f'C{TT_FIRST}'
+    return ws
+
+
 def build_po(wb):
     ws = wb.create_sheet(S_PO)
     sheet_title(ws, '発注管理',
@@ -767,6 +952,7 @@ def build_dashboard(wb, categories):
     cats = Reference(ws, min_col=2, min_row=24, max_row=last)
     chart.add_data(data, titles_from_data=True)
     chart.set_categories(cats)
+    chart.series[0].graphicalProperties.solidFill = C_INK[2:]
     ws.add_chart(chart, 'G22')
 
     chart2 = BarChart()
@@ -776,6 +962,7 @@ def build_dashboard(wb, categories):
     data2 = Reference(ws, min_col=4, min_row=23, max_row=last)
     chart2.add_data(data2, titles_from_data=True)
     chart2.set_categories(cats)
+    chart2.series[0].graphicalProperties.solidFill = C_BUTTER[2:]
     ws.add_chart(chart2, 'O22')
 
     ws[f'B{last + 3}'] = '※ 商品分類名は在庫CSVの値です。分類が増えたらこの表に追記してください。'
@@ -810,8 +997,9 @@ def main():
     wb.remove(wb.active)
     build_intro(wb)
     build_settings(wb)
-    build_dashboard(wb, categories)
     build_calc(wb)
+    build_timetable(wb)
+    build_dashboard(wb, categories)
     build_po(wb)
     build_csv_sheet(wb, S_CUR, None, '在庫CSV（当日）')
     build_csv_sheet(wb, S_PRV, S_CUR, '在庫CSV（前回）')
@@ -821,11 +1009,14 @@ def main():
     build_season_master(wb)
     build_all_theaters(wb)
 
-    order = ['はじめに', S_SET, S_DASH, S_CALC, S_PO, S_CUR, S_PRV,
+    order = ['はじめに', S_SET, S_TT, S_DASH, S_CALC, S_PO, S_CUR, S_PRV,
              S_ITEM, S_THEATER, S_SIZE, S_SEASON, S_ALL]
     wb._sheets = [wb[n] for n in order]
     for ws in wb.worksheets:
-        ws.sheet_properties.tabColor = 'FFB3121F' if ws.title in (S_SET, S_CALC) else None
+        if ws.title in (S_TT, S_SET):
+            ws.sheet_properties.tabColor = C_BUTTER[2:]
+        elif ws.title in (S_DASH, S_CALC):
+            ws.sheet_properties.tabColor = C_INK[2:]
 
     out.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out)
