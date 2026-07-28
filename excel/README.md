@@ -19,7 +19,7 @@ CSVを渡すと、その内容から商品マスタの初期データ（商品�
 | はじめに | 使い方と計算式の説明 |
 | 設定 | 対象劇場の選択、算出基準の切替、劇場定数の確認 |
 | タイムテーブル | 在庫を時間軸で見る画面。**日々の発注判断はここだけで済む** |
-| ダッシュボード | 対象劇場のKPIと商品分類別の集計・グラフ |
+| ダッシュボード | 劇場全体の状況を図で把握する画面 |
 | 発注計算 | 商品別の理論値在庫・発注点・推奨発注数（計算の元） |
 | 発注管理 | 発注と入荷の記録。納品実績と発注残の元データ |
 | 在庫CSV_当日 | 最新の在庫一覧CSVを貼り付ける |
@@ -56,6 +56,34 @@ CSVを渡すと、その内容から商品マスタの初期データ（商品�
 
 帯は条件付き書式で描いているので、追加のアドインやマクロは不要です。
 色だけに頼らないよう、状態は「状態」列に文字でも表示しています。
+
+## ダッシュボード画面
+
+数字の羅列ではなく、**図で状況を掴む**ことを目的にした画面です。
+細い列を並べた方眼をキャンバスにして、結合セルでブロックを組んでいます
+（Excelのダッシュボードでよく使われる作り方）。すべてグラフとセル塗りだけで、
+マクロもアドインも使いません。
+
+| ブロック | 何が分かるか |
+| --- | --- |
+| 信号ボード | 欠品リスク／要発注／余裕の品目数と推奨発注額。色の大きさで危険度が先に目に入る |
+| 在庫状況の内訳（ワッフル） | 100マスで全体の構成比。赤がどれだけ占めるかが面積で分かる |
+| 在庫日数の分布 | どこに山があるか。棒の色が重症度（赤＝切れかけ、緑＝余裕） |
+| 商品分類 × 状態 | どの分類が危ないかのヒートマップ。在庫金額はデータバーで大小を表示 |
+| 仕入先別 推奨発注額 | どこにいくら発注することになるか |
+| 今後14日の入荷予定 | 納品予定日ごとの金額。色が濃い日ほど入荷が集中している |
+
+### なぜこの構成にしたか
+
+在庫管理ダッシュボードの定石として、**在庫日数（days of cover）とリードタイムの比較**が
+最も行動につながる指標とされています。「在庫日数28日・リードタイム84日」なら、
+このままでは56日間欠品する、という読み方ができるためです。
+このツールもその考え方を軸に、信号ボードと在庫日数の分布を最上段に置いています。
+
+ワッフルチャートとヒートマップは条件付き書式だけで作れるため、
+追加のツールなしにこの表現が使えます。
+
+参考にした資料は README 末尾に挙げています。
 
 ## 設計の要点
 
@@ -137,3 +165,15 @@ PI予測消費/日  ＝ 想定来場者数/日 × 季節係数 × PI値 ÷ 100
 - 金額はすべて税抜です。
 - 初期の商品マスタはサンプルCSV（新宿・132品目）から作成しています。
   L/T日数は3日、最低ロットは1、PI値は空欄が初期値です。運用前に実際の値へ更新してください。
+
+## 参考にした資料
+
+ダッシュボードの構成を決めるにあたって参照したもの。
+
+- [Stock coverage metrics: days cover calculation and inventory KPIs（Phocas）](https://www.phocassoftware.com/business-intelligence-blog/stock-coverage-do-you-have-enough) — 在庫日数とリードタイムを比較して欠品期間を読む考え方
+- [Inventory cover uncovered（nVentic）](https://nventic.com/insights/cover-uncovered/) — 在庫カバー指標の設計
+- [Excel Waffle Charts with Conditional Formatting（My Online Training Hub）](https://www.myonlinetraininghub.com/excel-waffle-charts-with-conditional-formatting) — 条件付き書式だけでワッフルチャートを作る方法
+- [Excel Dashboard Heatmaps – Conditional Formatting Guide（Other Levels）](https://other-levels.com/blogs/excel-dashboard-tips-tricks/how-to-create-heatmaps-for-data-visualization-in-microsoft-excel) — カラースケールによるヒートマップ
+- [How to Create an Inventory Dashboard（Smartsheet）](https://www.smartsheet.com/content/how-to-create-inventory-dashboard) — 在庫ダッシュボードに載せるべき指標
+- [7 Key Supply Chain Dashboard Examples（GoodData）](https://www.gooddata.ai/blog/supply-chain-dashboard-examples/) — サマリーを上・詳細を下に置くレイアウト原則
+- [Guide to Restaurant Par Levels and Reordering（Altametrics）](https://altametrics.com/blog/guide-to-restaurant-par-levels-and-reordering.html) — 飲食店の発注点（PAR）の考え方

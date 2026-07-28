@@ -25,7 +25,9 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
-from openpyxl.formatting.rule import CellIsRule, FormulaRule
+from openpyxl.chart.marker import DataPoint
+from openpyxl.formatting.rule import (CellIsRule, ColorScaleRule, DataBarRule,
+                                      FormulaRule)
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -872,101 +874,249 @@ def build_all_theaters(wb):
     return ws
 
 
-def build_dashboard(wb, categories):
+def build_dashboard(wb, categories, vendors):
+    """
+    figure-first のダッシュボード。
+    細い列を並べた方眼をキャンバスにして、結合セルでブロックを組む
+    （Excelのダッシュボードでよく使われる作り方）。
+    グラフとセル塗りだけで構成し、マクロやアドインは使わない。
+    """
     ws = wb.create_sheet(S_DASH)
-    sheet_title(ws, 'ダッシュボード', '設定シートで選んだ劇場の状況です。')
-    ws.column_dimensions['B'].width = 24
-    for c in 'CDEFGH':
-        ws.column_dimensions[c].width = 16
+    ws.sheet_view.showGridLines = False
 
-    head = [('対象劇場', f'=IF({S_SET}!$C$4="","",{S_SET}!$C$4&"　"&{S_SET}!$C$5)', None),
-            ('当日基準日', f'={S_SET}!$C$6', FMT_DATE),
-            ('前回基準日', f'={S_SET}!$C$7', FMT_DATE),
-            ('算出基準', f'={S_SET}!$C$9', None),
-            ('季節係数', f'={S_SET}!$C$15', '0%')]
-    for i, (label, f, fmt) in enumerate(head):
-        r = 5 + i
-        ws[f'B{r}'] = label
-        ws[f'B{r}'].font = F_BOLD
-        ws[f'B{r}'].fill = FILL_HEAD
-        ws[f'B{r}'].border = BORDER
-        ws[f'C{r}'] = f
-        ws[f'C{r}'].font = F_BASE
-        ws[f'C{r}'].border = BORDER
+    CANVAS_LAST = 30                       # B列から30列を方眼として使う
+    for i in range(2, 2 + CANVAS_LAST):
+        ws.column_dimensions[get_column_letter(i)].width = 3.3
+
+    tt_state = col(S_TT, 'G', TT_FIRST, TT_LAST)
+    tt_days = col(S_TT, 'E', TT_FIRST, TT_LAST)
+    tt_cat = col(S_TT, 'D', TT_FIRST, TT_LAST)
+    calc_vendor = col(S_CALC, 'F', CALC_FIRST, CALC_LAST)
+    calc_amount = col(S_CALC, 'AC', CALC_FIRST, CALC_LAST)
+    calc_stock = col(S_CALC, 'AA', CALC_FIRST, CALC_LAST)
+
+    def block(cell_range, value, fmt=None, font=None, fill=None, align='left'):
+        ws.merge_cells(cell_range)
+        top = cell_range.split(':')[0]
+        c = ws[top]
+        c.value = value
+        if font:
+            c.font = font
+        if fill:
+            c.fill = fill
         if fmt:
-            ws[f'C{r}'].number_format = fmt
+            c.number_format = fmt
+        c.alignment = Alignment(horizontal=align, vertical='center')
+        return c
 
-    calc_z = col(S_CALC, 'Z', CALC_FIRST, CALC_LAST)
-    calc_c = col(S_CALC, 'C', CALC_FIRST, CALC_LAST)
-    calc_aa = col(S_CALC, 'AA', CALC_FIRST, CALC_LAST)
-    calc_e = col(S_CALC, 'E', CALC_FIRST, CALC_LAST)
-    calc_k = col(S_CALC, 'K', CALC_FIRST, CALC_LAST)
-    calc_ab = col(S_CALC, 'AB', CALC_FIRST, CALC_LAST)
-    calc_ac = col(S_CALC, 'AC', CALC_FIRST, CALC_LAST)
-    order_amount = f'SUM({calc_ac})'
+    def section(row, start_col, text):
+        letter = get_column_letter(start_col)
+        c = ws[f'{letter}{row}']
+        c.value = text
+        c.font = Font(name=FONT, size=11, bold=True, color=C_INK)
 
-    kpis = [
-        # 空行の数式結果は "" になるため、COUNTIF("<>") では数えられない
-        ('取扱商品数', f'=SUMPRODUCT(--({calc_c}<>""))', FMT_INT),
-        ('要発注 品目数', f'=COUNTIF({calc_z},"要発注")', FMT_INT),
-        ('推奨発注金額（税抜）', f'={order_amount}', FMT_YEN),
-        ('当日在庫金額（税抜）', f'=SUM({calc_aa})', FMT_YEN),
-        ('在庫マイナス 品目数', f'=COUNTIF({calc_k},"<0")', FMT_INT),
-        ('マスタ未登録 品目数', f'=COUNTIF({calc_ab},"*マスタ未登録*")', FMT_INT),
-        ('新商品 品目数', f'=COUNTIF({calc_ab},"*新商品*")', FMT_INT),
-        ('終売候補 品目数', f'=COUNTIF({calc_ab},"*終売候補*")', FMT_INT),
+    # ================= 見出し =================
+    block('B2:N2', 'ダッシュボード', font=F_TITLE)
+    block('B3:N3',
+          f'=IF({S_SET}!$C$4="","設定シートで対象劇場を選んでください。",'
+          f'{S_SET}!$C$4&"　"&{S_SET}!$C$5&"　／　基準日 "&TEXT({S_SET}!$C$6,"yyyy/m/d")&'
+          f'"　／　算出基準 "&{S_SET}!$C$9)',
+          font=Font(name=FONT, size=10, color=C_TEXT2))
+
+    # ================= 信号ボード =================
+    # 数の大小より「どの色がどれだけあるか」が先に目に入るようにする
+    signals = [
+        ('B', 'G', '欠品リスク', f'=COUNTIF({tt_state},"今日が期限")', '今日発注しないと間に合わない',
+         C_CRIT, C_CRIT_SOFT),
+        ('I', 'N', '要発注', f'=COUNTIF({tt_state},"要発注")', '発注サイクル内に切れる',
+         C_WARN, C_WARN_SOFT),
+        ('P', 'U', '在庫に余裕', f'=COUNTIF({tt_state},"余裕")', 'しばらく発注不要',
+         C_OK, C_OK_SOFT),
     ]
-    for i, (label, f, fmt) in enumerate(kpis):
-        r = 12 + i
-        ws[f'B{r}'] = label
-        ws[f'B{r}'].font = F_BOLD
-        ws[f'B{r}'].fill = FILL_HEAD
-        ws[f'B{r}'].border = BORDER
-        ws[f'C{r}'] = f
-        ws[f'C{r}'].font = F_BOLD
-        ws[f'C{r}'].number_format = fmt
-        ws[f'C{r}'].border = BORDER
+    for left, right, label, formula, note, color, soft in signals:
+        block(f'{left}5:{right}5', label, font=Font(name=FONT, size=10, bold=True, color=color),
+              fill=PatternFill('solid', fgColor=soft))
+        big = block(f'{left}6:{right}8', formula, fmt=FMT_INT,
+                    font=Font(name=FONT, size=30, bold=True, color=color),
+                    fill=PatternFill('solid', fgColor=soft))
+        big.alignment = Alignment(horizontal='center', vertical='center')
+        block(f'{left}9:{right}9', note, font=F_NOTE,
+              fill=PatternFill('solid', fgColor=soft), align='center')
 
-    ws['B22'] = '商品分類別'
-    ws['B22'].font = F_BOLD
-    put_headers(ws, 23, ['商品分類名', '在庫金額', '推奨発注金額', '要発注品目数'],
-                ['入力', '自動', '自動', '自動'])
+    block('W5:AB5', '推奨発注額（税抜）', font=Font(name=FONT, size=10, bold=True, color=C_TEXT2),
+          fill=FILL_HEAD)
+    amt = block('W6:AB8', f'=SUM({calc_amount})', fmt=FMT_YEN,
+                font=Font(name=FONT, size=18, bold=True, color=C_INK), fill=FILL_HEAD)
+    amt.alignment = Alignment(horizontal='center', vertical='center')
+    block('W9:AB9', f'="在庫金額 "&TEXT(SUM({calc_stock}),"¥#,##0")',
+          font=F_NOTE, fill=FILL_HEAD, align='center')
+
+    for r in (5, 9):
+        ws.row_dimensions[r].height = 16
+    for r in (6, 7, 8):
+        ws.row_dimensions[r].height = 15
+
+    # ================= ワッフル（状態の構成比） =================
+    section(11, 2, '在庫状況の内訳')
+    ws['B12'] = '1マス＝全体の1%。100マスで取扱商品全体を表しています。'
+    ws['B12'].font = F_NOTE
+
+    # 累積のしきい値。ワッフルの塗り分けに使う
+    ws['AE13'] = '欠品リスク%'
+    ws['AF13'] = f'=IFERROR(COUNTIF({tt_state},"今日が期限")/$AF$18*100,0)'
+    ws['AE14'] = '＋要発注%'
+    ws['AF14'] = f'=$AF$13+IFERROR(COUNTIF({tt_state},"要発注")/$AF$18*100,0)'
+    ws['AE15'] = '＋余裕%'
+    ws['AF15'] = f'=$AF$14+IFERROR(COUNTIF({tt_state},"余裕")/$AF$18*100,0)'
+    ws['AE18'] = '取扱商品数'
+    ws['AF18'] = f'=COUNTIF({tt_state},"?*")'
+    for r in (13, 14, 15, 18):
+        ws[f'AE{r}'].font = F_NOTE
+        ws[f'AF{r}'].font = F_NOTE
+
+    for row in range(10):
+        for c in range(10):
+            cell = ws.cell(14 + row, 2 + c)
+            cell.value = row * 10 + c + 1
+            cell.font = Font(name=FONT, size=1, color='FFFFFFFF')
+            cell.fill = FILL_TRACK
+            cell.border = Border(right=Side(style='thin', color='FFFFFFFF'),
+                                 bottom=Side(style='thin', color='FFFFFFFF'))
+        ws.row_dimensions[14 + row].height = 15
+
+    waffle = 'B14:K23'
+    for threshold, color in (('$AF$13', C_CRIT), ('$AF$14', C_WARN), ('$AF$15', C_OK)):
+        ws.conditional_formatting.add(waffle, FormulaRule(
+            formula=[f'B14<={threshold}'],
+            fill=PatternFill('solid', bgColor=color), stopIfTrue=True))
+    ws.conditional_formatting.add(waffle, FormulaRule(
+        formula=['TRUE'], fill=PatternFill('solid', bgColor='FFD8D4CB'), stopIfTrue=True))
+
+    legend = [('欠品リスク', C_CRIT), ('要発注', C_WARN), ('余裕', C_OK), ('データなし', 'FFD8D4CB')]
+    for i, (text, color) in enumerate(legend):
+        c = ws.cell(25, 2 + i * 3)
+        c.fill = PatternFill('solid', fgColor=color)
+        lab = ws.cell(25, 3 + i * 3, text)
+        lab.font = F_NOTE
+        lab.alignment = Alignment(horizontal='left')
+
+    # ================= 在庫日数の分布 =================
+    section(11, 13, '在庫日数の分布')
+    # 横棒グラフは先頭のカテゴリが下に来るので、危ない側が上に出るよう逆順に置く
+    buckets = [
+        ('14日以上', f'=COUNTIFS({tt_days},">14")'),
+        ('7〜14日', f'=COUNTIFS({tt_days},">7",{tt_days},"<=14")'),
+        ('3〜7日', f'=COUNTIFS({tt_days},">3",{tt_days},"<=7")'),
+        ('1〜3日', f'=COUNTIFS({tt_days},">1",{tt_days},"<=3")'),
+        ('0〜1日', f'=COUNTIFS({tt_days},">0",{tt_days},"<=1")'),
+        ('切れている', f'=COUNTIFS({tt_days},"<=0")'),
+    ]
+    ws['AE21'] = '在庫日数'
+    ws['AF21'] = '品目数'
+    for i, (label, formula) in enumerate(buckets):
+        ws.cell(22 + i, 31, label).font = F_NOTE
+        c = ws.cell(22 + i, 32, formula)
+        c.font = F_NOTE
+    dist = BarChart()
+    dist.type = 'bar'
+    dist.title = None
+    dist.legend = None
+    dist.height, dist.width = 6.6, 11.5
+    dist.add_data(Reference(ws, min_col=32, min_row=22, max_row=27), titles_from_data=False)
+    dist.set_categories(Reference(ws, min_col=31, min_row=22, max_row=27))
+    # 分布は重症度の軸なので、棒ごとに状態の色を与える
+    for i, color in enumerate([C_OK, C_OK, C_WARN, C_WARN, C_CRIT, C_CRIT]):
+        pt = DataPoint(idx=i)
+        pt.graphicalProperties.solidFill = color[2:]
+        pt.graphicalProperties.line.noFill = True
+        dist.series[0].data_points.append(pt)
+    dist.gapWidth = 40
+    ws.add_chart(dist, 'M13')
+
+    # ================= 商品分類 × 状態 =================
+    section(27, 2, '商品分類 × 状態')
+    states = ['今日が期限', '要発注', '余裕']
+    colors = [C_CRIT, C_WARN, C_OK]
+    block('B28:G28', '商品分類', font=F_HEAD, fill=FILL_HEAD, align='center')
+    for i, (st, cl) in enumerate(zip(states, colors)):
+        left = get_column_letter(8 + i * 2)
+        right = get_column_letter(9 + i * 2)
+        block(f'{left}28:{right}28', st, font=Font(name=FONT, size=9, bold=True, color=cl),
+              fill=FILL_HEAD, align='center')
+    block('N28:P28', '在庫金額', font=F_HEAD, fill=FILL_HEAD, align='center')
+
     for i, name in enumerate(categories):
-        r = 24 + i
-        ws[f'B{r}'] = name
-        ws[f'C{r}'] = f'=SUMIF({calc_e},$B{r},{calc_aa})'
-        ws[f'D{r}'] = f'=SUMIF({calc_e},$B{r},{calc_ac})'
-        ws[f'E{r}'] = f'=COUNTIFS({calc_e},$B{r},{calc_z},"要発注")'
-        style_row(ws, r, 'BCDE', fill=FILL_AUTO)
-        ws[f'B{r}'].fill = FILL_INPUT
-        ws[f'C{r}'].number_format = FMT_YEN
-        ws[f'D{r}'].number_format = FMT_YEN
-        ws[f'E{r}'].number_format = FMT_INT
-    last = 24 + len(categories) - 1
+        r = 29 + i
+        block(f'B{r}:G{r}', name, font=Font(name=FONT, size=9, color=C_INK))
+        for j, st in enumerate(states):
+            left = get_column_letter(8 + j * 2)
+            right = get_column_letter(9 + j * 2)
+            c = block(f'{left}{r}:{right}{r}',
+                      f'=COUNTIFS({tt_cat},$B{r},{tt_state},"{st}")',
+                      fmt=FMT_INT, font=Font(name=FONT, size=9, color=C_INK), align='center')
+        block(f'N{r}:P{r}', f'=SUMIF({col(S_CALC, "E", CALC_FIRST, CALC_LAST)},$B{r},{calc_stock})',
+              fmt=FMT_YEN, font=Font(name=FONT, size=9, color=C_TEXT2), align='right')
+        ws.row_dimensions[r].height = 14
 
-    chart = BarChart()
-    chart.type = 'bar'
-    chart.title = '商品分類別 在庫金額'
-    chart.height, chart.width = 10, 14
-    data = Reference(ws, min_col=3, min_row=23, max_row=last)
-    cats = Reference(ws, min_col=2, min_row=24, max_row=last)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    chart.series[0].graphicalProperties.solidFill = C_INK[2:]
-    ws.add_chart(chart, 'G22')
+    heat_last = 28 + len(categories)
+    for j, color in enumerate(colors):
+        left = get_column_letter(8 + j * 2)
+        right = get_column_letter(9 + j * 2)
+        ws.conditional_formatting.add(
+            f'{left}29:{right}{heat_last}',
+            ColorScaleRule(start_type='num', start_value=0, start_color='FFFFFFFF',
+                           end_type='max', end_color=color))
+    # 在庫金額はデータバーで大小を見せる
+    ws.conditional_formatting.add(f'N29:P{heat_last}',
+                                  DataBarRule(start_type='num', start_value=0, end_type='max',
+                                              color=C_BUTTER[2:], showValue=True))
 
-    chart2 = BarChart()
-    chart2.type = 'bar'
-    chart2.title = '商品分類別 推奨発注金額'
-    chart2.height, chart2.width = 10, 14
-    data2 = Reference(ws, min_col=4, min_row=23, max_row=last)
-    chart2.add_data(data2, titles_from_data=True)
-    chart2.set_categories(cats)
-    chart2.series[0].graphicalProperties.solidFill = C_BUTTER[2:]
-    ws.add_chart(chart2, 'O22')
+    # ================= 仕入先別 発注予定額 =================
+    section(27, 19, '仕入先別 推奨発注額')
+    ws['AE31'] = '仕入先'
+    ws['AF31'] = '推奨発注額'
+    for i, v in enumerate(vendors[:12]):
+        ws.cell(32 + i, 31, v).font = F_NOTE
+        ws.cell(32 + i, 32, f'=SUMIF({calc_vendor},$AE${32 + i},{calc_amount})').font = F_NOTE
+        ws.cell(32 + i, 32).number_format = FMT_YEN
+    vend_chart = BarChart()
+    vend_chart.type = 'bar'
+    vend_chart.title = None
+    vend_chart.legend = None
+    vend_chart.height, vend_chart.width = 8.4, 11.5
+    n = min(12, len(vendors))
+    vend_chart.add_data(Reference(ws, min_col=32, min_row=32, max_row=31 + n), titles_from_data=False)
+    vend_chart.set_categories(Reference(ws, min_col=31, min_row=32, max_row=31 + n))
+    vend_chart.series[0].graphicalProperties.solidFill = C_BUTTER[2:]
+    vend_chart.gapWidth = 45
+    vend_chart.x_axis.numFmt = '#,##0,,"百万"'   # 桁が長いと軸ラベルが斜めになるため
+    ws.add_chart(vend_chart, 'S29')
 
-    ws[f'B{last + 3}'] = '※ 商品分類名は在庫CSVの値です。分類が増えたらこの表に追記してください。'
-    ws[f'B{last + 3}'].font = F_NOTE
+    # ================= 今後14日の入荷予定 =================
+    first_row = heat_last + 3
+    section(first_row, 2, '今後14日の入荷予定（発注済で未入荷のもの）')
+    ws.cell(first_row + 1, 2, '納品予定日ごとの金額です。色が濃い日ほど入荷が集中しています。').font = F_NOTE
+    for d in range(SPAN_DAYS):
+        left = get_column_letter(2 + d * 2)
+        right = get_column_letter(3 + d * 2)
+        head = block(f'{left}{first_row + 2}:{right}{first_row + 2}',
+                     f'=IF({S_SET}!$C$6="","",{S_SET}!$C$6+{d})',
+                     fmt='m/d', font=F_DAY, fill=FILL_HEAD, align='center')
+        val = block(f'{left}{first_row + 3}:{right}{first_row + 3}',
+                    f'=IF({S_SET}!$C$6="",0,SUMIFS({po_col("N")},{po_col("C")},{S_SET}!$C$4,'
+                    f'{po_col("P")},{S_SET}!$C$6+{d},{po_col("Q")},"発注済"))',
+                    fmt='#,##0;;"-"', font=Font(name=FONT, size=9, color=C_INK), align='center')
+        ws.row_dimensions[first_row + 3].height = 26
+    ws.conditional_formatting.add(
+        f'B{first_row + 3}:{get_column_letter(1 + SPAN_DAYS * 2)}{first_row + 3}',
+        ColorScaleRule(start_type='num', start_value=0, start_color='FFFFFFFF',
+                       end_type='max', end_color=C_BUTTER))
+
+    note_row = first_row + 5
+    ws.cell(note_row, 2,
+            '※ 数字は「発注計算」シートの推奨発注数にもとづく金額です（税抜）。').font = F_NOTE
+    ws.cell(note_row + 1, 2,
+            '※ 商品分類・仕入先の一覧は右の AE 列以降にあります。増えたら追記してください。').font = F_NOTE
     return ws
 
 
@@ -981,17 +1131,21 @@ def load_items(csv_path):
         if code and code not in seen:
             seen.add(code)
             items.append(r)
-    categories = []
+    categories, vendor_count = [], {}
     for r in rows:
         if r['商品分類名'] not in categories:
             categories.append(r['商品分類名'])
-    return items, categories
+        vendor_count[r['支払先名']] = vendor_count.get(r['支払先名'], 0) + 1
+    # 取扱点数の多い順に並べる。グラフでは主要な仕入先が上に来る
+    vendors = sorted(vendor_count, key=lambda v: -vendor_count[v])
+    return items, categories, vendors
 
 
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('売店発注ツール.xlsx')
     src = Path(sys.argv[2]) if len(sys.argv) > 2 else None
-    items, categories = load_items(src) if src else ([], ['コンセ包材'])
+    items, categories, vendors = (load_items(src) if src
+                                  else ([], ['コンセ包材'], ['仕入先A']))
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -999,7 +1153,7 @@ def main():
     build_settings(wb)
     build_calc(wb)
     build_timetable(wb)
-    build_dashboard(wb, categories)
+    build_dashboard(wb, categories, vendors)
     build_po(wb)
     build_csv_sheet(wb, S_CUR, None, '在庫CSV（当日）')
     build_csv_sheet(wb, S_PRV, S_CUR, '在庫CSV（前回）')
