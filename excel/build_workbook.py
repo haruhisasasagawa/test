@@ -88,16 +88,19 @@ CSV_HEADERS = ['対象日付', '劇場コード', '劇場名', '支払先コー�
                '大分類コード', '小分類コード', '商品分類名', '商品コード', '商品名',
                '入数', '在庫数ケース', '在庫数バラ', '総数', '規定数', '資産廃棄',
                '税抜単価', '仕入税区分', '仕入税率']
-CSV_FIRST = 2          # データ開始行
-CSV_LAST = 10001       # データ終了行（75劇場×約130商品を想定）
+CSV_HEAD = 5           # 見出し行。1〜4行目は案内と取込判定に使う
+CSV_FIRST = 6          # データ開始行
+CSV_LAST = 10005       # データ終了行（75劇場×約130商品を想定）
 CSV_HELPER = 'U'       # 連番ヘルパー列
 
 SIZES = ['大規模', '中規模', '小規模']
 DRINK_STYLES = ['1杯売り', 'ドリンクバー']
-# PIプロファイル = 規模区分_提供方式（商品マスタのPI値列と対応する）
-PROFILES = [f'{s}_{d}' for d in DRINK_STYLES for s in SIZES]
+# PIプロファイル＝ドリンクの提供方式。PI値は「来場者100人あたりの消費数」なので、
+# 劇場の規模が変わっても値そのものは変わらない（規模は来場者数の側で吸収される）。
+# 提供方式だけが商品構成を変えるため、プロファイルはこの2種類で足りる。
+PROFILES = list(DRINK_STYLES)
 
-BASIS_OPTIONS = ['実績消費', 'PI値予測', '規定数', '最大値']
+BASIS_OPTIONS = ['実績消費', 'PI値予測', '最大値']
 ORDER_STATUS = ['発注済', '入荷済み', '取消']
 
 MASTER_FIRST, MASTER_LAST = 6, 1005      # 商品マスタ
@@ -114,7 +117,7 @@ TT_DAY_COL = 12                          # L列から14日分のグリッド
 # シート名は「何をするか」で付ける。毎日さわる3枚に①②③を振り、
 # たまにしか触らないシートは頻度を名前に書いておく。
 S_INTRO = 'はじめに'
-S_SET = '設定'
+S_SET = '設定（最初に1回）'
 S_CUR = '①今日の在庫を貼る'
 S_TT = '②発注数を決める'
 S_SHEET = '③発注書'
@@ -340,21 +343,19 @@ def build_const_master(wb):
     # ---------- ① 劇場マスタ（B〜J列） ----------
     ws['B3'] = '① 劇場マスタ　劇場ごとの区分と、標準値を上書きしたいときの欄'
     ws['B3'].font = F_BOLD
-    headers = ['劇場コード', '劇場名', '規模区分', 'ドリンク提供方式', 'PIプロファイル',
+    headers = ['劇場コード', '劇場名', '規模区分', 'ドリンク提供方式',
                '来場者数/日(個別)', '安全在庫日数(個別)', '発注サイクル(個別)', '備考']
-    kinds = ['入力', '入力', '選択', '選択', '自動', '任意', '任意', '任意', '入力']
+    kinds = ['入力', '入力', '選択', '選択', '任意', '任意', '任意', '入力']
     put_headers(ws, 5, headers, kinds)
     for r in range(THEATER_FIRST, THEATER_LAST + 1):
-        ws[f'F{r}'] = f'=IF(OR($D{r}="",$E{r}=""),"",$D{r}&"_"&$E{r})'
-        style_row(ws, r, 'BCDEGHIJ', fill=FILL_INPUT)
-        style_row(ws, r, 'F', fill=FILL_AUTO)
+        style_row(ws, r, 'BCDEFGHI', fill=FILL_INPUT)
         ws[f'B{r}'].number_format = '@'
-        ws[f'G{r}'].number_format = FMT_INT
+        ws[f'F{r}'].number_format = FMT_INT
     ws[f'B{THEATER_FIRST}'] = '0761'
     ws[f'C{THEATER_FIRST}'] = '新宿'
     ws[f'D{THEATER_FIRST}'] = '大規模'
     ws[f'E{THEATER_FIRST}'] = '1杯売り'
-    ws[f'J{THEATER_FIRST}'] = 'サンプル。実際の区分に置き換えてください。'
+    ws[f'I{THEATER_FIRST}'] = 'サンプル。実際の区分に置き換えてください。'
     add_validation(ws, '"' + ','.join(SIZES) + '"', f'D{THEATER_FIRST}:D{THEATER_LAST}')
     add_validation(ws, '"' + ','.join(DRINK_STYLES) + '"', f'E{THEATER_FIRST}:E{THEATER_LAST}')
 
@@ -407,8 +408,8 @@ def build_const_master(wb):
                  'マスタを分けるほど「どこを直せばいいか」が分からなくなるため、1枚に集めています。')
     ws['B29'].font = F_NOTE
 
-    widths = {'B': 12, 'C': 20, 'D': 11, 'E': 17, 'F': 18, 'G': 17, 'H': 18, 'I': 17, 'J': 30,
-              'K': 3, 'L': 11, 'M': 13, 'N': 14, 'O': 14, 'P': 30, 'Q': 3,
+    widths = {'B': 12, 'C': 20, 'D': 11, 'E': 17, 'F': 18, 'G': 18, 'H': 17, 'I': 30,
+              'J': 3, 'K': 3, 'L': 11, 'M': 13, 'N': 14, 'O': 14, 'P': 30, 'Q': 3,
               'R': 6, 'S': 9, 'T': 3, 'U': 20, 'V': 13, 'W': 13, 'X': 9}
     for c, w in widths.items():
         ws.column_dimensions[c].width = w
@@ -457,18 +458,46 @@ def build_item_master(wb, items):
     return ws
 
 
-def build_csv_sheet(wb, name, other, label, note=''):
+def build_csv_sheet(wb, name, other, label, note='', paste_hint=''):
+    """
+    CSVを貼るシート。1〜4行目は案内と取込判定に使い、5行目が見出し、6行目からがデータ。
+    貼り付け範囲に案内文を置くと、貼った瞬間に消えてしまうため上に逃がしている。
+    """
     ws = wb.create_sheet(name)
-    sheet_title(ws, label,
-                note + '　データ行を A2 セルから貼り付けてください（見出し行は不要です）。')
-    ws['B3'] = ''
+    ws['B2'] = label
+    ws['B2'].font = F_TITLE
+    ws['B3'] = note
+    ws['B3'].font = F_NOTE
+    ws['B4'] = paste_hint
+    ws['B4'].font = Font(name=FONT, size=11, bold=True, color=C_INK)
+
+    # 貼れているかどうかを、いちばん目立つところに出す
+    hit = f'COUNTIF($B${CSV_FIRST}:$B${CSV_LAST},{Q_SET}!$C$4)'
+    ws['H2'] = (f'=IF({hit}=0,"✖ まだ貼れていません",ّ"✔ "&{hit}&"行 読み込めました")'
+                .replace('ّ', ''))
+    ws['H2'].font = Font(name=FONT, size=16, bold=True, color=C_INK)
+    ws['H2'].alignment = Alignment(horizontal='left', vertical='center')
+    ws['H3'] = (f'=IF({hit}=0,"CSVの見出し行を除いたデータを A{CSV_FIRST} セルに貼り付けてください。'
+                f'貼ったのに0のままなら、劇場コードが数値になっています。",'
+                f'"対象劇場：" & {Q_SET}!$C$4 & "　" & {Q_SET}!$C$5)')
+    ws['H3'].font = F_NOTE
+    ws.row_dimensions[2].height = 24
+    ws.conditional_formatting.add('H2', FormulaRule(
+        formula=[f'{hit}=0'],
+        fill=PatternFill('solid', bgColor=C_CRIT_SOFT),
+        font=Font(name=FONT, size=16, bold=True, color=C_CRIT), stopIfTrue=True))
+    ws.conditional_formatting.add('H2', FormulaRule(
+        formula=['TRUE'],
+        fill=PatternFill('solid', bgColor=C_OK_SOFT),
+        font=Font(name=FONT, size=16, bold=True, color=C_OK), stopIfTrue=True))
+
     for i, h in enumerate(CSV_HEADERS):
-        cell = ws.cell(1, 1 + i, h)
+        cell = ws.cell(CSV_HEAD, 1 + i, h)
         cell.font = F_HEAD
         cell.fill = FILL_HEAD
         cell.border = BORDER
         cell.alignment = Alignment(horizontal='center', wrap_text=True)
-    helper = ws.cell(1, 21, '連番(自動)')
+    helper = ws.cell(CSV_HEAD, 21, '連番(自動)')
     helper.font = F_HEAD
     helper.fill = FILL_ACCENT
     helper.border = BORDER
@@ -494,7 +523,8 @@ def build_csv_sheet(wb, name, other, label, note=''):
     ws.column_dimensions['I'].width = 16
     ws.column_dimensions['J'].width = 30
     ws.column_dimensions['U'].width = 11
-    ws.freeze_panes = 'A2'
+    ws.freeze_panes = f'A{CSV_FIRST}'
+    ws.sheet_view.showGridLines = False
     return ws
 
 
@@ -529,15 +559,15 @@ def build_settings(wb):
         ('2ヶ月前の基準日', f'={prv_date}', '①在庫CSV_2ヶ月前の対象日付から自動取得します。', FILL_AUTO, FMT_DATE),
         ('期間日数', '=IF(OR($C$6="",$C$7=""),"",$C$6-$C$7)', '実績消費/日の算出に使う日数です。', FILL_AUTO, FMT_INT),
         ('算出基準', None,
-         '実績消費＝在庫2時点の差、PI値予測＝来場者予測、規定数＝CSVの規定数、最大値＝実績とPI予測の大きい方。',
+         '実績消費＝在庫2時点の差、PI値予測＝来場者予測、最大値＝実績とPI予測の大きい方。',
          FILL_INPUT, None),
         ('規模区分', f'=IFERROR(INDEX({theater_col("D")},MATCH($C$4,{theater_col("B")},0)),"")',
          '劇場マスタから自動取得します。', FILL_AUTO, None),
-        ('PIプロファイル', f'=IFERROR(INDEX({theater_col("F")},MATCH($C$4,{theater_col("B")},0)),"")',
-         '商品マスタのどのPI値列を使うかを決めます。', FILL_AUTO, None),
-        ('安全在庫日数', const('H', 'D'), '劇場個別の設定があればそちらが優先されます。', FILL_AUTO, FMT_DEC),
-        ('発注サイクル日数', const('I', 'E'), '次回発注までの日数。発注点の算出に使います。', FILL_AUTO, FMT_INT),
-        ('標準来場者数/日', const('G', 'C'), '動員計画が空欄の日に使われる既定値です。', FILL_AUTO, FMT_INT),
+        ('PIプロファイル', f'=IFERROR(INDEX({theater_col("E")},MATCH($C$4,{theater_col("B")},0)),"")',
+         'ドリンクの提供方式です。商品マスタのどのPI値列を使うかが決まります。', FILL_AUTO, None),
+        ('安全在庫日数', const('G', 'D'), '劇場個別の設定があればそちらが優先されます。', FILL_AUTO, FMT_DEC),
+        ('発注サイクル日数', const('H', 'E'), '次回発注までの日数。発注点の算出に使います。', FILL_AUTO, FMT_INT),
+        ('標準来場者数/日', const('F', 'C'), '動員計画が空欄の日に使われる既定値です。', FILL_AUTO, FMT_INT),
         ('季節係数', f'=IF($C$6="",1,IF({special}=0,'
                      f'IFERROR(INDEX({month_col("C")},MONTH($C$6)),1),{special}))',
          '当日基準日が特別期間に該当すればその係数、なければ月別係数です。', FILL_AUTO, '0%'),
@@ -652,8 +682,8 @@ def build_calc(wb):
                        f'IF({Q_SET}!$C$9="PI値予測",N($Q{r}),MAX(N($O{r}),N($Q{r})))))')
         ws[f'T{r}'] = f'=IF(OR($S{r}="",$S{r}<=0),"",$K{r}/$S{r})'
         ws[f'U{r}'] = f'=IF($S{r}="","",ROUNDUP(N($S{r})*{Q_SET}!$C$12,0))'
-        ws[f'V{r}'] = (f'=IF($C{r}="","",IF({Q_SET}!$C$9="規定数",N($R{r}),'
-                       f'ROUNDUP(N($S{r})*(N($I{r})+N({Q_SET}!$C$13))+N($U{r}),0)))')
+        ws[f'V{r}'] = (f'=IF($C{r}="","",'
+                       f'ROUNDUP(N($S{r})*(N($I{r})+N({Q_SET}!$C$13))+N($U{r}),0))')
         ws[f'W{r}'] = (f'=IF($C{r}="","",SUMIFS({po_col("L")},{po_col("C")},{Q_SET}!$C$4,'
                        f'{po_col("F")},$C{r},{po_col("Q")},"発注済"))')
         ws[f'X{r}'] = f'=IF($C{r}="","",MAX(0,N($V{r})-N($K{r})-N($W{r})))'
@@ -856,6 +886,9 @@ def build_timetable(wb):
 
     ws['Z9'] = '発注書用'
     ws['Z9'].font = F_NOTE
+    # デッドラインと発注後日数は帯で見えるので、列としては隠す
+    for letter in ('F', 'H', 'Z'):
+        ws.column_dimensions[letter].hidden = True
     ws.print_area = f'B2:Y{TT_LAST}'
     ws.page_setup.orientation = 'landscape'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -1414,6 +1447,7 @@ def build_dashboard(wb, categories, vendors):
         ('終売候補', f'=COUNTIF({calc_status},"*終売候補*")', '2ヶ月前CSVにあり、当日CSVに無い', C_TEXT3),
         ('マスタ未登録', f'=COUNTIF({calc_status},"*マスタ未登録*")', 'L/T・ロット・PI値が既定値のまま', C_WARN),
         ('在庫マイナス', f'=COUNTIF({calc_status},"*在庫マイナス*")', '納品の未計上などデータ側のずれ', C_CRIT),
+        ('PI値未設定', f'=COUNTIF({calc_status},"*PI値未設定*")', 'PI値予測を使うなら商品マスタに登録が要る', C_TEXT2),
     ]
     for i, (label, formula, note, color) in enumerate(changes):
         r = plan_row + 2 + i * 2
@@ -1477,11 +1511,13 @@ def main():
     build_order_sheet(wb, vendors)
     build_dashboard(wb, categories, vendors)
     build_po(wb)
-    build_csv_sheet(wb, S_CUR, None, '②在庫CSV（当日）',
-                    '今日の在庫一覧CSVです。これが理論値在庫になります。')
-    build_csv_sheet(wb, S_PRV, S_CUR, '①在庫CSV（2ヶ月前）',
-                    '当月を含まない直近2ヶ月前の1日時点の在庫一覧CSVです。'
-                    '当日CSVと突き合わせて、期中に入れ替わった商品も拾います。')
+    build_csv_sheet(wb, S_CUR, None, '今日の在庫を貼る',
+                    '在庫システムから出力した、今日の在庫一覧CSVです。これが理論在庫になります。',
+                    f'CSVの見出し行を除いたデータを、A{CSV_FIRST} セルに貼り付けてください。')
+    build_csv_sheet(wb, S_PRV, S_CUR, '前回の在庫を貼る（月1回）',
+                    '当月を含まない直近2ヶ月前の1日時点の在庫一覧です。'
+                    '今日の在庫と突き合わせて、期間の消費量と商品の入れ替わりを見ます。',
+                    f'月に1回、A{CSV_FIRST} セルに貼り替えてください。')
     build_item_master(wb, items)
     build_const_master(wb)
     build_all_theaters(wb)
