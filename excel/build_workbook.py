@@ -111,20 +111,20 @@ TT_LAST = TT_FIRST + (CALC_LAST - CALC_FIRST)
 TT_DAY_COL = 12                          # L列から14日分のグリッド
 
 # シート名。日々の作業順に番号を振り、上から順にたどれば発注が終わるようにしている。
+# シート名は「何をするか」で付ける。毎日さわる3枚に①②③を振り、
+# たまにしか触らないシートは頻度を名前に書いておく。
 S_INTRO = 'はじめに'
 S_SET = '設定'
-S_PRV = '①在庫CSV_2ヶ月前'
-S_CUR = '②在庫CSV_当日'
-S_PLAN = '③動員計画'
-S_DASH = '④ダッシュボード'
-S_TT = '⑤タイムテーブル'
-S_SHEET = '⑥発注書'
+S_CUR = '①今日の在庫を貼る'
+S_TT = '②発注数を決める'
+S_SHEET = '③発注書'
+S_PRV = '月1回_前回の在庫を貼る'
+S_PLAN = '随時_動員を入れる'
+S_DASH = 'ダッシュボード'
 S_PO = '発注管理'
-S_CALC = '発注計算'
-S_THEATER = '劇場マスタ'
-S_SIZE = '規模マスタ'
-S_SEASON = '季節係数マスタ'
 S_ITEM = '商品マスタ'
+S_CONST = '定数マスタ'
+S_CALC = '発注計算'
 S_ALL = '全劇場サマリ'
 
 # 数式の中では常にシングルクォートで囲む。丸数字などを含む名前でも安全に参照できる。
@@ -137,13 +137,30 @@ Q_TT = f"'{S_TT}'"
 Q_SHEET = f"'{S_SHEET}'"
 Q_PO = f"'{S_PO}'"
 Q_CALC = f"'{S_CALC}'"
-Q_THEATER = f"'{S_THEATER}'"
-Q_SIZE = f"'{S_SIZE}'"
-Q_SEASON = f"'{S_SEASON}'"
+Q_CONST = f"'{S_CONST}'"
 Q_ITEM = f"'{S_ITEM}'"
+Q_THEATER = Q_CONST
 Q_ALL = f"'{S_ALL}'"
 
 PLAN_FIRST, PLAN_LAST = 8, 97            # 動員計画（90日分）
+
+# 定数マスタは1枚に4ブロックを横に並べる。マスタが増えるほど管理が重くなるため、
+# 劇場・規模・月別係数・特別期間をこの1枚に集約している。
+SIZE_COL = {'B': 'L', 'C': 'M', 'D': 'N', 'E': 'O', 'F': 'P'}      # 規模区分ブロック
+MONTH_COL = {'B': 'R', 'C': 'S'}                                    # 月別係数ブロック
+SPECIAL_COL = {'E': 'U', 'F': 'V', 'G': 'W', 'H': 'X'}              # 特別期間ブロック
+
+
+def size_col(letter, first=6, last=8):
+    return col(S_CONST, SIZE_COL[letter], first, last)
+
+
+def month_col(letter, first=6, last=17):
+    return col(S_CONST, MONTH_COL[letter], first, last)
+
+
+def special_col(letter, first=6, last=25):
+    return col(S_CONST, SPECIAL_COL[letter], first, last)
 
 
 def col(sheet, letter, first=None, last=None):
@@ -162,7 +179,7 @@ def item_col(letter):
 
 
 def theater_col(letter):
-    return col(S_THEATER, letter, THEATER_FIRST, THEATER_LAST)
+    return col(S_CONST, letter, THEATER_FIRST, THEATER_LAST)
 
 
 def po_col(letter):
@@ -221,62 +238,72 @@ def add_validation(ws, formula, cells):
 # ---------------------------------------------------------------------------
 
 def build_intro(wb):
+    """
+    はじめに。役割ごとに「あなたがやること」を分けて書く。
+    毎日の担当者が読むのは最初のブロックだけで済むようにしている。
+    """
     ws = wb.create_sheet(S_INTRO)
-    sheet_title(ws, '売店発注ツール（全劇場対応）')
+    sheet_title(ws, '売店発注ツール')
     ws.column_dimensions['B'].width = 4
-    ws.column_dimensions['C'].width = 18
-    ws.column_dimensions['D'].width = 84
+    ws.column_dimensions['C'].width = 22
+    ws.column_dimensions['D'].width = 78
 
     rows = [
-        ('h', '', '結局どこを見て発注するのか'),
-        ('t', '', '毎日の作業は、シート名の丸数字を①から順にたどれば終わります。'),
-        ('t', '', '発注そのものは「⑥発注書」を印刷して送るだけです。'),
+        ('h', '', '毎日やること　これだけです'),
+        ('t', '', 'シートの①②③を左から順にやれば、その日の発注は終わります。'),
+        ('t', '', '黄色いセルだけ入力します。それ以外のセルは触らないでください。'),
         ('', '', ''),
-        ('h', '', '毎日の流れ'),
-        ('s', '①在庫CSV_2ヶ月前', '2ヶ月前の1日時点の在庫一覧CSVを貼る'),
-        ('t', '', '当月を含まない直近2ヶ月前の在庫です。実績消費の起点になります。'),
-        ('t', '', 'ここと②の商品を突き合わせるので、期中に入れ替わった商品も発注漏れになりません。'),
-        ('s', '②在庫CSV_当日', '今日の在庫一覧CSVを貼る'),
-        ('t', '', 'これが理論値在庫です。データ行だけを A2 セルから貼り付けてください。'),
-        ('s', '③動員計画', '来場者の読みを入れる'),
-        ('t', '', '大型作品の公開週など、読みが変わる日だけ入力すれば十分です。'),
-        ('t', '', '空欄の日は劇場の標準来場者数が自動で使われます。'),
-        ('s', '④ダッシュボード', '劇場全体の状況を眺める'),
-        ('t', '', '欠品リスクが何品目あるか、どの分類が危ないかを図で確認します。'),
-        ('s', '⑤タイムテーブル', '発注する数量を決める'),
-        ('t', '', '在庫が何日もつかを帯で見ながら、黄色の「発注数」列に数量を入れます。'),
-        ('t', '', '推奨（ケース）列がそのまま使えるなら、その数字を入れれば済みます。'),
-        ('s', '⑥発注書', 'ここを印刷して発注する ★'),
-        ('t', '', '発注先を選ぶと、その仕入先の明細だけに絞り込まれます。'),
-        ('t', '', '印刷範囲は設定済みなので、そのまま印刷またはPDF化できます。'),
-        ('s', '発注管理', '発注した内容と入荷を記録する'),
-        ('t', '', '入荷日を記録すると、次回の実績消費の計算に使われます。'),
-        ('t', '', '未入荷の分は「発注残」として推奨発注数から自動で差し引かれます。'),
+        ('s', S_CUR, '在庫システムから出した「今日の在庫一覧CSV」を貼る'),
+        ('t', '', '　CSVを開いて、見出し行を除いたデータ部分をコピーし、A2セルに貼り付けます。'),
+        ('t', '', '　貼り付けたら、シート上部の「該当行数」が0以外になっているか見てください。'),
+        ('t', '', '　0のままなら貼り付けに失敗しています。もう一度やり直してください。'),
+        ('s', S_TT, '帯を見ながら、黄色の「発注数」に数字を入れる'),
+        ('t', '', '　帯が赤い商品は、今日発注しないと在庫が切れます。'),
+        ('t', '', '　迷ったら「推奨(ケース)」に出ている数字をそのまま入れて構いません。'),
+        ('t', '', '　数字を入れると帯が伸びます。伸びた先まで在庫が持つ、という意味です。'),
+        ('s', S_SHEET, '発注先を選んで、印刷する'),
+        ('t', '', '　②で入れた数量がここに集まります。発注先を選ぶとその仕入先の分だけになります。'),
+        ('t', '', '　そのまま印刷して、いつもの方法で発注してください。'),
         ('', '', ''),
-        ('h', '', 'はじめに一度だけやること'),
-        ('s', '設定', '対象の劇場を選ぶ'),
-        ('s', '劇場マスタ', '劇場コード・規模区分・ドリンク提供方式を登録する'),
-        ('s', '規模マスタ', '大／中／小それぞれの標準値を実態に合わせる'),
-        ('s', '商品マスタ', 'リードタイム・最低ロット・PI値を登録する'),
-        ('s', '季節係数マスタ', '月別の係数と、繁忙期・閑散期の特別期間を登録する'),
+        ('t', '', '発注したら「発注管理」シートに記録します。入荷したら入荷日も入れてください。'),
         ('', '', ''),
-        ('h', '', '発注数はどう決まるか'),
-        ('t', '', '理論値在庫　　＝ 在庫CSVの「総数」（＝在庫数ケース×入数＋在庫数バラ）'),
-        ('t', '', '期間消費数　　＝ 2ヶ月前の在庫 ＋ 期間の納品数 － 当日の在庫'),
-        ('t', '', '実績消費/日　 ＝ 期間消費数 ÷ 期間日数'),
-        ('t', '', 'PI予測消費/日 ＝ 動員計画の来場者数 × PI値 ÷ 100'),
-        ('t', '', '安全在庫数量　＝ 採用消費/日 × 安全在庫日数'),
-        ('t', '', '発注点　　　　＝ 採用消費/日 ×（リードタイム＋発注サイクル）＋ 安全在庫数量'),
-        ('t', '', '推奨発注数　　＝ 発注点 － 当日の在庫 － 発注残 → 入数で割りロット単位に切り上げ'),
+        ('h', '', '色の意味'),
+        ('t', '', '　黄色のセル … 入力するところ'),
+        ('t', '', '　白・灰色のセル … 自動で計算されるところ（触らない）'),
+        ('t', '', '　赤い帯 … 今日発注しないと間に合わない'),
+        ('t', '', '　オレンジの帯 … 次の発注までに在庫が切れる'),
+        ('t', '', '　緑の帯 … 在庫に余裕がある'),
         ('', '', ''),
-        ('t', '', '「採用消費/日」に実績とPI予測のどちらを使うかは、設定シートで切り替えられます。'),
-        ('t', '', '通常週は実績消費、大作の公開週はPI値予測、という使い分けを想定しています。'),
+        ('h', '', '社員の方がやること'),
+        ('s', S_PRV, '月に1回、2ヶ月前の在庫一覧CSVを貼り替える'),
+        ('t', '', '　今日の在庫と突き合わせて、期間の消費量を出します。'),
+        ('t', '', '　商品が入れ替わっても発注から漏れないよう、両方の商品を見ています。'),
+        ('s', S_PLAN, '大きな作品の公開週など、来場者の読みが変わる日に入力する'),
+        ('t', '', '　空欄の日は劇場の標準来場者数が自動で使われます。毎日入れる必要はありません。'),
+        ('s', S_DASH, '劇場全体の状況を確認する'),
+        ('s', S_ITEM, 'リードタイム・最低ロット・PI値を登録する'),
+        ('s', S_CONST, '劇場・規模区分・季節の係数を決める'),
+        ('t', '', '　人が決める数字はこの1枚に集めてあります。'),
+        ('s', S_SET, '対象の劇場と、発注数の算出基準を選ぶ'),
         ('', '', ''),
-        ('h', '', '気をつけること'),
-        ('t', '', '・黄色のセルだけが入力欄です。それ以外は数式が入っています。'),
-        ('t', '', '・在庫CSVの劇場コードは「0761」のような先頭ゼロ付きの文字列です。'),
-        ('t', '', '　貼り付け後、設定シートの「CSV該当行数」が0のままなら型がずれています。'),
-        ('t', '', '・理論値在庫がマイナスの商品は、納品の未計上など元データ側のずれを示しています。'),
+        ('h', '', '発注数はどう決まっているか'),
+        ('t', '', '　この商品は1日に何個くらい減るか（実績、または来場者予測 × PI値）'),
+        ('t', '', '　　　　　　↓'),
+        ('t', '', '　届くまでの日数と、次に発注するまでの日数のあいだに何個必要か'),
+        ('t', '', '　　　　　　↓'),
+        ('t', '', '　その必要数から、今ある在庫と発注済みの分を引く'),
+        ('t', '', '　　　　　　↓'),
+        ('t', '', '　入数で割って、ケース単位に切り上げる ＝ 推奨発注数'),
+        ('', '', ''),
+        ('t', '', '式で書くと次のとおりです。'),
+        ('t', '', '　安全在庫　＝ 1日あたり消費 × 安全在庫日数'),
+        ('t', '', '　発注点　　＝ 1日あたり消費 ×（リードタイム＋発注サイクル）＋ 安全在庫'),
+        ('t', '', '　推奨発注数 ＝ 発注点 − 今の在庫 − 発注済み未入荷'),
+        ('', '', ''),
+        ('h', '', '困ったとき'),
+        ('t', '', '　・数字が出ない → 設定シートの「該当行数」が0でないか確認'),
+        ('t', '', '　・在庫がマイナス → 納品がシステムに未計上です。現物を数えて確認してください'),
+        ('t', '', '　・「マスタ未登録」と出る → 新商品です。商品マスタに追加してください'),
     ]
     r = 5
     for kind, sheet, text in rows:
@@ -284,9 +311,9 @@ def build_intro(wb):
             c = ws[f'C{r}']
             c.value = sheet
             c.font = Font(name=FONT, size=10, bold=True, color=C_INK)
-            c.fill = FILL_INPUT if sheet == S_SHEET else FILL_HEAD
+            c.fill = FILL_INPUT if sheet in (S_CUR, S_TT, S_SHEET) else FILL_HEAD
             c.border = BORDER
-            c.alignment = Alignment(horizontal='center', vertical='center')
+            c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         cell = ws[f'D{r}']
         cell.value = text
         if kind == 'h':
@@ -300,70 +327,23 @@ def build_intro(wb):
     return ws
 
 
-def build_size_master(wb):
-    ws = wb.create_sheet(S_SIZE)
-    sheet_title(ws, '規模マスタ', '規模区分ごとの標準定数です。劇場マスタで個別に上書きできます。')
-    headers = ['規模区分', '想定来場者数/日', '安全在庫日数', '発注サイクル日数', '備考']
-    put_headers(ws, 5, headers, ['固定', '入力', '入力', '入力', '入力'])
-    rows = [
-        ('大規模', 3000, 4, 7, 'スクリーン数が多く、来場者数の多い劇場'),
-        ('中規模', 1500, 3, 7, '標準的な規模の劇場'),
-        ('小規模', 700, 3, 14, '来場者数が少なく、発注頻度を落とす劇場'),
-    ]
-    for i, row in enumerate(rows):
-        r = 6 + i
-        for j, v in enumerate(row):
-            ws.cell(r, 2 + j, v)
-        style_row(ws, r, 'BCDEF', fill=FILL_INPUT)
-        ws[f'B{r}'].fill = FILL_AUTO
-        ws[f'C{r}'].number_format = FMT_INT
-    for c, w in zip('BCDEF', [12, 18, 14, 18, 44]):
-        ws.column_dimensions[c].width = w
-    return ws
+def build_const_master(wb):
+    """
+    定数マスタ。劇場・規模区分・月別係数・特別期間を1枚に集めている。
+    マスタが分かれるほど「どこを直せばいいか」が分からなくなるため、
+    人が更新する定数はすべてこのシートに置く。
+    """
+    ws = wb.create_sheet(S_CONST)
+    # ブロック見出しは行3に置く。行4は put_headers が「入力／自動」を書く行なので使わない。
+    sheet_title(ws, '定数マスタ')
 
-
-def build_season_master(wb):
-    ws = wb.create_sheet(S_SEASON)
-    sheet_title(ws, '季節係数マスタ',
-                '当日基準日が特別期間に含まれる場合はその係数を、含まれない場合は月別係数を使います。')
-    put_headers(ws, 5, ['月', '係数'], ['固定', '入力'])
-    for i in range(12):
-        r = 6 + i
-        ws.cell(r, 2, i + 1)
-        ws.cell(r, 3, 1.0)
-        style_row(ws, r, 'BC', fill=FILL_INPUT)
-        ws[f'B{r}'].fill = FILL_AUTO
-        ws[f'C{r}'].number_format = '0%'
-
-    put_headers(ws, 5, ['特別期間名', '開始日', '終了日', '係数'],
-                ['入力', '入力', '入力', '入力'], start_col=5)
-    samples = [('年末年始', None, None, 1.3), ('大型作品公開週', None, None, 1.5),
-               ('閑散期', None, None, 0.85)]
-    for i in range(20):
-        r = 6 + i
-        if i < len(samples):
-            ws.cell(r, 5, samples[i][0])
-            ws.cell(r, 8, samples[i][3])
-        style_row(ws, r, 'EFGH', fill=FILL_INPUT)
-        ws[f'F{r}'].number_format = FMT_DATE
-        ws[f'G{r}'].number_format = FMT_DATE
-        ws[f'H{r}'].number_format = '0%'
-    ws['E27'] = '※ 開始日・終了日が空欄の行は無視されます。期間が重なる場合は係数が最大の行が使われます。'
-    ws['E27'].font = F_NOTE
-    for c, w in zip('BCDEFGH', [8, 10, 3, 22, 14, 14, 10]):
-        ws.column_dimensions[c].width = w
-    return ws
-
-
-def build_theater_master(wb):
-    ws = wb.create_sheet(S_THEATER)
-    sheet_title(ws, '劇場マスタ',
-                'PIプロファイルは規模区分と提供方式から自動で決まり、商品マスタのPI値列と対応します。')
+    # ---------- ① 劇場マスタ（B〜J列） ----------
+    ws['B3'] = '① 劇場マスタ　劇場ごとの区分と、標準値を上書きしたいときの欄'
+    ws['B3'].font = F_BOLD
     headers = ['劇場コード', '劇場名', '規模区分', 'ドリンク提供方式', 'PIプロファイル',
-               '想定来場者数/日(個別)', '安全在庫日数(個別)', '発注サイクル(個別)', '備考']
-    kinds = ['入力', '入力', '選択', '選択', '自動', '任意入力', '任意入力', '任意入力', '入力']
+               '来場者数/日(個別)', '安全在庫日数(個別)', '発注サイクル(個別)', '備考']
+    kinds = ['入力', '入力', '選択', '選択', '自動', '任意', '任意', '任意', '入力']
     put_headers(ws, 5, headers, kinds)
-
     for r in range(THEATER_FIRST, THEATER_LAST + 1):
         ws[f'F{r}'] = f'=IF(OR($D{r}="",$E{r}=""),"",$D{r}&"_"&$E{r})'
         style_row(ws, r, 'BCDEGHIJ', fill=FILL_INPUT)
@@ -374,11 +354,63 @@ def build_theater_master(wb):
     ws[f'C{THEATER_FIRST}'] = '新宿'
     ws[f'D{THEATER_FIRST}'] = '大規模'
     ws[f'E{THEATER_FIRST}'] = '1杯売り'
-    ws[f'J{THEATER_FIRST}'] = 'サンプル。実際の規模区分・提供方式に置き換えてください。'
-
+    ws[f'J{THEATER_FIRST}'] = 'サンプル。実際の区分に置き換えてください。'
     add_validation(ws, '"' + ','.join(SIZES) + '"', f'D{THEATER_FIRST}:D{THEATER_LAST}')
     add_validation(ws, '"' + ','.join(DRINK_STYLES) + '"', f'E{THEATER_FIRST}:E{THEATER_LAST}')
-    for c, w in zip('BCDEFGHIJ', [12, 22, 12, 18, 20, 20, 18, 18, 40]):
+
+    # ---------- ② 規模区分の標準値（L〜P列） ----------
+    ws['L3'] = '② 規模区分の標準値　劇場マスタの個別欄が空のときはこの値を使う'
+    ws['L3'].font = F_BOLD
+    put_headers(ws, 5, ['規模区分', '来場者数/日', '安全在庫日数', '発注サイクル', '備考'],
+                ['固定', '入力', '入力', '入力', '入力'], start_col=12)
+    for i, row in enumerate([
+        ('大規模', 3000, 4, 7, 'スクリーン数が多く来場者の多い劇場'),
+        ('中規模', 1500, 3, 7, '標準的な規模の劇場'),
+        ('小規模', 700, 3, 14, '来場者が少なく発注頻度を落とす劇場'),
+    ]):
+        r = 6 + i
+        for j, v in enumerate(row):
+            ws.cell(r, 12 + j, v)
+        style_row(ws, r, 'LMNOP', fill=FILL_INPUT)
+        ws[f'L{r}'].fill = FILL_AUTO
+        ws[f'M{r}'].number_format = FMT_INT
+
+    # ---------- ③ 月別の季節係数（R〜S列） ----------
+    ws['R3'] = '③ 月別の係数'
+    ws['R3'].font = F_BOLD
+    put_headers(ws, 5, ['月', '係数'], ['固定', '入力'], start_col=18)
+    for i in range(12):
+        r = 6 + i
+        ws.cell(r, 18, i + 1)
+        ws.cell(r, 19, 1.0)
+        style_row(ws, r, 'RS', fill=FILL_INPUT)
+        ws[f'R{r}'].fill = FILL_AUTO
+        ws[f'S{r}'].number_format = '0%'
+
+    # ---------- ④ 特別期間（U〜X列） ----------
+    ws['U3'] = '④ 特別期間　この期間は月別の係数より優先される'
+    ws['U3'].font = F_BOLD
+    put_headers(ws, 5, ['期間名', '開始日', '終了日', '係数'],
+                ['入力', '入力', '入力', '入力'], start_col=21)
+    for i in range(20):
+        r = 6 + i
+        style_row(ws, r, 'UVWX', fill=FILL_INPUT)
+        ws[f'V{r}'].number_format = FMT_DATE
+        ws[f'W{r}'].number_format = FMT_DATE
+        ws[f'X{r}'].number_format = '0%'
+    for i, (name, rate) in enumerate([('年末年始', 1.3), ('大型作品公開週', 1.5), ('閑散期', 0.85)]):
+        ws.cell(6 + i, 21, name)
+        ws.cell(6 + i, 24, rate)
+    ws['U27'] = '※ 開始日・終了日が空欄の行は無視されます。期間が重なるときは係数が最大の行を使います。'
+    ws['U27'].font = F_NOTE
+    ws['B29'] = ('人が決める数字はすべてこの1枚にあります。黄色のセルだけ触ってください。'
+                 'マスタを分けるほど「どこを直せばいいか」が分からなくなるため、1枚に集めています。')
+    ws['B29'].font = F_NOTE
+
+    widths = {'B': 12, 'C': 20, 'D': 11, 'E': 17, 'F': 18, 'G': 17, 'H': 18, 'I': 17, 'J': 30,
+              'K': 3, 'L': 11, 'M': 13, 'N': 14, 'O': 14, 'P': 30, 'Q': 3,
+              'R': 6, 'S': 9, 'T': 3, 'U': 20, 'V': 13, 'W': 13, 'X': 9}
+    for c, w in widths.items():
         ws.column_dimensions[c].width = w
     ws.freeze_panes = 'B6'
     return ws
@@ -479,15 +511,15 @@ def build_settings(wb):
                 f'RIGHT(TEXT(INDEX({csv_col(S_CUR, "A")},MATCH($C$4,{csv_col(S_CUR, "B")},0)),"00000000"),2)),"")')
     prv_date = cur_date.replace(S_CUR, S_PRV)
 
-    def const(individual, size_col):
+    def const(individual, std_col):
         """劇場個別の値があればそれを、無ければ規模マスタの標準値を返す。"""
         return (f'=IF($C$4="","",IF(IFERROR(INDEX({theater_col(individual)},'
                 f'MATCH($C$4,{theater_col("B")},0)),"")<>"",'
                 f'INDEX({theater_col(individual)},MATCH($C$4,{theater_col("B")},0)),'
-                f'IFERROR(INDEX({col(S_SIZE, size_col, 6, 8)},MATCH($C$10,{col(S_SIZE, "B", 6, 8)},0)),"")))')
+                f'IFERROR(INDEX({size_col(std_col)},MATCH($C$10,{size_col("B")},0)),"")))')
 
-    special = (f'SUMPRODUCT(MAX(({col(S_SEASON, "F", 6, 25)}<=$C$6)*'
-               f'({col(S_SEASON, "G", 6, 25)}>=$C$6)*{col(S_SEASON, "H", 6, 25)}))')
+    special = (f'SUMPRODUCT(MAX(({special_col("F")}<=$C$6)*'
+               f'({special_col("G")}>=$C$6)*{special_col("H")}))')
 
     rows = [
         ('対象劇場コード', None, '発注計算・ダッシュボードの対象になる劇場です。劇場マスタから選択します。', FILL_INPUT, '@'),
@@ -507,7 +539,7 @@ def build_settings(wb):
         ('発注サイクル日数', const('I', 'E'), '次回発注までの日数。発注点の算出に使います。', FILL_AUTO, FMT_INT),
         ('標準来場者数/日', const('G', 'C'), '動員計画が空欄の日に使われる既定値です。', FILL_AUTO, FMT_INT),
         ('季節係数', f'=IF($C$6="",1,IF({special}=0,'
-                     f'IFERROR(INDEX({col(S_SEASON, "C", 6, 17)},MONTH($C$6)),1),{special}))',
+                     f'IFERROR(INDEX({month_col("C")},MONTH($C$6)),1),{special}))',
          '当日基準日が特別期間に該当すればその係数、なければ月別係数です。', FILL_AUTO, '0%'),
         ('発注担当者', None, '発注書・発注管理に記録する担当者名です。', FILL_INPUT, None),
         ('当日CSV該当行数', f'=COUNTIF({csv_col(S_CUR, "B")},$C$4)',
@@ -863,14 +895,14 @@ def build_plan(wb):
 
     for r in range(PLAN_FIRST, PLAN_LAST + 1):
         offset = r - PLAN_FIRST
-        special = (f'SUMPRODUCT(MAX(({col(S_SEASON, "F", 6, 25)}<=$B{r})*'
-                   f'({col(S_SEASON, "G", 6, 25)}>=$B{r})*{col(S_SEASON, "H", 6, 25)}))')
+        special = (f'SUMPRODUCT(MAX(({special_col("F")}<=$B{r})*'
+                   f'({special_col("G")}>=$B{r})*{special_col("H")}))')
         ws[f'B{r}'] = f'=IF({Q_SET}!$C$6="","",{Q_SET}!$C$6+{offset})'
         # 曜日は環境の言語設定に左右されないよう CHOOSE で組み立てる
         ws[f'C{r}'] = (f'=IF($B{r}="","",'
                        f'CHOOSE(WEEKDAY($B{r}),"日","月","火","水","木","金","土"))')
         ws[f'F{r}'] = (f'=IF($B{r}="","",IF({special}=0,'
-                       f'IFERROR(INDEX({col(S_SEASON, "C", 6, 17)},MONTH($B{r})),1),{special}))')
+                       f'IFERROR(INDEX({month_col("C")},MONTH($B{r})),1),{special}))')
         ws[f'G{r}'] = (f'=IF($B{r}="","",'
                        f'ROUND(IF(ISNUMBER($D{r}),$D{r},N({Q_SET}!$C$14))*N($F{r}),0))')
         # グラフの目盛り用。日付を軸に使うと環境によって目盛りがずれるため文字にする
@@ -1451,22 +1483,22 @@ def main():
                     '当月を含まない直近2ヶ月前の1日時点の在庫一覧CSVです。'
                     '当日CSVと突き合わせて、期中に入れ替わった商品も拾います。')
     build_item_master(wb, items)
-    build_theater_master(wb)
-    build_size_master(wb)
-    build_season_master(wb)
+    build_const_master(wb)
     build_all_theaters(wb)
 
-    # 日々の作業順に並べる。①から順にたどれば発注が終わる
-    order = [S_INTRO, S_SET, S_PRV, S_CUR, S_PLAN, S_DASH, S_TT, S_SHEET,
-             S_PO, S_CALC, S_ITEM, S_THEATER, S_SIZE, S_SEASON, S_ALL]
+    # 毎日の3枚を左に固め、たまに触るもの・管理者向けを右に置く。
+    # 計算だけのシートは非表示にして、触る場所を減らす。
+    order = [S_INTRO, S_CUR, S_TT, S_SHEET, S_PRV, S_PLAN,
+             S_DASH, S_PO, S_ITEM, S_CONST, S_SET, S_CALC, S_ALL]
     wb._sheets = [wb[n] for n in order]
     for ws in wb.worksheets:
         if ws.title == S_SHEET:
             ws.sheet_properties.tabColor = C_CRIT[2:]      # 終着点
-        elif ws.title in (S_PRV, S_CUR, S_PLAN, S_DASH, S_TT):
-            ws.sheet_properties.tabColor = C_BUTTER[2:]    # 毎日さわるシート
+        elif ws.title in (S_CUR, S_TT):
+            ws.sheet_properties.tabColor = C_BUTTER[2:]    # 毎日さわる
         elif ws.title in (S_CALC, S_ALL):
             ws.sheet_properties.tabColor = C_INK[2:]
+            ws.sheet_state = 'hidden'                      # 計算専用。触る必要がない
 
     out.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out)
