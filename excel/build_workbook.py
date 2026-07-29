@@ -149,9 +149,14 @@ PLAN_FIRST, PLAN_LAST = 8, 97            # 動員計画（90日分）
 
 # 定数マスタは1枚に4ブロックを横に並べる。マスタが増えるほど管理が重くなるため、
 # 劇場・規模・月別係数・特別期間をこの1枚に集約している。
-SIZE_COL = {'B': 'L', 'C': 'M', 'D': 'N', 'E': 'O', 'F': 'P'}      # 規模区分ブロック
-MONTH_COL = {'B': 'R', 'C': 'S'}                                    # 月別係数ブロック
-SPECIAL_COL = {'E': 'U', 'F': 'V', 'G': 'W', 'H': 'X'}              # 特別期間ブロック
+SIZE_COL = {'B': 'N', 'C': 'O', 'D': 'P', 'E': 'Q', 'F': 'R'}      # 規模区分ブロック
+MONTH_COL = {'B': 'T', 'C': 'U'}                                    # 月別係数ブロック
+SPECIAL_COL = {'E': 'W', 'F': 'X', 'G': 'Y', 'H': 'Z'}              # 特別期間ブロック
+EQUIP_FIRST, EQUIP_LAST = 34, 233        # ⑤保管設備ブロック（下段）
+PI_FIRST_COL = 12                        # 商品マスタのPI値開始列（L列）
+
+# 保管区分。商品マスタと保管設備の両方で使う共通の区分
+STORAGE_KINDS = ['常温', '冷蔵', '冷凍']
 
 
 def size_col(letter, first=6, last=8):
@@ -164,6 +169,10 @@ def month_col(letter, first=6, last=17):
 
 def special_col(letter, first=6, last=25):
     return col(S_CONST, SPECIAL_COL[letter], first, last)
+
+
+def equip_col(letter):
+    return col(S_CONST, letter, EQUIP_FIRST, EQUIP_LAST)
 
 
 def col(sheet, letter, first=None, last=None):
@@ -264,6 +273,7 @@ def build_intro(wb):
         ('t', '', '　帯が赤い商品は、今日発注しないと在庫が切れます。'),
         ('t', '', '　迷ったら「推奨(ケース)」に出ている数字をそのまま入れて構いません。'),
         ('t', '', '　数字を入れると帯が伸びます。伸びた先まで在庫が持つ、という意味です。'),
+        ('t', '', '　右上に「保管スペースの埋まり具合」が出ます。100%を超えると入りきりません。'),
         ('s', S_SHEET, '発注先を選んで、印刷する'),
         ('t', '', '　②で入れた数量がここに集まります。発注先を選ぶとその仕入先の分だけになります。'),
         ('t', '', '　そのまま印刷して、いつもの方法で発注してください。'),
@@ -285,8 +295,10 @@ def build_intro(wb):
         ('t', '', '　空欄の日は劇場の標準来場者数が自動で使われます。毎日入れる必要はありません。'),
         ('s', S_DASH, '劇場全体の状況を確認する'),
         ('s', S_ITEM, 'リードタイム・最低ロット・PI値を登録する'),
-        ('s', S_CONST, '劇場・規模区分・季節の係数を決める'),
+        ('s', S_CONST, '劇場・規模区分・季節の係数・保管設備を決める'),
         ('t', '', '　人が決める数字はこの1枚に集めてあります。'),
+        ('t', '', '　⑤保管設備に冷蔵庫やストッカーを登録すると、収容ケース数が自動で集計され、'),
+        ('t', '', '　②の「保管スペースの埋まり具合」に反映されます。'),
         ('s', S_SET, '対象の劇場と、発注数の算出基準を選ぶ'),
         ('', '', ''),
         ('h', '', '発注数はどう決まっているか'),
@@ -344,26 +356,34 @@ def build_const_master(wb):
     ws['B3'] = '① 劇場マスタ　劇場ごとの区分と、標準値を上書きしたいときの欄'
     ws['B3'].font = F_BOLD
     headers = ['劇場コード', '劇場名', '規模区分', 'ドリンク提供方式',
-               '来場者数/日(個別)', '安全在庫日数(個別)', '発注サイクル(個別)', '備考']
-    kinds = ['入力', '入力', '選択', '選択', '任意', '任意', '任意', '入力']
+               '来場者数/日(個別)', '安全在庫日数(個別)', '発注サイクル(個別)',
+               '常温 収容ケース', '冷蔵 収容ケース', '冷凍 収容ケース', '備考']
+    kinds = ['入力', '入力', '選択', '選択', '任意', '任意', '任意',
+             '自動', '自動', '自動', '入力']
     put_headers(ws, 5, headers, kinds)
     for r in range(THEATER_FIRST, THEATER_LAST + 1):
-        style_row(ws, r, 'BCDEFGHI', fill=FILL_INPUT)
+        # 収容ケース数は⑤保管設備の合計。設備を足せば自動で増える
+        for letter, kind in zip('IJK', STORAGE_KINDS):
+            ws[f'{letter}{r}'] = (f'=IF($B{r}="","",SUMIFS({equip_col("G")},'
+                                  f'{equip_col("B")},$B{r},{equip_col("C")},"{kind}"))')
+            ws[f'{letter}{r}'].number_format = FMT_INT
+        style_row(ws, r, 'BCDEFGHL', fill=FILL_INPUT)
+        style_row(ws, r, 'IJK', fill=FILL_AUTO)
         ws[f'B{r}'].number_format = '@'
         ws[f'F{r}'].number_format = FMT_INT
     ws[f'B{THEATER_FIRST}'] = '0761'
     ws[f'C{THEATER_FIRST}'] = '新宿'
     ws[f'D{THEATER_FIRST}'] = '大規模'
     ws[f'E{THEATER_FIRST}'] = '1杯売り'
-    ws[f'I{THEATER_FIRST}'] = 'サンプル。実際の区分に置き換えてください。'
+    ws[f'L{THEATER_FIRST}'] = 'サンプル。実際の区分に置き換えてください。'
     add_validation(ws, '"' + ','.join(SIZES) + '"', f'D{THEATER_FIRST}:D{THEATER_LAST}')
     add_validation(ws, '"' + ','.join(DRINK_STYLES) + '"', f'E{THEATER_FIRST}:E{THEATER_LAST}')
 
     # ---------- ② 規模区分の標準値（L〜P列） ----------
-    ws['L3'] = '② 規模区分の標準値　劇場マスタの個別欄が空のときはこの値を使う'
-    ws['L3'].font = F_BOLD
+    ws['N3'] = '② 規模区分の標準値　劇場マスタの個別欄が空のときはこの値を使う'
+    ws['N3'].font = F_BOLD
     put_headers(ws, 5, ['規模区分', '来場者数/日', '安全在庫日数', '発注サイクル', '備考'],
-                ['固定', '入力', '入力', '入力', '入力'], start_col=12)
+                ['固定', '入力', '入力', '入力', '入力'], start_col=14)
     for i, row in enumerate([
         ('大規模', 3000, 4, 7, 'スクリーン数が多く来場者の多い劇場'),
         ('中規模', 1500, 3, 7, '標準的な規模の劇場'),
@@ -371,39 +391,58 @@ def build_const_master(wb):
     ]):
         r = 6 + i
         for j, v in enumerate(row):
-            ws.cell(r, 12 + j, v)
-        style_row(ws, r, 'LMNOP', fill=FILL_INPUT)
-        ws[f'L{r}'].fill = FILL_AUTO
-        ws[f'M{r}'].number_format = FMT_INT
+            ws.cell(r, 14 + j, v)
+        style_row(ws, r, 'NOPQR', fill=FILL_INPUT)
+        ws[f'N{r}'].fill = FILL_AUTO
+        ws[f'O{r}'].number_format = FMT_INT
 
     # ---------- ③ 月別の季節係数（R〜S列） ----------
-    ws['R3'] = '③ 月別の係数'
-    ws['R3'].font = F_BOLD
-    put_headers(ws, 5, ['月', '係数'], ['固定', '入力'], start_col=18)
+    ws['T3'] = '③ 月別の係数'
+    ws['T3'].font = F_BOLD
+    put_headers(ws, 5, ['月', '係数'], ['固定', '入力'], start_col=20)
     for i in range(12):
         r = 6 + i
-        ws.cell(r, 18, i + 1)
-        ws.cell(r, 19, 1.0)
-        style_row(ws, r, 'RS', fill=FILL_INPUT)
-        ws[f'R{r}'].fill = FILL_AUTO
-        ws[f'S{r}'].number_format = '0%'
+        ws.cell(r, 20, i + 1)
+        ws.cell(r, 21, 1.0)
+        style_row(ws, r, 'TU', fill=FILL_INPUT)
+        ws[f'T{r}'].fill = FILL_AUTO
+        ws[f'U{r}'].number_format = '0%'
 
     # ---------- ④ 特別期間（U〜X列） ----------
-    ws['U3'] = '④ 特別期間　この期間は月別の係数より優先される'
-    ws['U3'].font = F_BOLD
+    ws['W3'] = '④ 特別期間　この期間は月別の係数より優先される'
+    ws['W3'].font = F_BOLD
     put_headers(ws, 5, ['期間名', '開始日', '終了日', '係数'],
-                ['入力', '入力', '入力', '入力'], start_col=21)
+                ['入力', '入力', '入力', '入力'], start_col=23)
     for i in range(20):
         r = 6 + i
-        style_row(ws, r, 'UVWX', fill=FILL_INPUT)
-        ws[f'V{r}'].number_format = FMT_DATE
-        ws[f'W{r}'].number_format = FMT_DATE
-        ws[f'X{r}'].number_format = '0%'
+        style_row(ws, r, 'WXYZ', fill=FILL_INPUT)
+        ws[f'X{r}'].number_format = FMT_DATE
+        ws[f'Y{r}'].number_format = FMT_DATE
+        ws[f'Z{r}'].number_format = '0%'
     for i, (name, rate) in enumerate([('年末年始', 1.3), ('大型作品公開週', 1.5), ('閑散期', 0.85)]):
-        ws.cell(6 + i, 21, name)
-        ws.cell(6 + i, 24, rate)
-    ws['U27'] = '※ 開始日・終了日が空欄の行は無視されます。期間が重なるときは係数が最大の行を使います。'
-    ws['U27'].font = F_NOTE
+        ws.cell(6 + i, 23, name)
+        ws.cell(6 + i, 26, rate)
+    ws['W27'] = '※ 開始日・終了日が空欄の行は無視されます。期間が重なるときは係数が最大の行を使います。'
+    ws['W27'].font = F_NOTE
+    # ---------- ⑤ 保管設備（下段） ----------
+    ws[f'B{EQUIP_FIRST - 3}'] = ('⑤ 保管設備　冷蔵庫・ストッカーなど。'
+                                 'ここの合計が①の「収容ケース数」になり、発注量の上限判定に使われます')
+    ws[f'B{EQUIP_FIRST - 3}'].font = F_BOLD
+    put_headers(ws, EQUIP_FIRST - 1,
+                ['劇場コード', '保管区分', '設備名', '台数', '1台あたり収容ケース', '小計', '備考'],
+                ['入力', '選択', '入力', '入力', '入力', '自動', '入力'])
+    for r in range(EQUIP_FIRST, EQUIP_LAST + 1):
+        ws[f'G{r}'] = f'=IF($B{r}="","",N($E{r})*N($F{r}))'
+        style_row(ws, r, 'BCDEFH', fill=FILL_INPUT)
+        style_row(ws, r, 'G', fill=FILL_AUTO)
+        ws[f'B{r}'].number_format = '@'
+        for letter in 'EFG':
+            ws[f'{letter}{r}'].number_format = FMT_INT
+    add_validation(ws, '"' + ','.join(STORAGE_KINDS) + '"', f'C{EQUIP_FIRST}:C{EQUIP_LAST}')
+    ws[f'B{EQUIP_LAST + 2}'] = ('※ 1台あたりの収容ケース数は、実際に積める数を入れてください。'
+                               'メーカー公称の容量ではなく、運用上の目安で構いません。')
+    ws[f'B{EQUIP_LAST + 2}'].font = F_NOTE
+
     ws['B29'] = ('人が決める数字はすべてこの1枚にあります。黄色のセルだけ触ってください。'
                  'マスタを分けるほど「どこを直せばいいか」が分からなくなるため、1枚に集めています。')
     ws['B29'].font = F_NOTE
@@ -422,9 +461,9 @@ def build_item_master(wb, items):
     sheet_title(ws, '商品マスタ',
                 'PI値は来場者100人あたりの消費数です。取り扱いのないプロファイルは空欄のままで構いません。')
     headers = ['商品コード', '商品名', '商品分類名', '支払先名', '入数', '税抜単価',
-               'L/T日数', '最低ロット', '発注単位'] + [f'PI値 {p}' for p in PROFILES] + ['備考']
-    kinds = ['入力', '入力', '入力', '入力', '入力', '入力', '入力', '入力', '入力'] + \
-            ['入力'] * len(PROFILES) + ['入力']
+               'L/T日数', '最低ロット', '発注単位', '保管区分'] + \
+              [f'PI値 {p}' for p in PROFILES] + ['備考']
+    kinds = ['入力'] * 10 + ['入力'] * len(PROFILES) + ['入力']
     put_headers(ws, 5, headers, kinds)
 
     last_col_idx = 2 + len(headers) - 1
@@ -435,7 +474,7 @@ def build_item_master(wb, items):
         ws[f'F{r}'].number_format = FMT_INT
         ws[f'G{r}'].number_format = FMT_YEN
         for i in range(len(PROFILES)):
-            ws.cell(r, 11 + i).number_format = FMT_DEC
+            ws.cell(r, PI_FIRST_COL + i).number_format = FMT_DEC
 
     for i, it in enumerate(items):
         r = MASTER_FIRST + i
@@ -450,10 +489,13 @@ def build_item_master(wb, items):
         ws[f'H{r}'] = 3
         ws[f'I{r}'] = 1
         ws[f'J{r}'] = 'ケース'
+        ws[f'K{r}'] = '常温'
 
-    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10] + [14] * len(PROFILES) + [24]
+    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 10] + [14] * len(PROFILES) + [24]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
+    add_validation(ws, '"' + ','.join(STORAGE_KINDS) + '"',
+                   f'K{MASTER_FIRST}:K{MASTER_LAST}')
     ws.freeze_panes = 'D6'
     return ws
 
@@ -617,7 +659,7 @@ def build_calc(wb):
                'L/T日数', '最低ロット', '当日理論在庫', '前回理論在庫', '期間納品数', '期間消費数',
                '実績消費/日', 'PI値', 'PI予測消費/日', '規定数', '採用消費/日', '在庫日数',
                '安全在庫数量', '発注点', '発注残', '推奨発注数(バラ)', '推奨発注数(ケース)',
-               '発注要否', '在庫金額', '状態', '推奨発注金額']
+               '発注要否', '在庫金額', '状態', '推奨発注金額', '保管区分', '在庫ケース数']
     kinds = ['自動'] * len(headers)
     put_headers(ws, 5, headers, kinds)
 
@@ -664,11 +706,14 @@ def build_calc(wb):
                        f'MAX(0,$N{r})/{Q_SET}!$C$8)')
         # PI値: 商品を縦、PIプロファイルを横に検索する。
         # 列見出しは「PI値 <プロファイル名>」なので、検索値も同じ形に組み立てる。
-        ws[f'P{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({col(S_ITEM, "K", MASTER_FIRST, MASTER_LAST)}:'
-                       f'${get_column_letter(10 + len(PROFILES))}${MASTER_LAST},'
+        pi_first = get_column_letter(PI_FIRST_COL)
+        pi_last = get_column_letter(PI_FIRST_COL + len(PROFILES) - 1)
+        ws[f'P{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX('
+                       f'{col(S_ITEM, pi_first, MASTER_FIRST, MASTER_LAST)}:'
+                       f'${pi_last}${MASTER_LAST},'
                        f'MATCH($C{r},{item_col("B")},0),'
                        f'MATCH("PI値 "&{Q_SET}!$C$11,'
-                       f'{Q_ITEM}!$K$5:${get_column_letter(10 + len(PROFILES))}$5,0)),""))')
+                       f'{Q_ITEM}!${pi_first}$5:${pi_last}$5,0)),""))')
         # カバー期間（リードタイム＋発注サイクル）の動員合計から1日あたりを出す
         cover = f'(N($I{r})+N({Q_SET}!$C$13))'
         plan_sum = (f'SUMIFS({col(S_PLAN, "G", PLAN_FIRST, PLAN_LAST)},'
@@ -701,6 +746,11 @@ def build_calc(wb):
         # 集計用（空文字を含まない数値列にしておき、ダッシュボードから合計する）
         ws[f'AC{r}'] = f'=N($Y{r})*N($H{r})'
         ws[f'AC{r}'].number_format = FMT_YEN
+        # 保管スペースの判定に使う。ケース単位に丸めた在庫量
+        ws[f'AD{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("K")},'
+                       f'MATCH($C{r},{item_col("B")},0)),"常温"))')
+        ws[f'AE{r}'] = f'=IF($C{r}="","",MAX(0,ROUNDUP(N($K{r})/MAX(1,N($G{r})),0)))'
+        ws[f'AE{r}'].number_format = FMT_INT
 
         style_row(ws, r, letters, fill=FILL_AUTO)
         for c in 'KLMNRUVWX':
@@ -722,11 +772,23 @@ def build_calc(wb):
         CellIsRule(operator='lessThan', formula=['0'], fill=FILL_ALERT))
 
     widths = [5, 16, 30, 16, 22, 8, 11, 9, 10, 13, 13, 12, 12, 12, 9, 14, 10, 12,
-              11, 13, 11, 10, 15, 17, 10, 13, 26, 15]
+              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     ws.freeze_panes = 'D6'
     return ws
+
+
+def block_cell(ws, cell_range, value, font, fill, align='center'):
+    """結合セルに値とスタイルを入れる。ダッシュボードと同じ組み方。"""
+    ws.merge_cells(cell_range)
+    c = ws[cell_range.split(':')[0]]
+    c.value = value
+    c.font = font
+    c.fill = fill
+    c.alignment = Alignment(horizontal=align, vertical='center')
+    c.border = BORDER
+    return c
 
 
 def build_timetable(wb):
@@ -762,13 +824,47 @@ def build_timetable(wb):
                 f'"日）内に在庫が切れます。")')
     ws['B7'].font = Font(name=FONT, size=10, color=C_TEXT2)
 
-    ws['I4'] = '発注予定額（税抜）'
-    ws['I4'].font = F_NOTE
-    ws['I4'].alignment = Alignment(horizontal='right')
-    ws['I5'] = f'=SUM({amount_col})'
-    ws['I5'].font = Font(name=FONT, size=16, bold=True, color=C_INK)
-    ws['I5'].number_format = FMT_YEN
-    ws['I5'].alignment = Alignment(horizontal='right', vertical='center')
+    # 保管スペースの埋まり具合。発注しながら「入りきるか」が見える
+    ws['L4'] = '保管スペースの埋まり具合（今の在庫＋発注ぶん ÷ 収容ケース数）'
+    ws['L4'].font = F_NOTE
+    calc_kind = col(S_CALC, 'AD', CALC_FIRST, CALC_LAST)
+    calc_case = col(S_CALC, 'AE', CALC_FIRST, CALC_LAST)
+    tt_qty = col(S_TT, 'J', TT_FIRST, TT_LAST)
+    for i, (kind, cap_col) in enumerate(zip(STORAGE_KINDS, 'IJK')):
+        left = get_column_letter(12 + i * 4)
+        right = get_column_letter(15 + i * 4)
+        cap = (f'IFERROR(INDEX({theater_col(cap_col)},'
+               f'MATCH({Q_SET}!$C$4,{theater_col("B")},0)),0)')
+        used = (f'(SUMIF({calc_kind},"{kind}",{calc_case})'
+                f'+SUMIF({calc_kind},"{kind}",{tt_qty}))')
+        head = block_cell(ws, f'{left}5:{right}5', kind,
+                          Font(name=FONT, size=10, bold=True, color=C_TEXT2), FILL_HEAD)
+        rate = block_cell(ws, f'{left}6:{right}6',
+                          f'=IF({cap}=0,"収容未設定",{used}/{cap})',
+                          Font(name=FONT, size=14, bold=True, color=C_INK), FILL_AUTO)
+        rate.number_format = '0%'
+        block_cell(ws, f'{left}7:{right}7',
+                   f'=IF({cap}=0,"定数マスタ⑤に設備を登録してください",'
+                   f'{used}&" / "&{cap}&"ケース")',
+                   F_NOTE, FILL_AUTO)
+        ws.conditional_formatting.add(
+            f'{left}6', CellIsRule(operator='greaterThan', formula=['1'],
+                                   fill=PatternFill('solid', bgColor=C_CRIT_SOFT),
+                                   font=Font(name=FONT, size=14, bold=True, color=C_CRIT)))
+        ws.conditional_formatting.add(
+            f'{left}6', CellIsRule(operator='greaterThan', formula=['0.85'],
+                                   fill=PatternFill('solid', bgColor=C_WARN_SOFT),
+                                   font=Font(name=FONT, size=14, bold=True, color=C_WARN)))
+
+    ws.merge_cells('G4:K4')
+    ws['G4'] = '発注予定額（税抜）'
+    ws['G4'].font = F_NOTE
+    ws['G4'].alignment = Alignment(horizontal='right')
+    ws.merge_cells('G5:K5')
+    ws['G5'] = f'=SUM({amount_col})'
+    ws['G5'].font = Font(name=FONT, size=16, bold=True, color=C_INK)
+    ws['G5'].number_format = FMT_YEN
+    ws['G5'].alignment = Alignment(horizontal='right', vertical='center')
 
     # ---- 見出し ----
     headers = ['No', '商品名', '分類', '残り日数', 'デッドライン', '状態', '発注後日数',
