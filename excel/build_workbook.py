@@ -161,6 +161,10 @@ CYCLE_FIRST, CYCLE_LAST = 6, 15
 CYCLE_NAME, CYCLE_CNT, CYCLE_DAYS, CYCLE_TODAY, CYCLE_NOTE = 'AB', 'AJ', 'AK', 'AL', 'AM'
 CYCLE_DAY1 = 29                          # AC列＝月曜。WEEKDAY(日付,2) の 1〜7 と並びが揃う
 WEEKDAY_COLS = [get_column_letter(CYCLE_DAY1 + i) for i in range(7)]
+# 「次にこのグループを発注できる日」を求める補助列。AN〜AT が0〜6日先の判定
+CYCLE_OFF1 = 40                          # AN列
+CYCLE_WAIT, CYCLE_NEXT = 'AU', 'AV'      # 次の発注日までの日数／次の発注日
+CYCLE_LBL_NOW, CYCLE_LBL_WAIT = 'AW', 'AX'   # 帯に出す文言
 
 # 商品グループごとの発注サイクル。TOHOシネマズの実際の頻度を初期値にしてある
 ORDER_GROUPS = [
@@ -263,6 +267,11 @@ def seed_size(screens, seats):
     if (screens or 0) and screens <= 7:
         return '小規模'
     return '中規模'
+
+
+def weekday_jp(date_expr):
+    """日付式から曜日の文字を組み立てる。書式コード aaa は環境依存で使えない。"""
+    return f'CHOOSE(WEEKDAY({date_expr}),"日","月","火","水","木","金","土")'
 
 
 def size_col(letter, first=6, last=8):
@@ -380,6 +389,8 @@ def build_intro(wb):
         ('t', '', '　貼り付けたら、シート上部の「該当行数」が0以外になっているか見てください。'),
         ('t', '', '　0のままなら貼り付けに失敗しています。もう一度やり直してください。'),
         ('s', S_TT, '帯を見ながら、黄色の「発注数」に数字を入れる'),
+        ('t', '', '　いちばん上に「今日どのグループを発注できるか」が出ます。まずそこを見てください。'),
+        ('t', '', '　発注グループが薄いグレーの行は、今日が発注日ではない商品です。'),
         ('t', '', '　帯が赤い商品は、今日発注しないと在庫が切れます。'),
         ('t', '', '　迷ったら「推奨(ケース)」に出ている数字をそのまま入れて構いません。'),
         ('t', '', '　数字を入れると帯が伸びます。伸びた先まで在庫が持つ、という意味です。'),
@@ -907,6 +918,35 @@ def build_const_master(wb):
         'サイクル日数（＝7÷週の回数）が発注点の計算に使われます。')
     ws[f'{CYCLE_NAME}{CYCLE_LAST + 2}'].font = F_NOTE
 
+    # 「次にこのグループを発注できるのはいつか」を求める補助列（AN〜AX）。
+    # 基準日から0〜6日先を順に見て、○の付いた最初の曜日までの日数を取る。
+    # ②発注数を決めるシートの見出し帯が、ここの結果を文章にして表示する。
+    for r in range(CYCLE_FIRST, CYCLE_LAST + 1):
+        for k in range(7):
+            letter = get_column_letter(CYCLE_OFF1 + k)
+            ws[f'{letter}{r}'] = (
+                f'=IF(OR(${CYCLE_NAME}{r}="",{Q_SET}!$C$6=""),99,'
+                f'IF(INDEX(${d_first}{r}:${d_last}{r},'
+                f'WEEKDAY({Q_SET}!$C$6+{k},2))="○",{k},99))')
+        off_first = get_column_letter(CYCLE_OFF1)
+        off_last = get_column_letter(CYCLE_OFF1 + 6)
+        ws[f'{CYCLE_WAIT}{r}'] = (f'=IF(${CYCLE_NAME}{r}="","",'
+                                  f'MIN(${off_first}{r}:${off_last}{r}))')
+        ws[f'{CYCLE_NEXT}{r}'] = (f'=IF(OR(${CYCLE_NAME}{r}="",N(${CYCLE_WAIT}{r})>=99),"",'
+                                  f'{Q_SET}!$C$6+${CYCLE_WAIT}{r})')
+        ws[f'{CYCLE_NEXT}{r}'].number_format = FMT_DATE
+        # 今日発注できるグループ／待ちのグループを、そのまま文章に使える形で持つ
+        ws[f'{CYCLE_LBL_NOW}{r}'] = (f'=IF(AND(${CYCLE_NAME}{r}<>"",N(${CYCLE_WAIT}{r})=0),'
+                                     f'${CYCLE_NAME}{r},"")')
+        ws[f'{CYCLE_LBL_WAIT}{r}'] = (
+            f'=IF(OR(${CYCLE_NAME}{r}="",N(${CYCLE_WAIT}{r})=0,N(${CYCLE_WAIT}{r})>=99),"",'
+            f'${CYCLE_NAME}{r}&" は "&TEXT(${CYCLE_NEXT}{r},"m/d")&"（"&'
+            f'{weekday_jp(f"${CYCLE_NEXT}{r}")}&"）から")')
+        for letter in (CYCLE_WAIT, CYCLE_NEXT, CYCLE_LBL_NOW, CYCLE_LBL_WAIT):
+            ws[f'{letter}{r}'].font = F_NOTE
+    put_headers(ws, CYCLE_FIRST - 1, ['次の発注日まで', '次の発注日', '今日', '待ち'],
+                ['自動'] * 4, start_col=CYCLE_OFF1 + 7)
+
     # 注記は劇場ブロック（6〜105行）の外に置く。中に書くと劇場を1つ潰してしまう
     ws[f'B{THEATER_LAST + 4}'] = (
         '人が決める数字はすべてこの1枚にあります。黄色のセルだけ触ってください。'
@@ -1286,7 +1326,7 @@ def build_timetable(wb):
     """
     ws = wb.create_sheet(S_TT)
     ws.sheet_view.showGridLines = False
-    ws['B2'] = 'タイムテーブル'
+    ws['B2'] = '発注数を決める'
     ws['B2'].font = F_TITLE
 
     state_col = col(S_TT, 'G', TT_FIRST, TT_LAST)
@@ -1303,12 +1343,34 @@ def build_timetable(wb):
     ws['D5'] = '品目に発注が必要です'
     ws['D5'].font = F_HERO_UNIT
     ws['D5'].alignment = Alignment(horizontal='left', vertical='center')
-    ws['B7'] = (f'=IF($B$5=0,"すべての商品が発注サイクルを越える在庫を持っています。",'
+    ws['B7'] = (f'=IF($B$5=0,"すべての商品が次の発注日を越える在庫を持っています。",'
                 f'"うち "&COUNTIF({state_col},"今日が期限")&'
                 f'"品目は今日発注しないとリードタイムに間に合いません。 "&'
-                f'COUNTIF({state_col},"要発注")&"品目は次の発注サイクル（"&{Q_SET}!$C$13&'
-                f'"日）内に在庫が切れます。")')
+                f'COUNTIF({state_col},"要発注")&"品目は次の発注日までに在庫が切れます。")')
     ws['B7'].font = Font(name=FONT, size=10, color=C_TEXT2)
+
+    # ---- 今日はどのグループを発注する日か ----
+    # 冷凍は月水金、包材は木曜だけ、というように便が違う。
+    # 「今日そもそも発注できるのか」が分からないと現場が迷うため、いちばん上に出す。
+    now_col = col(S_CONST, CYCLE_LBL_NOW, CYCLE_FIRST, CYCLE_LAST)
+    wait_col = col(S_CONST, CYCLE_LBL_WAIT, CYCLE_FIRST, CYCLE_LAST)
+    joined_now = f'_xlfn.TEXTJOIN("・",TRUE,{now_col})'
+    ws.merge_cells('D2:Y2')
+    ws['D2'] = (f'=IF({Q_SET}!$C$6="","在庫CSVを貼ると、今日の発注対象がここに出ます。",'
+                f'IF({joined_now}="",'
+                f'"今日 "&TEXT({Q_SET}!$C$6,"m/d")&"（"&{weekday_jp(f"{Q_SET}!$C$6")}&'
+                f'"）は、どのグループも発注日ではありません。",'
+                f'"今日 "&TEXT({Q_SET}!$C$6,"m/d")&"（"&{weekday_jp(f"{Q_SET}!$C$6")}&'
+                f'"）に発注できるのは　"&{joined_now}))')
+    ws['D2'].font = Font(name=FONT, size=12, bold=True, color=C_INK)
+    ws['D2'].alignment = Alignment(horizontal='left', vertical='center')
+    ws.merge_cells('D3:Y3')
+    ws['D3'] = (f'=IF({Q_SET}!$C$6="","",'
+                f'IF(_xlfn.TEXTJOIN("　",TRUE,{wait_col})="","",'
+                f'"次に発注できる日　"&_xlfn.TEXTJOIN("　／　",TRUE,{wait_col})))')
+    ws['D3'].font = F_NOTE
+    ws['D3'].alignment = Alignment(horizontal='left', vertical='center')
+    ws.row_dimensions[2].height = 20
 
     # 保管スペースの埋まり具合。発注しながら「入りきるか」が見える
     ws['L4'] = '保管スペースの埋まり具合（今の在庫＋発注ぶん ÷ 収容ケース数）'
@@ -1353,7 +1415,7 @@ def build_timetable(wb):
     ws['G5'].alignment = Alignment(horizontal='right', vertical='center')
 
     # ---- 見出し ----
-    headers = ['No', '商品名', '分類', '残り日数', 'デッドライン', '状態', '発注後日数',
+    headers = ['No', '商品名', '発注グループ', '残り日数', 'デッドライン', '状態', '発注後日数',
                '推奨(ケース)', '発注数', '金額']
     kinds = ['自動', '自動', '自動', '自動', '自動', '自動', '自動', '自動', '入力', '自動']
     put_headers(ws, 9, headers, kinds)
@@ -1381,7 +1443,8 @@ def build_timetable(wb):
         c = CALC_FIRST + (r - TT_FIRST)
         ws[f'B{r}'] = r - TT_FIRST + 1
         ws[f'C{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$D{c})'
-        ws[f'D{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$E{c})'
+        # 分類より「どの便で発注する商品か」のほうが現場の判断に効く
+        ws[f'D{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$AF{c})'
         ws[f'E{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$T{c})'
         ws[f'F{r}'] = f'=IF(ISNUMBER($E{r}),$E{r}-N({Q_CALC}!$I{c}),"")'
         ws[f'G{r}'] = (f'=IF({Q_CALC}!$C{c}="","",IF(NOT(ISNUMBER($F{r})),"データなし",'
@@ -1438,6 +1501,18 @@ def build_timetable(wb):
     ws.conditional_formatting.add(band, rule(
         f'AND(ISNUMBER($H{TT_FIRST}),{day_ref}>N($E{TT_FIRST}),{day_ref}<=$H{TT_FIRST})', C_BUTTER))
 
+    # 今日が発注日でないグループは、発注グループ列を薄くして「今日は入れられない」と分かるようにする。
+    # 行ごと消さないのは、切れそうなのに次の便まで待つしかない商品こそ気づいてほしいため。
+    ws.conditional_formatting.add(
+        f'D{TT_FIRST}:D{TT_LAST}',
+        FormulaRule(formula=[f'AND($D{TT_FIRST}<>"",COUNTIF({now_col},$D{TT_FIRST})=0)'],
+                    font=Font(name=FONT, size=10, color=C_TEXT3),
+                    fill=PatternFill('solid', bgColor='FFF4F1EA'), stopIfTrue=True))
+    ws.conditional_formatting.add(
+        f'D{TT_FIRST}:D{TT_LAST}',
+        FormulaRule(formula=[f'$D{TT_FIRST}<>""'],
+                    font=Font(name=FONT, size=10, bold=True, color=C_INK), stopIfTrue=True))
+
     # 状態列は色だけに頼らず、文字でも読めるようにする
     for text, fill, font_color in (('今日が期限', C_CRIT_SOFT, C_CRIT),
                                    ('要発注', C_WARN_SOFT, C_WARN),
@@ -1466,6 +1541,11 @@ def build_timetable(wb):
     axis.font = F_NOTE
     ws.cell(legend_row + len(legend) + 3, 12,
             '発注数を入れると、伸びた分がバター色で帯の先に足されます。').font = F_NOTE
+    ws.cell(legend_row + len(legend) + 4, 12,
+            '発注グループが薄いグレーの行は、今日が発注日ではない商品です'
+            '（次に発注できる日は画面上部に出ています）。'
+            '赤い帯なのにグレーの行は、次の便まで在庫が持たないということなので、'
+            '早めに支配人へ相談してください。').font = F_NOTE
 
     ws['Z9'] = '発注書用'
     ws['Z9'].font = F_NOTE
@@ -1776,7 +1856,9 @@ def build_dashboard(wb, categories, vendors):
 
     tt_state = col(S_TT, 'G', TT_FIRST, TT_LAST)
     tt_days = col(S_TT, 'E', TT_FIRST, TT_LAST)
-    tt_cat = col(S_TT, 'D', TT_FIRST, TT_LAST)
+    # ②のD列は発注グループに変えたので、分類別の集計は発注計算から直接引く。
+    # 行数が同じ（400行）なので、シートをまたいでもCOUNTIFSで突き合わせられる。
+    tt_cat = col(S_CALC, 'E', CALC_FIRST, CALC_LAST)
     calc_vendor = col(S_CALC, 'F', CALC_FIRST, CALC_LAST)
     calc_amount = col(S_CALC, 'AC', CALC_FIRST, CALC_LAST)
     calc_stock = col(S_CALC, 'AA', CALC_FIRST, CALC_LAST)
