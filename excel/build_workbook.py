@@ -117,6 +117,7 @@ TT_DAY_COL = 12                          # L列から14日分のグリッド
 # シート名は「何をするか」で付ける。毎日さわる3枚に①②③を振り、
 # たまにしか触らないシートは頻度を名前に書いておく。
 S_INTRO = 'はじめに'
+S_MECH = '発注のしくみ'
 S_SET = '設定（最初に1回）'
 S_CUR = '①今日の在庫を貼る'
 S_TT = '②発注数を決める'
@@ -152,8 +153,18 @@ PLAN_FIRST, PLAN_LAST = 8, 97            # 動員計画（90日分）
 SIZE_COL = {'B': 'N', 'C': 'O', 'D': 'P', 'E': 'Q', 'F': 'R'}      # 規模区分ブロック
 MONTH_COL = {'B': 'T', 'C': 'U'}                                    # 月別係数ブロック
 SPECIAL_COL = {'E': 'W', 'F': 'X', 'G': 'Y', 'H': 'Z'}              # 特別期間ブロック
-EQUIP_FIRST, EQUIP_LAST = 34, 233        # ⑤保管設備ブロック（下段）
-PI_FIRST_COL = 12                        # 商品マスタのPI値開始列（L列）
+EQUIP_FIRST, EQUIP_LAST = 110, 309       # ⑤保管設備（劇場ブロックの下）
+PI_FIRST_COL = 13                        # 商品マスタのPI値開始列（M列）
+CYCLE_FIRST, CYCLE_LAST = 110, 119       # ⑥発注サイクル（⑤の右）
+WEEKDAY_COLS = 'KLMNOPQ'                 # 月〜日。WEEKDAY(日付,2) の 1〜7 と並びが揃う
+
+# 商品グループごとの発注サイクル。TOHOシネマズの実際の頻度を初期値にしてある
+ORDER_GROUPS = [
+    ('冷凍品', '月水金', ('月', '水', '金'), '週3回。曜日は融通が利く'),
+    ('ドリンクシロップ', '月水金', ('月', '水', '金'), '週3回'),
+    ('常温包材', '木', ('木',), '毎週木曜の1回のみ'),
+    ('その他常温', '木', ('木',), '包材と同じ便で受ける'),
+]
 
 # 保管区分。商品マスタと保管設備の両方で使う共通の区分
 STORAGE_KINDS = ['常温', '冷蔵', '冷凍']
@@ -173,6 +184,10 @@ def special_col(letter, first=6, last=25):
 
 def equip_col(letter):
     return col(S_CONST, letter, EQUIP_FIRST, EQUIP_LAST)
+
+
+def cycle_col(letter):
+    return col(S_CONST, letter, CYCLE_FIRST, CYCLE_LAST)
 
 
 def col(sheet, letter, first=None, last=None):
@@ -280,6 +295,9 @@ def build_intro(wb):
         ('', '', ''),
         ('t', '', '発注したら「発注管理」シートに記録します。入荷したら入荷日も入れてください。'),
         ('', '', ''),
+        ('s', S_MECH, '「何を計算しているのか」を図で見る（最初に1回だけ読めば十分です）'),
+        ('t', '', '　定数がどこにあるか、そこから発注数がどう出るかを1枚にまとめてあります。'),
+        ('', '', ''),
         ('h', '', '色の意味'),
         ('t', '', '　黄色のセル … 入力するところ'),
         ('t', '', '　白・灰色のセル … 自動で計算されるところ（触らない）'),
@@ -339,6 +357,284 @@ def build_intro(wb):
         else:
             cell.font = Font(name=FONT, size=10, color=C_TEXT2)
         r += 1
+    return ws
+
+
+def build_mechanism(wb):
+    """
+    発注のしくみ。よく聞かれる2点だけを図で答えるシート。
+      1. 定数はどこにあるのか  → 置き場所マップ（今の値を実際に引いて表示する）
+      2. 定数から発注数がどう出るのか → 1商品を選んで数字を順に追う
+
+    説明文を並べるだけだと読まれないため、「今の値」は必ず生きた数式で引いて、
+    自分の劇場の実際の数字で読めるようにしている。
+    """
+    ws = wb.create_sheet(S_MECH)
+    ws.sheet_view.showGridLines = False
+    for i in range(2, 39):                    # B〜AL列を方眼にする
+        ws.column_dimensions[get_column_letter(i)].width = 3.3
+
+    calc_name = col(S_CALC, 'D', CALC_FIRST, CALC_LAST)
+    calc_qty = col(S_CALC, 'AH', CALC_FIRST, CALC_LAST)   # 既定表示を選ぶための列
+
+    def mrg(rng, value, font=F_BASE, fill=None, fmt=None, align='left', border=False):
+        ws.merge_cells(rng)
+        c = ws[rng.split(':')[0]]
+        c.value = value
+        c.font = font
+        if fill:
+            c.fill = fill
+        if fmt:
+            c.number_format = fmt
+        c.alignment = Alignment(horizontal=align, vertical='center', wrap_text=True)
+        if border:
+            for row in ws[rng]:
+                for cell in row:
+                    cell.border = BORDER
+        return c
+
+    def section(row, text, note=None):
+        ws[f'B{row}'] = text
+        ws[f'B{row}'].font = Font(name=FONT, size=12, bold=True, color=C_INK)
+        if note:
+            mrg(f'B{row + 1}:AL{row + 1}', note, font=F_NOTE)
+
+    mrg('B2:N2', '発注のしくみ', font=F_TITLE)
+    mrg('B3:AL3', 'このツールが何をしているかの説明です。'
+                  '最初に1回読めば、あとは②発注数を決めるシートだけ見れば発注できます。',
+        font=F_NOTE)
+
+    # ================= 3ステップの図 =================
+    section(5, '発注は3つのことしかしていません')
+    steps = [
+        ('B', 'L', '① 決めておく', C_BUTTER, FILL_INPUT,
+         '「この商品は、いつも何個持っておくか」を先に決めておきます。'
+         'これが定数です。毎日は変わりません。',
+         '置き場所： 定数マスタ ／ 商品マスタ',
+         '触るのは社員だけ。ふだんは開きません。'),
+        ('O', 'Y', '② 今の在庫を読む', C_TEXT2, FILL_AUTO,
+         '在庫システムのCSVを貼るだけです。'
+         '総数（＝ケース×入数＋バラ）が、そのまま今の在庫になります。',
+         '置き場所： ①今日の在庫を貼る',
+         '毎日やるのはここだけです。'),
+        ('AB', 'AL', '③ 足りない分だけ発注', C_CRIT, FILL_ALERT,
+         '持っておくべき数から、今の在庫と発注済みの分を引きます。'
+         '残った数が、今日発注する数です。',
+         '置き場所： ②発注数を決める → ③発注書',
+         '数字は自動で出ます。そのまま入れて構いません。'),
+    ]
+    for left, right, title, color, fill, body, where, who in steps:
+        mrg(f'{left}6:{right}6', title,
+            font=Font(name=FONT, size=12, bold=True, color=color), fill=fill,
+            align='center', border=True)
+        mrg(f'{left}7:{right}9', body,
+            font=Font(name=FONT, size=10, color=C_TEXT2), border=True)
+        mrg(f'{left}10:{right}10', where, font=F_BOLD, border=True)
+        mrg(f'{left}11:{right}11', who, font=F_NOTE, border=True)
+    for left in ('M', 'Z'):
+        mrg(f'{left}6:{get_column_letter(ws[left + "6"].column + 1)}11', '➡',
+            font=Font(name=FONT, size=20, bold=True, color=C_TEXT3), align='center')
+    ws.row_dimensions[6].height = 22
+    for r in (7, 8, 9):
+        ws.row_dimensions[r].height = 15
+
+    # ================= ① 定数の置き場所マップ =================
+    section(13, '1. 定数はどこにあるか',
+            '人が決める数字は、この2枚にしかありません。'
+            '「今の値」はあなたの劇場の現在値です（設定シートで選んだ劇場）。')
+    heads = [('B', 'I', '決めておくこと'), ('J', 'O', '置き場所'),
+             ('P', 'U', 'ブロック'), ('V', 'AA', '今の値'),
+             ('AB', 'AG', '見直す頻度'), ('AH', 'AL', '誰が決める')]
+    for left, right, text in heads:
+        mrg(f'{left}15:{right}15', text, font=F_HEAD, fill=FILL_HEAD,
+            align='center', border=True)
+
+    freeze = f'IFERROR(INDEX({cycle_col("S")},MATCH("冷凍品",{cycle_col("J")},0)),"")'
+    pack = f'IFERROR(INDEX({cycle_col("S")},MATCH("常温包材",{cycle_col("J")},0)),"")'
+    const_rows = [
+        ('劇場の規模と、ドリンクの提供方式', S_CONST, '① 劇場マスタ',
+         f'=IF({Q_SET}!$C$10="","未設定",{Q_SET}!$C$10&" ／ "&{Q_SET}!$C$11)',
+         None, '開店時・方式の変更時', '本社・支配人'),
+        ('規模ごとの標準来場者数', S_CONST, '② 規模区分',
+         f'={Q_SET}!$C$14', FMT_INT, '年1回', '本社'),
+        ('安全在庫日数（何日ぶん余裕を持つか）', S_CONST, '② 規模区分',
+         f'={Q_SET}!$C$12', FMT_DAYS, '年1回', '本社'),
+        ('月ごとの繁閑（季節係数）', S_CONST, '③ 月別係数',
+         f'={Q_SET}!$C$15', '0%', '年1回', '本社'),
+        ('GW・大型作品公開などの特別期間', S_CONST, '④ 特別期間',
+         f'=COUNTIF({special_col("E")},"?*")&" 件 登録済み"', None, '都度', '支配人・副支配人'),
+        ('冷蔵庫・ストッカーの容量（常温／冷蔵／冷凍）', S_CONST, '⑤ 保管設備',
+         f'=IF({Q_SET}!$C$4="","",'
+         f'TEXT(SUMIFS({equip_col("G")},{equip_col("B")},{Q_SET}!$C$4,'
+         f'{equip_col("C")},"常温"),"#,##0")&" ／ "&'
+         f'TEXT(SUMIFS({equip_col("G")},{equip_col("B")},{Q_SET}!$C$4,'
+         f'{equip_col("C")},"冷蔵"),"#,##0")&" ／ "&'
+         f'TEXT(SUMIFS({equip_col("G")},{equip_col("B")},{Q_SET}!$C$4,'
+         f'{equip_col("C")},"冷凍"),"#,##0")&" ケース")',
+         None, '設備の入れ替え時', '支配人・副支配人'),
+        ('発注できる曜日（グループごと）', S_CONST, '⑥ 発注サイクル',
+         f'="冷凍 "&{freeze}&"日 ／ 包材 "&{pack}&"日"',
+         None, '便が変わったとき', '本社'),
+        ('入数・単価・リードタイム・最低ロット', S_ITEM, '（商品ごと）',
+         f'=SUMPRODUCT(--({item_col("B")}<>""))&" 商品 登録済み"', None,
+         '商品の入れ替え時', '社員'),
+        ('商品の保管区分と発注グループ', S_ITEM, '（商品ごと）',
+         f'=SUMPRODUCT(--({item_col("L")}<>""))&" 商品 設定済み"', None,
+         '商品の入れ替え時', '社員'),
+        ('PI値（来場者100人あたりの消費数）', S_ITEM, '（商品ごと）',
+         f'=IF({Q_SET}!$C$9="実績消費","使っていません",'
+         f'SUMPRODUCT(--({col(S_ITEM, get_column_letter(PI_FIRST_COL), MASTER_FIRST, MASTER_LAST)}<>""))'
+         f'&" 商品 設定済み")', None, 'PI値を使うときだけ', '社員'),
+    ]
+    for i, (what, where, block, value, fmt, freq, who) in enumerate(const_rows):
+        r = 16 + i
+        mrg(f'B{r}:I{r}', what, font=Font(name=FONT, size=10, color=C_INK), border=True)
+        mrg(f'J{r}:O{r}', where, font=Font(name=FONT, size=10, bold=True, color=C_INK),
+            fill=FILL_INPUT, align='center', border=True)
+        mrg(f'P{r}:U{r}', block, font=Font(name=FONT, size=10, color=C_TEXT2),
+            align='center', border=True)
+        mrg(f'V{r}:AA{r}', value, font=F_BOLD, fmt=fmt, fill=FILL_AUTO,
+            align='center', border=True)
+        mrg(f'AB{r}:AG{r}', freq, font=F_NOTE, align='center', border=True)
+        mrg(f'AH{r}:AL{r}', who, font=F_NOTE, align='center', border=True)
+        ws.row_dimensions[r].height = 22
+    mrg('B27:AL27', '※ 黄色いシート名が置き場所です。定数はこの2枚以外にはありません。'
+                    '②発注数を決めるシートや発注計算シートに、直接数字を書き込む必要はありません。',
+        font=F_NOTE)
+
+    # ================= ② 定数 → 在庫 → 発注数 =================
+    section(29, '2. その定数から、発注数が出るまで',
+            '1商品を選ぶと、その商品の実際の数字で順番に追えます。'
+            '空欄のままなら、いま一番多く発注が必要な商品を自動で表示します。')
+    mrg('B31:E31', '追いかける商品', font=F_BOLD, fill=FILL_HEAD, align='center', border=True)
+    pick = mrg('F31:Q31', None, font=F_INPUT, fill=FILL_INPUT, align='left', border=True)
+    add_validation(ws, f'={calc_name}', 'F31')
+    mrg('R31:AL31', '▼から選べます。選び直すと下の数字がすべて入れ替わります。', font=F_NOTE)
+
+    # 参照用のヘルパー。右に逃がしておく（印刷範囲の外）
+    ws['AN31'] = (f'=IF($F$31="",IFERROR(INDEX({calc_name},'
+                  f'MATCH(MAX({calc_qty}),{calc_qty},0)),""),$F$31)')
+    ws['AN32'] = f'=IFERROR(MATCH($AN$31,{calc_name},0),0)'
+    for r in (31, 32):
+        ws[f'AN{r}'].font = F_NOTE
+
+    def val(letter, fmt=FMT_INT):
+        return (f'=IF($AN$32=0,"",INDEX({col(S_CALC, letter, CALC_FIRST, CALC_LAST)},$AN$32))',
+                fmt)
+
+    group = f'INDEX({col(S_CALC, "AF", CALC_FIRST, CALC_LAST)},$AN$32)'
+    basis = (f'=IF({Q_SET}!$C$9="実績消費",'
+             f'"①今日の在庫 と 月1回_前回の在庫 の差から計算",'
+             f'"商品マスタ の PI値 × 随時_動員を入れる の来場者予測")')
+    heads2 = [('B', 'C', ''), ('D', 'N', '見ている数字'), ('O', 'S', '値'),
+              ('T', 'AL', 'どこから来た数字か')]
+    for left, right, text in heads2:
+        mrg(f'{left}33:{right}33', text, font=F_HEAD, fill=FILL_HEAD,
+            align='center', border=True)
+
+    trace = [
+        ('定数', '1日にどれだけ減るか', val('S', FMT_DEC), basis, False),
+        ('定数', '届くまでの日数（リードタイム）', val('I', FMT_DAYS),
+         '"商品マスタ の L/T日数"', False),
+        ('定数', '次の発注までの日数（発注サイクル）', val('AG', FMT_DAYS),
+         f'=IF($AN$32=0,"","定数マスタ ⑥発注サイクル　グループ："&{group})', False),
+        ('定数', '切らさないための余裕（安全在庫）', val('U'),
+         f'="定数マスタ ②規模区分 の安全在庫日数 "&TEXT({Q_SET}!$C$12,"0.0")&"日ぶん"', False),
+        ('＝', '持っておくべき数（発注点）', val('V'),
+         '"1日に減る数 ×（届くまで＋次の発注まで）＋ 安全在庫"', True),
+        ('在庫', 'いま在庫にある数', val('K'),
+         '"①今日の在庫を貼る（CSVの総数）"', False),
+        ('在庫', '発注済みで、まだ届いていない数', val('W'),
+         '"発注管理 の 発注済み"', False),
+        ('＝', '足りない数', val('X'),
+         '"持っておくべき数 − いまの在庫 − 発注済み"', True),
+        ('発注', '1ケースに何個入っているか（入数）', val('G'),
+         '"商品マスタ の 入数"', False),
+        ('＝', '発注する数（ケース）', val('Y'),
+         '"足りない数 ÷ 入数 を切り上げ。最低ロットの単位に丸めます"', True),
+    ]
+    for i, (tag, label, (formula, fmt), src, total) in enumerate(trace):
+        r = 34 + i
+        color = {'定数': C_BUTTER, '在庫': C_TEXT2, '発注': C_CRIT, '＝': C_OK}[tag]
+        mrg(f'B{r}:C{r}', tag, font=Font(name=FONT, size=9, bold=True, color=color),
+            align='center', border=True)
+        mrg(f'D{r}:N{r}', label,
+            font=F_BOLD if total else Font(name=FONT, size=10, color=C_INK),
+            fill=FILL_ACCENT if total else None, border=True)
+        v = mrg(f'O{r}:S{r}', formula, fmt=fmt,
+                font=Font(name=FONT, size=13, bold=True, color=C_INK if total else C_TEXT2),
+                fill=FILL_ACCENT if total else FILL_AUTO, align='center', border=True)
+        v.number_format = fmt
+        mrg(f'T{r}:AL{r}', src if src.startswith('=') else f'={src}',
+            font=F_NOTE, border=True)
+        ws.row_dimensions[r].height = 21
+
+    # ================= 帯の図 =================
+    section(45, '同じことを図にすると',
+            '帯全体が「持っておくべき数（発注点）」です。'
+            '緑がいまの在庫、黄が発注済みで届く分、赤が足りていない分＝今日発注する分です。')
+    ws['AN45'] = f'=IF($AN$32=0,0,N(INDEX({col(S_CALC, "V", CALC_FIRST, CALC_LAST)},$AN$32)))'
+    ws['AN46'] = f'=IF($AN$32=0,0,MAX(0,N(INDEX({col(S_CALC, "K", CALC_FIRST, CALC_LAST)},$AN$32))))'
+    ws['AN47'] = f'=IF($AN$32=0,0,N(INDEX({col(S_CALC, "W", CALC_FIRST, CALC_LAST)},$AN$32)))'
+    ws['AN48'] = '=IF($AN$45<=0,36,MIN(36,ROUND($AN$46/$AN$45*36,0)))'
+    ws['AN49'] = '=IF($AN$45<=0,36,MIN(36,ROUND(($AN$46+$AN$47)/$AN$45*36,0)))'
+    for r in range(45, 50):
+        ws[f'AN{r}'].font = F_NOTE
+
+    for i in range(36):
+        cell = ws.cell(48, 2 + i)
+        cell.value = i + 1
+        cell.font = Font(name=FONT, size=1, color='FFFFFFFF')
+        cell.fill = FILL_TRACK
+        cell.border = Border(right=Side(style='thin', color='FFFFFFFF'))
+    ws.row_dimensions[48].height = 26
+    bar = f'B48:{get_column_letter(37)}48'
+    for limit, color in (('$AN$48', C_OK), ('$AN$49', C_BUTTER), ('36', C_CRIT)):
+        ws.conditional_formatting.add(bar, FormulaRule(
+            formula=[f'B48<={limit}'], stopIfTrue=True,
+            fill=PatternFill('solid', fgColor=color)))
+
+    legend = [('B', 'H', C_OK, 'いまの在庫'), ('J', 'P', C_BUTTER, '発注済みで届く分'),
+              ('R', 'X', C_CRIT, '今日発注する分'), ('Z', 'AL', None,
+              '帯の右端 ＝ 持っておくべき数（発注点）')]
+    for left, right, color, text in legend:
+        if color:
+            ws[f'{left}49'].fill = PatternFill('solid', fgColor=color)
+            ws[f'{left}49'].border = BORDER
+            mrg(f'{get_column_letter(ws[left + "49"].column + 1)}49:{right}49', text,
+                font=F_NOTE)
+        else:
+            mrg(f'{left}49:{right}49', text, font=F_NOTE, align='right')
+
+    # ================= 補足 =================
+    section(51, 'よくある質問')
+    faq = [
+        ('購買率やPI値は使わないのですか？',
+         '定数の考え方（＝持っておくべき数を決めて、差を発注する）で回すなら、'
+         'ふだんは要りません。1日にどれだけ減るかは、在庫2時点の差＝実績から出しています。'
+         'PI値を使うのは、過去の実績があてにならない週'
+         '（大型作品の公開週、GWなど）だけです。'
+         '設定シートの「算出基準」をPI値予測（または最大値）にすると切り替わります。'),
+        ('発注できる曜日が商品によって違いますが？',
+         '定数マスタ ⑥発注サイクルにグループごとの曜日を入れてあります。'
+         '冷凍品とドリンクシロップは週3回（月水金）、常温包材は木曜の1回だけです。'
+         '週1回の商品は次の便まで7日あるため、そのぶん多めに持つ計算になります。'),
+        ('在庫がマイナスになっています',
+         '納品がまだシステムに入っていない状態です。'
+         '現物を数えて、在庫システム側を直してから貼り直してください。'),
+    ]
+    r = 52
+    for q, a in faq:
+        mrg(f'B{r}:AL{r}', 'Q. ' + q, font=F_BOLD)
+        mrg(f'B{r + 1}:AL{r + 2}', 'A. ' + a,
+            font=Font(name=FONT, size=10, color=C_TEXT2))
+        ws.row_dimensions[r + 1].height = 15
+        r += 4
+
+    ws.print_area = f'B2:AL{r}'
+    ws.page_setup.orientation = 'landscape'
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
     return ws
 
 
@@ -443,6 +739,39 @@ def build_const_master(wb):
                                'メーカー公称の容量ではなく、運用上の目安で構いません。')
     ws[f'B{EQUIP_LAST + 2}'].font = F_NOTE
 
+    # ---------- ⑥ 発注サイクル（商品グループ別） ----------
+    ws[f'J{CYCLE_FIRST - 3}'] = ('⑥ 発注サイクル　商品グループごとの発注曜日。'
+                                 'ここが発注点の計算に効きます')
+    ws[f'J{CYCLE_FIRST - 3}'].font = F_BOLD
+    put_headers(ws, CYCLE_FIRST - 1,
+                ['発注グループ', '月', '火', '水', '木', '金', '土', '日',
+                 '週何回', 'サイクル日数', '今日', '備考'],
+                ['入力', '入力', '入力', '入力', '入力', '入力', '入力', '入力',
+                 '自動', '自動', '自動', '入力'], start_col=10)
+    for r in range(CYCLE_FIRST, CYCLE_LAST + 1):
+        ws[f'R{r}'] = f'=IF($J{r}="","",COUNTIF($K{r}:$Q{r},"○"))'
+        ws[f'S{r}'] = f'=IF(OR($J{r}="",N($R{r})=0),"",ROUND(7/N($R{r}),1))'
+        # 基準日の曜日に○が付いているグループが、今日の発注対象
+        ws[f'T{r}'] = (f'=IF(OR($J{r}="",{Q_SET}!$C$6=""),"",'
+                       f'IF(INDEX($K{r}:$Q{r},WEEKDAY({Q_SET}!$C$6,2))="○","● 今日",""))')
+        style_row(ws, r, 'JKLMNOPQU', fill=FILL_INPUT)
+        style_row(ws, r, 'RST', fill=FILL_AUTO)
+        for letter in WEEKDAY_COLS:
+            ws[f'{letter}{r}'].alignment = Alignment(horizontal='center')
+        ws[f'R{r}'].number_format = FMT_INT
+        ws[f'S{r}'].number_format = FMT_DEC
+        ws[f'T{r}'].font = Font(name=FONT, size=10, bold=True, color=C_CRIT)
+        ws[f'T{r}'].alignment = Alignment(horizontal='center')
+    for i, (name, _label, days, note) in enumerate(ORDER_GROUPS):
+        r = CYCLE_FIRST + i
+        ws[f'J{r}'] = name
+        ws[f'U{r}'] = note
+        for day in days:
+            ws.cell(r, 11 + '月火水木金土日'.index(day), '○')
+    ws[f'J{CYCLE_LAST + 2}'] = ('※ 発注する曜日に「○」を入れてください。'
+                                'サイクル日数（＝7÷週の回数）が発注点の計算に使われます。')
+    ws[f'J{CYCLE_LAST + 2}'].font = F_NOTE
+
     ws['B29'] = ('人が決める数字はすべてこの1枚にあります。黄色のセルだけ触ってください。'
                  'マスタを分けるほど「どこを直せばいいか」が分からなくなるため、1枚に集めています。')
     ws['B29'].font = F_NOTE
@@ -461,9 +790,9 @@ def build_item_master(wb, items):
     sheet_title(ws, '商品マスタ',
                 'PI値は来場者100人あたりの消費数です。取り扱いのないプロファイルは空欄のままで構いません。')
     headers = ['商品コード', '商品名', '商品分類名', '支払先名', '入数', '税抜単価',
-               'L/T日数', '最低ロット', '発注単位', '保管区分'] + \
+               'L/T日数', '最低ロット', '発注単位', '保管区分', '発注グループ'] + \
               [f'PI値 {p}' for p in PROFILES] + ['備考']
-    kinds = ['入力'] * 10 + ['入力'] * len(PROFILES) + ['入力']
+    kinds = ['入力'] * 11 + ['入力'] * len(PROFILES) + ['入力']
     put_headers(ws, 5, headers, kinds)
 
     last_col_idx = 2 + len(headers) - 1
@@ -490,12 +819,14 @@ def build_item_master(wb, items):
         ws[f'I{r}'] = 1
         ws[f'J{r}'] = 'ケース'
         ws[f'K{r}'] = '常温'
+        ws[f'L{r}'] = ORDER_GROUPS[2][0]
 
-    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 10] + [14] * len(PROFILES) + [24]
+    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 10, 16] + [14] * len(PROFILES) + [24]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     add_validation(ws, '"' + ','.join(STORAGE_KINDS) + '"',
                    f'K{MASTER_FIRST}:K{MASTER_LAST}')
+    add_validation(ws, f'={cycle_col("J")}', f'L{MASTER_FIRST}:L{MASTER_LAST}')
     ws.freeze_panes = 'D6'
     return ws
 
@@ -659,7 +990,8 @@ def build_calc(wb):
                'L/T日数', '最低ロット', '当日理論在庫', '前回理論在庫', '期間納品数', '期間消費数',
                '実績消費/日', 'PI値', 'PI予測消費/日', '規定数', '採用消費/日', '在庫日数',
                '安全在庫数量', '発注点', '発注残', '推奨発注数(バラ)', '推奨発注数(ケース)',
-               '発注要否', '在庫金額', '状態', '推奨発注金額', '保管区分', '在庫ケース数']
+               '発注要否', '在庫金額', '状態', '推奨発注金額', '保管区分', '在庫ケース数',
+               '発注グループ', '発注サイクル', '図解用']
     kinds = ['自動'] * len(headers)
     put_headers(ws, 5, headers, kinds)
 
@@ -715,7 +1047,7 @@ def build_calc(wb):
                        f'MATCH("PI値 "&{Q_SET}!$C$11,'
                        f'{Q_ITEM}!${pi_first}$5:${pi_last}$5,0)),""))')
         # カバー期間（リードタイム＋発注サイクル）の動員合計から1日あたりを出す
-        cover = f'(N($I{r})+N({Q_SET}!$C$13))'
+        cover = f'(N($I{r})+N($AG{r}))'
         plan_sum = (f'SUMIFS({col(S_PLAN, "G", PLAN_FIRST, PLAN_LAST)},'
                     f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},">="&{Q_SET}!$C$6,'
                     f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},"<="&{Q_SET}!$C$6+{cover}-1)')
@@ -728,7 +1060,7 @@ def build_calc(wb):
         ws[f'T{r}'] = f'=IF(OR($S{r}="",$S{r}<=0),"",$K{r}/$S{r})'
         ws[f'U{r}'] = f'=IF($S{r}="","",ROUNDUP(N($S{r})*{Q_SET}!$C$12,0))'
         ws[f'V{r}'] = (f'=IF($C{r}="","",'
-                       f'ROUNDUP(N($S{r})*(N($I{r})+N({Q_SET}!$C$13))+N($U{r}),0))')
+                       f'ROUNDUP(N($S{r})*(N($I{r})+N($AG{r}))+N($U{r}),0))')
         ws[f'W{r}'] = (f'=IF($C{r}="","",SUMIFS({po_col("L")},{po_col("C")},{Q_SET}!$C$4,'
                        f'{po_col("F")},$C{r},{po_col("Q")},"発注済"))')
         ws[f'X{r}'] = f'=IF($C{r}="","",MAX(0,N($V{r})-N($K{r})-N($W{r})))'
@@ -751,6 +1083,16 @@ def build_calc(wb):
                        f'MATCH($C{r},{item_col("B")},0)),"常温"))')
         ws[f'AE{r}'] = f'=IF($C{r}="","",MAX(0,ROUNDUP(N($K{r})/MAX(1,N($G{r})),0)))'
         ws[f'AE{r}'].number_format = FMT_INT
+        # 発注サイクルは商品グループごとに違う（冷凍は週3回、包材は週1回など）。
+        # グループが未設定の商品だけ、劇場の既定サイクルにフォールバックする
+        ws[f'AF{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("L")},'
+                       f'MATCH($C{r},{item_col("B")},0)),""))')
+        ws[f'AG{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({cycle_col("S")},'
+                       f'MATCH($AF{r},{cycle_col("J")},0)),N({Q_SET}!$C$13)))')
+        ws[f'AG{r}'].number_format = FMT_DEC
+        # 「発注のしくみ」シートの既定表示を選ぶためだけの列。
+        # 在庫があって発注も要る商品＝図として一番わかりやすい商品を選びたい
+        ws[f'AH{r}'] = f'=IF(AND(N($K{r})>0,N($Y{r})>0),N($Y{r}),0)'
 
         style_row(ws, r, letters, fill=FILL_AUTO)
         for c in 'KLMNRUVWX':
@@ -772,7 +1114,7 @@ def build_calc(wb):
         CellIsRule(operator='lessThan', formula=['0'], fill=FILL_ALERT))
 
     widths = [5, 16, 30, 16, 22, 8, 11, 9, 10, 13, 13, 12, 12, 12, 9, 14, 10, 12,
-              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13]
+              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     ws.freeze_panes = 'D6'
@@ -899,7 +1241,8 @@ def build_timetable(wb):
         ws[f'E{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$T{c})'
         ws[f'F{r}'] = f'=IF(ISNUMBER($E{r}),$E{r}-N({Q_CALC}!$I{c}),"")'
         ws[f'G{r}'] = (f'=IF({Q_CALC}!$C{c}="","",IF(NOT(ISNUMBER($F{r})),"データなし",'
-                       f'IF($F{r}<=0,"今日が期限",IF($F{r}<={Q_SET}!$C$13,"要発注","余裕"))))')
+                       f'IF($F{r}<=0,"今日が期限",'
+                       f'IF($F{r}<=N({Q_CALC}!$AG{c}),"要発注","余裕"))))')
         ws[f'H{r}'] = (f'=IF(OR({Q_CALC}!$C{c}="",NOT(ISNUMBER({Q_CALC}!$S{c})),{Q_CALC}!$S{c}<=0),"",'
                        f'({Q_CALC}!$K{c}+N($J{r})*N({Q_CALC}!$G{c}))/{Q_CALC}!$S{c})')
         ws[f'I{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$Y{c})'
@@ -1616,16 +1959,19 @@ def main():
                     f'月に1回、A{CSV_FIRST} セルに貼り替えてください。')
     build_item_master(wb, items)
     build_const_master(wb)
+    build_mechanism(wb)
     build_all_theaters(wb)
 
     # 毎日の3枚を左に固め、たまに触るもの・管理者向けを右に置く。
     # 計算だけのシートは非表示にして、触る場所を減らす。
-    order = [S_INTRO, S_CUR, S_TT, S_SHEET, S_PRV, S_PLAN,
+    order = [S_INTRO, S_MECH, S_CUR, S_TT, S_SHEET, S_PRV, S_PLAN,
              S_DASH, S_PO, S_ITEM, S_CONST, S_SET, S_CALC, S_ALL]
     wb._sheets = [wb[n] for n in order]
     for ws in wb.worksheets:
         if ws.title == S_SHEET:
             ws.sheet_properties.tabColor = C_CRIT[2:]      # 終着点
+        elif ws.title in (S_INTRO, S_MECH):
+            ws.sheet_properties.tabColor = C_OK[2:]        # 読み物
         elif ws.title in (S_CUR, S_TT):
             ws.sheet_properties.tabColor = C_BUTTER[2:]    # 毎日さわる
         elif ws.title in (S_CALC, S_ALL):
