@@ -155,8 +155,12 @@ MONTH_COL = {'B': 'T', 'C': 'U'}                                    # 月別係�
 SPECIAL_COL = {'E': 'W', 'F': 'X', 'G': 'Y', 'H': 'Z'}              # 特別期間ブロック
 EQUIP_FIRST, EQUIP_LAST = 110, 309       # ⑤保管設備（劇場ブロックの下）
 PI_FIRST_COL = 13                        # 商品マスタのPI値開始列（M列）
-CYCLE_FIRST, CYCLE_LAST = 110, 119       # ⑥発注サイクル（⑤の右）
-WEEKDAY_COLS = 'KLMNOPQ'                 # 月〜日。WEEKDAY(日付,2) の 1〜7 と並びが揃う
+# ⑥発注サイクルは AB列から。列幅はシート単位でしか決められないため、
+# 曜日の○（幅3）を置く列は他のブロックと重ならない位置に逃がしている。
+CYCLE_FIRST, CYCLE_LAST = 6, 15
+CYCLE_NAME, CYCLE_CNT, CYCLE_DAYS, CYCLE_TODAY, CYCLE_NOTE = 'AB', 'AJ', 'AK', 'AL', 'AM'
+CYCLE_DAY1 = 29                          # AC列＝月曜。WEEKDAY(日付,2) の 1〜7 と並びが揃う
+WEEKDAY_COLS = [get_column_letter(CYCLE_DAY1 + i) for i in range(7)]
 
 # 商品グループごとの発注サイクル。TOHOシネマズの実際の頻度を初期値にしてある
 ORDER_GROUPS = [
@@ -168,6 +172,97 @@ ORDER_GROUPS = [
 
 # 保管区分。商品マスタと保管設備の両方で使う共通の区分
 STORAGE_KINDS = ['常温', '冷蔵', '冷凍']
+
+# ---------------------------------------------------------------------------
+# 劇場マスタの初期データ
+# ---------------------------------------------------------------------------
+# 公式サイト（tohotheater.jp）の各劇場ページURLに出てくる3桁コードと劇場名。
+# URLで実際に確認できたものだけを載せている（推測では入れていない）。
+#   例: /theater/076/institution.html → 新宿 = 076
+#
+# 自社の在庫CSVの劇場コードは4桁（新宿＝0761）で、公式3桁＋"1" の形になっている。
+# 1劇場ぶんしか実データが無いため、この規則は「暫定」として展開し、
+# 劇場マスタのM列（CSV照合）で全劇場ぶんまとめて検証できるようにしてある。
+# 貼ったCSVに当たらないコードは即座に「✖」で分かる。
+#
+# スクリーン数・座席数は公式ページの記載を拾えたものだけ。規模区分の判断材料になる。
+# (公式3桁, 劇場名, 都道府県, スクリーン数, 座席数, 補足)
+THEATER_SEED = [
+    ('089', 'すすきの', '北海道', 10, 1732, ''),
+    ('049', 'おいらせ下田', '青森', None, None, ''),
+    ('050', '秋田', '秋田', None, None, ''),
+    ('078', '仙台', '宮城', 9, 1700, ''),
+    ('024', 'ひたちなか', '茨城', 10, 1700, ''),
+    ('015', '宇都宮', '栃木', None, None, ''),
+    ('075', 'ららぽーと富士見', '埼玉', None, None, ''),
+    ('003', '市川コルトンプラザ', '千葉', 9, 2150, ''),
+    ('018', 'ららぽーと船橋', '千葉', 10, 1867, ''),
+    ('028', '八千代緑が丘', '千葉', None, None, ''),
+    ('035', '流山おおたかの森', '千葉', 11, 1900, ''),
+    ('071', '市原', '千葉', None, None, ''),
+    ('077', '柏', '千葉', None, None, ''),
+    ('006', '南大沢', '東京', 9, None, ''),
+    ('009', '六本木ヒルズ', '東京', None, None, '旗艦劇場'),
+    ('012', '府中', '東京', None, None, ''),
+    ('029', '錦糸町（楽天地・オリナス）', '東京', None, None, '2館体制'),
+    ('040', '西新井', '東京', None, None, ''),
+    ('044', 'お台場（シネマメディアージュ）', '東京', 13, 3034, ''),
+    ('073', '日本橋', '東京', None, None, ''),
+    ('076', '新宿', '東京', None, None, 'IMAXレーザー'),
+    ('080', '上野', '東京', None, None, ''),
+    ('081', '日比谷／シャンテ', '東京', 13, 2700, '日比谷11＋宝塚ビル2の一体運営'),
+    ('084', '池袋', '東京', None, None, ''),
+    ('085', '立川立飛', '東京', None, None, 'IMAX／轟音'),
+    ('007', '海老名', '神奈川', None, None, ''),
+    ('008', '小田原', '神奈川', 9, None, ''),
+    ('010', '川崎', '神奈川', 9, None, ''),
+    ('036', 'ららぽーと横浜', '神奈川', None, None, ''),
+    ('067', '甲府', '山梨', None, None, ''),
+    ('068', '上田', '長野', None, None, ''),
+    ('053', 'ファボーレ富山', '富山', None, None, ''),
+    ('054', '高岡', '富山', None, None, ''),
+    ('020', '岐阜', '岐阜', None, None, ''),
+    ('030', 'モレラ岐阜', '岐阜', None, None, ''),
+    ('004', '浜松', '静岡', None, None, ''),
+    ('016', '木曽川', '愛知', 10, 1828, ''),
+    ('021', '東浦', '愛知', None, None, ''),
+    ('026', '津島', '愛知', None, None, ''),
+    ('079', '赤池', '愛知', None, None, ''),
+    ('023', '二条', '京都', None, None, 'IMAXレーザー'),
+    ('005', '泉北', '大阪', None, None, ''),
+    ('032', 'なんば', '大阪', None, None, 'IMAX'),
+    ('037', '梅田', '大阪', None, None, '本館・別館'),
+    ('045', '鳳', '大阪', 10, 1950, ''),
+    ('072', 'くずはモール', '大阪', None, None, ''),
+    ('088', 'ららぽーと門真', '大阪', None, None, ''),
+    ('038', '伊丹', '兵庫', None, None, ''),
+    ('064', '西宮OS', '兵庫', None, None, ''),
+    ('013', '橿原', '奈良', None, None, ''),
+    ('031', '岡南', '岡山', 10, 1629, ''),
+    ('019', '緑井', '広島', None, None, ''),
+    ('017', '高知', '高知', 9, None, '四国最大級'),
+    ('022', '直方', '福岡', None, None, ''),
+    ('056', '天神（ソラリア館）', '福岡', None, None, ''),
+    ('087', 'ららぽーと福岡', '福岡', 9, 1322, ''),
+    ('046', '長崎', '長崎', None, None, ''),
+    ('014', '光の森', '熊本', 9, None, ''),
+    ('027', 'はません', '熊本', None, None, ''),
+    ('057', '宇城', '熊本', None, None, ''),
+    ('083', '熊本サクラマチ', '熊本', 9, 1578, ''),
+    ('055', '大分わさだ', '大分', None, None, ''),
+    ('074', 'アミュプラザおおいた', '大分', 10, 1764, ''),
+    ('033', '与次郎', '鹿児島', 10, 1984, '2026/8/6 閉館予定'),
+]
+
+
+def seed_size(screens, seats):
+    """規模区分の暫定値。スクリーン数・座席数から機械的に置くだけで、
+    最終的には現場の実感（動員・売上）で直してもらう前提の初期値。"""
+    if (seats or 0) >= 2000 or (screens or 0) >= 11:
+        return '大規模'
+    if (screens or 0) and screens <= 7:
+        return '小規模'
+    return '中規模'
 
 
 def size_col(letter, first=6, last=8):
@@ -449,21 +544,21 @@ def build_mechanism(wb):
         mrg(f'{left}15:{right}15', text, font=F_HEAD, fill=FILL_HEAD,
             align='center', border=True)
 
-    freeze = f'IFERROR(INDEX({cycle_col("S")},MATCH("冷凍品",{cycle_col("J")},0)),"")'
-    pack = f'IFERROR(INDEX({cycle_col("S")},MATCH("常温包材",{cycle_col("J")},0)),"")'
+    freeze = f'IFERROR(INDEX({cycle_col(CYCLE_DAYS)},MATCH("冷凍品",{cycle_col(CYCLE_NAME)},0)),"")'
+    pack = f'IFERROR(INDEX({cycle_col(CYCLE_DAYS)},MATCH("常温包材",{cycle_col(CYCLE_NAME)},0)),"")'
     const_rows = [
-        ('劇場の規模と、ドリンクの提供方式', S_CONST, '① 劇場マスタ',
+        ('劇場の規模と、ドリンクの提供方式', S_CONST, '① 劇場マスタ（B列）',
          f'=IF({Q_SET}!$C$10="","未設定",{Q_SET}!$C$10&" ／ "&{Q_SET}!$C$11)',
          None, '開店時・方式の変更時', '本社・支配人'),
-        ('規模ごとの標準来場者数', S_CONST, '② 規模区分',
+        ('規模ごとの標準来場者数', S_CONST, '② 規模区分（N列）',
          f'={Q_SET}!$C$14', FMT_INT, '年1回', '本社'),
-        ('安全在庫日数（何日ぶん余裕を持つか）', S_CONST, '② 規模区分',
+        ('安全在庫日数（何日ぶん余裕を持つか）', S_CONST, '② 規模区分（N列）',
          f'={Q_SET}!$C$12', FMT_DAYS, '年1回', '本社'),
-        ('月ごとの繁閑（季節係数）', S_CONST, '③ 月別係数',
+        ('月ごとの繁閑（季節係数）', S_CONST, '③ 月別係数（T列）',
          f'={Q_SET}!$C$15', '0%', '年1回', '本社'),
-        ('GW・大型作品公開などの特別期間', S_CONST, '④ 特別期間',
+        ('GW・大型作品公開などの特別期間', S_CONST, '④ 特別期間（W列）',
          f'=COUNTIF({special_col("E")},"?*")&" 件 登録済み"', None, '都度', '支配人・副支配人'),
-        ('冷蔵庫・ストッカーの容量（常温／冷蔵／冷凍）', S_CONST, '⑤ 保管設備',
+        ('冷蔵庫・ストッカーの容量（常温／冷蔵／冷凍）', S_CONST, '⑤ 保管設備（110行目）',
          f'=IF({Q_SET}!$C$4="","",'
          f'TEXT(SUMIFS({equip_col("G")},{equip_col("B")},{Q_SET}!$C$4,'
          f'{equip_col("C")},"常温"),"#,##0")&" ／ "&'
@@ -472,7 +567,7 @@ def build_mechanism(wb):
          f'TEXT(SUMIFS({equip_col("G")},{equip_col("B")},{Q_SET}!$C$4,'
          f'{equip_col("C")},"冷凍"),"#,##0")&" ケース")',
          None, '設備の入れ替え時', '支配人・副支配人'),
-        ('発注できる曜日（グループごと）', S_CONST, '⑥ 発注サイクル',
+        ('発注できる曜日（グループごと）', S_CONST, '⑥ 発注サイクル（AB列）',
          f'="冷凍 "&{freeze}&"日 ／ 包材 "&{pack}&"日"',
          None, '便が変わったとき', '本社'),
         ('入数・単価・リードタイム・最低ロット', S_ITEM, '（商品ごと）',
@@ -647,15 +742,20 @@ def build_const_master(wb):
     ws = wb.create_sheet(S_CONST)
     # ブロック見出しは行3に置く。行4は put_headers が「入力／自動」を書く行なので使わない。
     sheet_title(ws, '定数マスタ')
+    # 6ブロックを横に並べているため、どこに何があるかを先頭に書いておく
+    ws['E2'] = ('ブロックの場所　① 劇場マスタ＝B列　／　② 規模区分＝N列　／　③ 月別係数＝T列'
+                '　／　④ 特別期間＝W列　／　⑤ 保管設備＝110行目　／　⑥ 発注サイクル＝AB列')
+    ws['E2'].font = F_NOTE
 
     # ---------- ① 劇場マスタ（B〜J列） ----------
     ws['B3'] = '① 劇場マスタ　劇場ごとの区分と、標準値を上書きしたいときの欄'
     ws['B3'].font = F_BOLD
     headers = ['劇場コード', '劇場名', '規模区分', 'ドリンク提供方式',
                '来場者数/日(個別)', '安全在庫日数(個別)', '発注サイクル(個別)',
-               '常温 収容ケース', '冷蔵 収容ケース', '冷凍 収容ケース', '備考']
+               '常温 収容ケース', '冷蔵 収容ケース', '冷凍 収容ケース', '備考',
+               'CSV照合']
     kinds = ['入力', '入力', '選択', '選択', '任意', '任意', '任意',
-             '自動', '自動', '自動', '入力']
+             '自動', '自動', '自動', '入力', '自動']
     put_headers(ws, 5, headers, kinds)
     for r in range(THEATER_FIRST, THEATER_LAST + 1):
         # 収容ケース数は⑤保管設備の合計。設備を足せば自動で増える
@@ -663,15 +763,45 @@ def build_const_master(wb):
             ws[f'{letter}{r}'] = (f'=IF($B{r}="","",SUMIFS({equip_col("G")},'
                                   f'{equip_col("B")},$B{r},{equip_col("C")},"{kind}"))')
             ws[f'{letter}{r}'].number_format = FMT_INT
+        # 劇場コードが在庫CSVに実在するかの照合。コードの取り違えは
+        # 「その劇場だけ何も出ない」という形で出るため、一覧で潰せるようにする
+        ws[f'M{r}'] = (
+            f'=IF($B{r}="","",IF(COUNTIF({csv_col(S_CUR, "B")},$B{r})=0,"✖ CSVに無し",'
+            f'IF(INDEX({csv_col(S_CUR, "C")},MATCH($B{r},{csv_col(S_CUR, "B")},0))=$C{r},'
+            f'"✔ 一致","△ CSVでは "&INDEX({csv_col(S_CUR, "C")},'
+            f'MATCH($B{r},{csv_col(S_CUR, "B")},0)))))')
         style_row(ws, r, 'BCDEFGHL', fill=FILL_INPUT)
-        style_row(ws, r, 'IJK', fill=FILL_AUTO)
+        style_row(ws, r, 'IJKM', fill=FILL_AUTO)
         ws[f'B{r}'].number_format = '@'
         ws[f'F{r}'].number_format = FMT_INT
-    ws[f'B{THEATER_FIRST}'] = '0761'
-    ws[f'C{THEATER_FIRST}'] = '新宿'
-    ws[f'D{THEATER_FIRST}'] = '大規模'
-    ws[f'E{THEATER_FIRST}'] = '1杯売り'
-    ws[f'L{THEATER_FIRST}'] = 'サンプル。実際の区分に置き換えてください。'
+        ws[f'M{r}'].font = Font(name=FONT, size=9, color=C_TEXT2)
+
+    # 公式サイトで確認できた劇場を初期登録しておく。
+    # 規模区分は暫定値（スクリーン数からの機械的な割り当て）なので、現場で直す前提。
+    for i, (code3, name, pref, screens, seats, note) in enumerate(THEATER_SEED):
+        r = THEATER_FIRST + i
+        if r > THEATER_LAST:
+            break
+        ws[f'B{r}'] = code3 + '1'
+        ws[f'C{r}'] = name
+        ws[f'D{r}'] = seed_size(screens, seats)
+        ws[f'E{r}'] = DRINK_STYLES[0]
+        spec = '／'.join(x for x in (
+            pref,
+            f'{screens}スクリーン' if screens else '',
+            f'約{seats:,}席' if seats else '',
+            f'公式コード{code3}', note) if x)
+        ws[f'L{r}'] = spec
+
+    ws[f'B{THEATER_LAST + 2}'] = (
+        '※ 劇場コードは「公式サイトの3桁コード＋1」で暫定登録しています'
+        '（新宿 076→0761 が在庫CSVと一致するため）。'
+        'CSVを貼るとM列で全劇場ぶん照合できます。「✖」「△」の行は自社コードに直してください。')
+    ws[f'B{THEATER_LAST + 2}'].font = F_NOTE
+    ws[f'B{THEATER_LAST + 3}'] = (
+        '※ 規模区分（大／中／小）はスクリーン数からの暫定値です。'
+        '実際の動員・売上に合わせて直してください。ドリンク提供方式も既定は「1杯売り」です。')
+    ws[f'B{THEATER_LAST + 3}'].font = F_NOTE
     add_validation(ws, '"' + ','.join(SIZES) + '"', f'D{THEATER_FIRST}:D{THEATER_LAST}')
     add_validation(ws, '"' + ','.join(DRINK_STYLES) + '"', f'E{THEATER_FIRST}:E{THEATER_LAST}')
 
@@ -740,47 +870,61 @@ def build_const_master(wb):
     ws[f'B{EQUIP_LAST + 2}'].font = F_NOTE
 
     # ---------- ⑥ 発注サイクル（商品グループ別） ----------
-    ws[f'J{CYCLE_FIRST - 3}'] = ('⑥ 発注サイクル　商品グループごとの発注曜日。'
-                                 'ここが発注点の計算に効きます')
-    ws[f'J{CYCLE_FIRST - 3}'].font = F_BOLD
+    d_first, d_last = WEEKDAY_COLS[0], WEEKDAY_COLS[-1]
+    ws[f'{CYCLE_NAME}3'] = ('⑥ 発注サイクル　商品グループごとの発注曜日。'
+                            'ここが発注点の計算に効きます')
+    ws[f'{CYCLE_NAME}3'].font = F_BOLD
     put_headers(ws, CYCLE_FIRST - 1,
                 ['発注グループ', '月', '火', '水', '木', '金', '土', '日',
                  '週何回', 'サイクル日数', '今日', '備考'],
                 ['入力', '入力', '入力', '入力', '入力', '入力', '入力', '入力',
-                 '自動', '自動', '自動', '入力'], start_col=10)
+                 '自動', '自動', '自動', '入力'], start_col=28)
     for r in range(CYCLE_FIRST, CYCLE_LAST + 1):
-        ws[f'R{r}'] = f'=IF($J{r}="","",COUNTIF($K{r}:$Q{r},"○"))'
-        ws[f'S{r}'] = f'=IF(OR($J{r}="",N($R{r})=0),"",ROUND(7/N($R{r}),1))'
+        ws[f'{CYCLE_CNT}{r}'] = (f'=IF(${CYCLE_NAME}{r}="","",'
+                                 f'COUNTIF(${d_first}{r}:${d_last}{r},"○"))')
+        ws[f'{CYCLE_DAYS}{r}'] = (f'=IF(OR(${CYCLE_NAME}{r}="",N(${CYCLE_CNT}{r})=0),"",'
+                                  f'ROUND(7/N(${CYCLE_CNT}{r}),1))')
         # 基準日の曜日に○が付いているグループが、今日の発注対象
-        ws[f'T{r}'] = (f'=IF(OR($J{r}="",{Q_SET}!$C$6=""),"",'
-                       f'IF(INDEX($K{r}:$Q{r},WEEKDAY({Q_SET}!$C$6,2))="○","● 今日",""))')
-        style_row(ws, r, 'JKLMNOPQU', fill=FILL_INPUT)
-        style_row(ws, r, 'RST', fill=FILL_AUTO)
+        ws[f'{CYCLE_TODAY}{r}'] = (
+            f'=IF(OR(${CYCLE_NAME}{r}="",{Q_SET}!$C$6=""),"",'
+            f'IF(INDEX(${d_first}{r}:${d_last}{r},WEEKDAY({Q_SET}!$C$6,2))="○","● 今日",""))')
+        style_row(ws, r, [CYCLE_NAME] + WEEKDAY_COLS + [CYCLE_NOTE], fill=FILL_INPUT)
+        style_row(ws, r, [CYCLE_CNT, CYCLE_DAYS, CYCLE_TODAY], fill=FILL_AUTO)
         for letter in WEEKDAY_COLS:
             ws[f'{letter}{r}'].alignment = Alignment(horizontal='center')
-        ws[f'R{r}'].number_format = FMT_INT
-        ws[f'S{r}'].number_format = FMT_DEC
-        ws[f'T{r}'].font = Font(name=FONT, size=10, bold=True, color=C_CRIT)
-        ws[f'T{r}'].alignment = Alignment(horizontal='center')
+        ws[f'{CYCLE_CNT}{r}'].number_format = FMT_INT
+        ws[f'{CYCLE_DAYS}{r}'].number_format = FMT_DEC
+        ws[f'{CYCLE_TODAY}{r}'].font = Font(name=FONT, size=10, bold=True, color=C_CRIT)
+        ws[f'{CYCLE_TODAY}{r}'].alignment = Alignment(horizontal='center')
     for i, (name, _label, days, note) in enumerate(ORDER_GROUPS):
         r = CYCLE_FIRST + i
-        ws[f'J{r}'] = name
-        ws[f'U{r}'] = note
+        ws[f'{CYCLE_NAME}{r}'] = name
+        ws[f'{CYCLE_NOTE}{r}'] = note
         for day in days:
-            ws.cell(r, 11 + '月火水木金土日'.index(day), '○')
-    ws[f'J{CYCLE_LAST + 2}'] = ('※ 発注する曜日に「○」を入れてください。'
-                                'サイクル日数（＝7÷週の回数）が発注点の計算に使われます。')
-    ws[f'J{CYCLE_LAST + 2}'].font = F_NOTE
+            ws.cell(r, CYCLE_DAY1 + '月火水木金土日'.index(day), '○')
+    ws[f'{CYCLE_NAME}{CYCLE_LAST + 2}'] = (
+        '※ 発注する曜日に「○」を入れてください。'
+        'サイクル日数（＝7÷週の回数）が発注点の計算に使われます。')
+    ws[f'{CYCLE_NAME}{CYCLE_LAST + 2}'].font = F_NOTE
 
-    ws['B29'] = ('人が決める数字はすべてこの1枚にあります。黄色のセルだけ触ってください。'
-                 'マスタを分けるほど「どこを直せばいいか」が分からなくなるため、1枚に集めています。')
-    ws['B29'].font = F_NOTE
+    # 注記は劇場ブロック（6〜105行）の外に置く。中に書くと劇場を1つ潰してしまう
+    ws[f'B{THEATER_LAST + 4}'] = (
+        '人が決める数字はすべてこの1枚にあります。黄色のセルだけ触ってください。'
+        'マスタを分けるほど「どこを直せばいいか」が分からなくなるため、1枚に集めています。')
+    ws[f'B{THEATER_LAST + 4}'].font = F_NOTE
 
-    widths = {'B': 12, 'C': 20, 'D': 11, 'E': 17, 'F': 18, 'G': 18, 'H': 17, 'I': 30,
-              'J': 3, 'K': 3, 'L': 11, 'M': 13, 'N': 14, 'O': 14, 'P': 30, 'Q': 3,
-              'R': 6, 'S': 9, 'T': 3, 'U': 20, 'V': 13, 'W': 13, 'X': 9}
+    # 列幅はシート単位なので、ブロックごとに列範囲を分けたうえで幅を決める。
+    #   B〜M ＝ ①劇場マスタ（B〜Hは⑤保管設備と共用）／N〜R ＝ ②規模区分
+    #   T〜U ＝ ③月別係数／W〜Z ＝ ④特別期間／AB〜AM ＝ ⑥発注サイクル
+    widths = {'B': 12, 'C': 22, 'D': 11, 'E': 17, 'F': 18, 'G': 18, 'H': 17,
+              'I': 15, 'J': 15, 'K': 15, 'L': 38, 'M': 20,
+              'N': 10, 'O': 13, 'P': 13, 'Q': 13, 'R': 30,
+              'T': 5, 'U': 8, 'W': 22, 'X': 13, 'Y': 13, 'Z': 9,
+              'AB': 17, 'AJ': 7, 'AK': 12, 'AL': 6, 'AM': 22}
     for c, w in widths.items():
         ws.column_dimensions[c].width = w
+    for letter in WEEKDAY_COLS:
+        ws.column_dimensions[letter].width = 3.5
     ws.freeze_panes = 'B6'
     return ws
 
@@ -826,7 +970,7 @@ def build_item_master(wb, items):
         ws.column_dimensions[c].width = w
     add_validation(ws, '"' + ','.join(STORAGE_KINDS) + '"',
                    f'K{MASTER_FIRST}:K{MASTER_LAST}')
-    add_validation(ws, f'={cycle_col("J")}', f'L{MASTER_FIRST}:L{MASTER_LAST}')
+    add_validation(ws, f'={cycle_col(CYCLE_NAME)}', f'L{MASTER_FIRST}:L{MASTER_LAST}')
     ws.freeze_panes = 'D6'
     return ws
 
@@ -1087,8 +1231,8 @@ def build_calc(wb):
         # グループが未設定の商品だけ、劇場の既定サイクルにフォールバックする
         ws[f'AF{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("L")},'
                        f'MATCH($C{r},{item_col("B")},0)),""))')
-        ws[f'AG{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({cycle_col("S")},'
-                       f'MATCH($AF{r},{cycle_col("J")},0)),N({Q_SET}!$C$13)))')
+        ws[f'AG{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({cycle_col(CYCLE_DAYS)},'
+                       f'MATCH($AF{r},{cycle_col(CYCLE_NAME)},0)),N({Q_SET}!$C$13)))')
         ws[f'AG{r}'].number_format = FMT_DEC
         # 「発注のしくみ」シートの既定表示を選ぶためだけの列。
         # 在庫があって発注も要る商品＝図として一番わかりやすい商品を選びたい
