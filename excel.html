@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excelファイル生成</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container excel-container">
+        <h1>📊 Excel生成</h1>
+
+        <p class="page-nav"><a href="index.html">← リマインダーに戻る</a></p>
+
+        <div class="excel-panel">
+            <h2>ファイル設定</h2>
+            <label class="field">
+                <span>ファイル名</span>
+                <input type="text" id="excelFilename" placeholder="data.xlsx" maxlength="120">
+            </label>
+            <label class="field">
+                <span>シート名</span>
+                <input type="text" id="excelSheetname" placeholder="Sheet1" maxlength="60">
+            </label>
+        </div>
+
+        <div class="excel-panel">
+            <h2>表データ</h2>
+            <p class="hint">1行目はヘッダーとして扱われます。セルをクリックして編集してください。</p>
+
+            <div class="table-actions">
+                <button type="button" class="secondary-button" onclick="addRow()">＋ 行を追加</button>
+                <button type="button" class="secondary-button" onclick="addColumn()">＋ 列を追加</button>
+                <button type="button" class="danger-button" onclick="clearTable()">クリア</button>
+            </div>
+
+            <div class="table-scroll">
+                <table id="excelTable" class="excel-table"></table>
+            </div>
+        </div>
+
+        <div class="excel-panel download-panel">
+            <button type="button" class="primary-button" onclick="downloadExcel()">📥 Excelをダウンロード</button>
+            <p id="excelStatus" class="status-message"></p>
+        </div>
+    </div>
+
+    <script src="excel.js"></script>
+</body>
+</html>

@@ -23,13 +23,26 @@
 - モダンなWebブラウザ（Chrome, Firefox, Safari, Edge など）
 - 通知機能を使用するには通知の許可が必要です
 
+## Excel生成機能
+
+汎用のExcelファイル生成ページ (`excel.html`) を同梱しています。
+
+- ブラウザ上で表形式にデータを入力
+- 行・列の追加／削除
+- ファイル名・シート名を指定して本物の `.xlsx` としてダウンロード
+- SheetJS を CDN から読み込むため、ビルドやインストールは不要（オフライン利用時はネットワーク接続が必要）
+
+`index.html` 上部のリンクからアクセスできます。
+
 ## ファイル構成
 
 ```
 .
-├── index.html    # メインHTML
+├── index.html    # メインHTML（リマインダー）
 ├── style.css     # スタイルシート
-├── app.js        # JavaScript機能
+├── app.js        # リマインダー機能
+├── excel.html    # Excel生成ページ
+├── excel.js      # Excel生成ロジック（SheetJS利用）
 └── README.md     # このファイル
 ```
 
