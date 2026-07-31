@@ -125,6 +125,7 @@ TT_DAY_COL = 12                          # L列から14日分のグリッド
 # たまにしか触らないシートは頻度を名前に書いておく。
 S_INTRO = 'はじめに'
 S_MECH = '発注のしくみ'
+S_COUNT = '実棚を入れる'
 S_SET = '設定（最初に1回）'
 S_CUR = '①今日の在庫を貼る'
 S_TT = '②発注数を決める'
@@ -152,6 +153,12 @@ Q_CONST = f"'{S_CONST}'"
 Q_ITEM = f"'{S_ITEM}'"
 Q_THEATER = Q_CONST
 Q_ALL = f"'{S_ALL}'"
+Q_COUNT = f"'{S_COUNT}'"
+
+# 実棚シートは発注計算と行が1対1で対応する（No が同じ）。
+# 検索せずに同じ順番で並べるので、400商品でも数式が重くならない。
+COUNT_FIRST = 10          # 4〜6行はまとめ、8行が入力/自動、9行が見出し
+COUNT_LAST = COUNT_FIRST + (CALC_LAST - CALC_FIRST)
 
 PLAN_FIRST, PLAN_LAST = 8, 97            # 動員計画（90日分）
 
@@ -402,6 +409,10 @@ def build_intro(wb):
         ('t', '', '　迷ったら「推奨(ケース)」に出ている数字をそのまま入れて構いません。'),
         ('t', '', '　数字を入れると帯が伸びます。伸びた先まで在庫が持つ、という意味です。'),
         ('t', '', '　右上に「保管スペースの埋まり具合」が出ます。100%を超えると入りきりません。'),
+        ('s', S_COUNT, '★の付いた商品だけ、現物を数えて入れる'),
+        ('t', '', '　CSVの在庫は理論値です。ロスや納品の未計上で現物とずれます。'),
+        ('t', '', '　全部数える必要はありません。★が付いた商品だけで十分です。'),
+        ('t', '', '　数えた数とカウント日（今日の日付）を入れると、そちらで発注数を計算します。'),
         ('s', S_SHEET, '発注先を選んで、印刷する'),
         ('t', '', '　②で入れた数量がここに集まります。発注先を選ぶとその仕入先の分だけになります。'),
         ('t', '', '　そのまま印刷して、いつもの方法で発注してください。'),
@@ -452,7 +463,8 @@ def build_intro(wb):
         ('', '', ''),
         ('h', '', '困ったとき'),
         ('t', '', '　・数字が出ない → 設定シートの「該当行数」が0でないか確認'),
-        ('t', '', '　・在庫がマイナス → 納品がシステムに未計上です。現物を数えて確認してください'),
+        ('t', '', '　・在庫がマイナス → 納品がシステムに未計上です。'),
+        ('t', '', '　　　現物を数えて「実棚を入れる」に入れてください。放置すると大量に発注してしまいます'),
         ('t', '', '　・「マスタ未登録」と出る → 新商品です。商品マスタに追加してください'),
     ]
     r = 5
@@ -530,9 +542,9 @@ def build_mechanism(wb):
          '置き場所： 定数マスタ ／ 商品マスタ',
          '触るのは社員だけ。ふだんは開きません。'),
         ('O', 'Y', '② 今の在庫を読む', C_TEXT2, FILL_AUTO,
-         '在庫システムのCSVを貼るだけです。'
-         '総数（＝ケース×入数＋バラ）が、そのまま今の在庫になります。',
-         '置き場所： ①今日の在庫を貼る',
+         'CSVを貼るだけです。ただしCSVの数は理論値なので、'
+         'ずれていそうな商品は現物を数えて上書きします。',
+         '置き場所： ①今日の在庫を貼る ／ 実棚を入れる',
          '毎日やるのはここだけです。'),
         ('AB', 'AL', '③ 足りない分だけ発注', C_CRIT, FILL_ALERT,
          '持っておくべき数から、今の在庫と発注済みの分を引きます。'
@@ -669,7 +681,11 @@ def build_mechanism(wb):
         ('＝', '持っておくべき数（発注点）', val('V'),
          '"1日に減る数 ×（届くまで＋次の発注まで）＋ 安全在庫"', True),
         ('在庫', 'いま在庫にある数', val('K'),
-         '"①今日の在庫を貼る（CSVの総数）"', False),
+         '=IF($AN$32=0,"",IF(INDEX(' + col(S_CALC, "AM", CALC_FIRST, CALC_LAST) +
+         ',$AN$32)<>"","実棚を入れる で数えた数（CSVの理論値 "'
+         '&TEXT(INDEX(' + col(S_CALC, "AL", CALC_FIRST, CALC_LAST) +
+         ',$AN$32),"#,##0")&" を上書き）",'
+         '"①今日の在庫を貼る（CSVの理論値）"))', False),
         ('在庫', '発注済みで、まだ届いていない数', val('W'),
          '"発注管理 の 発注済み"', False),
         ('＝', '足りない数', val('X'),
@@ -761,9 +777,18 @@ def build_mechanism(wb):
          '定数マスタ ⑥発注サイクルにグループごとの曜日を入れてあります。'
          '冷凍品とドリンクシロップは週3回（月水金）、常温包材は木曜の1回だけです。'
          '週1回の商品は次の便まで7日あるため、そのぶん多めに持つ計算になります。'),
+        ('現物の在庫は確認しなくていいのですか？',
+         '確認してください。CSVの在庫は理論値（仕入 − 減算）でしかなく、'
+         'ロス・破損・減算マスタのズレ・納品の未計上で現物とずれます。'
+         'そのまま発注すると、ズレがそのまま発注数のズレになります。'
+         'ただし全商品を毎日数えるのは無理なので、'
+         '「実棚を入れる」シートが今日数えるべき商品に★を付けます。'
+         '理論値がマイナスの商品、今日発注する商品、在庫金額の大きい商品の3つだけです。'),
         ('在庫がマイナスになっています',
          '納品がまだシステムに入っていない状態です。'
-         '現物を数えて、在庫システム側を直してから貼り直してください。'),
+         'そのまま発注すると、実際には棚にあるものを大量に頼むことになります。'
+         '現物を数えて「実棚を入れる」に入れてください。'
+         '在庫システム側も直して、次回のCSVから正しくなるようにしてください。'),
     ]
     r = faq_sec + 1
     for q, a in faq:
@@ -780,6 +805,127 @@ def build_mechanism(wb):
     ws.page_setup.orientation = 'landscape'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
+    return ws
+
+
+def build_count_sheet(wb):
+    """
+    実棚を入れるシート。
+
+    在庫CSVの値は理論値（仕入 − 減算）でしかなく、ロス・破損・減算マスタのズレ・
+    納品の未計上で現物とずれる。理論値だけで発注すると、そのズレがそのまま
+    発注数のズレになるため、数えた数で上書きできるようにしている。
+
+    ただし全商品を毎日数えるのは無理なので、「今日数えるべき商品」を出す。
+    理論値がマイナスの商品、今日発注する商品、在庫金額の大きい商品の3つに絞れば、
+    数えるのは十数品目で済む。
+    """
+    ws = wb.create_sheet(S_COUNT)
+    sheet_title(ws, '実棚を入れる',
+                'CSVの在庫は理論値です。数えた数を入れると、その商品はそちらを使って発注量を計算します。')
+
+    calc_stock = col(S_CALC, 'AL', CALC_FIRST, CALC_LAST)      # 理論値在庫（CSV）
+    calc_amount = col(S_CALC, 'AA', CALC_FIRST, CALC_LAST)     # 在庫金額
+    now_col = col(S_CONST, CYCLE_LBL_NOW, CYCLE_FIRST, CYCLE_LAST)
+
+    reason_col = col(S_COUNT, 'K', COUNT_FIRST, COUNT_LAST)
+    status_col = col(S_COUNT, 'J', COUNT_FIRST, COUNT_LAST)
+    gap_col = col(S_COUNT, 'I', COUNT_FIRST, COUNT_LAST)
+
+    # ---- まとめ ----
+    # 差はプラスとマイナスで意味が違う。合算すると相殺されて何も見えなくなるため分ける。
+    #   マイナス＝理論値より現物が少ない → ロス・廃棄・減算のズレ
+    #   プラス　＝理論値より現物が多い　 → 納品の未計上が濃厚
+    summary = [
+        ('B', 'D', '今日数える商品', f'=COUNTIF({reason_col},"★*")', FMT_INT,
+         '「数える理由」に★が付いた商品だけ数えれば足ります'),
+        ('F', 'H', 'カウント済み', f'=COUNTIF({status_col},"採用中")', FMT_INT,
+         '今日のカウントとして使われている商品数'),
+        ('J', 'L', '不足（ロス）', f'=SUMIF({gap_col},"<0")', FMT_YEN,
+         '理論値より現物が少ない分。廃棄・破損・減算のズレ'),
+        ('N', 'P', '超過（未計上）', f'=SUMIF({gap_col},">0")', FMT_YEN,
+         '理論値より現物が多い分。納品がシステム未計上の疑い'),
+    ]
+    for left, right, label, formula, fmt, note in summary:
+        block_cell(ws, f'{left}4:{right}4', label, F_HEAD, FILL_HEAD)
+        v = block_cell(ws, f'{left}5:{right}5', formula,
+                       Font(name=FONT, size=20, bold=True, color=C_INK), FILL_AUTO)
+        v.number_format = fmt
+        block_cell(ws, f'{left}6:{right}6', note, F_NOTE, FILL_AUTO)
+    ws.row_dimensions[5].height = 28
+
+    # 「金額が大きい」の線引き。在庫金額の上位10番目を1セルで出しておく
+    # （行ごとに LARGE を回すと400×400になるため）
+    ws['R4'] = '金額上位10位のライン'
+    ws['R5'] = f'=IFERROR(LARGE({calc_amount},10),0)'
+    ws['R4'].font = F_NOTE
+    ws['R5'].font = F_NOTE
+    ws['R5'].number_format = FMT_YEN
+
+    headers = ['No', '商品名', '発注グループ', '理論値在庫', '数えた数', 'カウント日',
+               '差（数えた数−理論値）', '差の金額', '状態', '数える理由']
+    kinds = ['自動', '自動', '自動', '自動', '入力', '入力', '自動', '自動', '自動', '自動']
+    put_headers(ws, COUNT_FIRST - 1, headers, kinds)
+
+    for r in range(COUNT_FIRST, COUNT_LAST + 1):
+        c = CALC_FIRST + (r - COUNT_FIRST)
+        ws[f'B{r}'] = r - COUNT_FIRST + 1
+        ws[f'C{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$D{c})'
+        ws[f'D{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$AF{c})'
+        ws[f'E{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$AL{c})'
+        ws[f'H{r}'] = f'=IF(OR($C{r}="",$F{r}=""),"",N($F{r})-N($E{r}))'
+        ws[f'I{r}'] = (f'=IF(OR($H{r}="",$J{r}<>"採用中"),"",'
+                       f'N($H{r})*N({Q_CALC}!$H{c}))')
+        # 数えた数を使うかどうかの判定。古いカウントを黙って使うと事故になる
+        ws[f'J{r}'] = (f'=IF($C{r}="","",IF($F{r}="","未入力",'
+                       f'IF($G{r}="","カウント日を入れてください",'
+                       f'IF($G{r}<{Q_SET}!$C$6,"日付が古い（使いません）","採用中"))))')
+        # 数える理由。全部数えるのは無理なので、優先順位を言葉で出す
+        ws[f'K{r}'] = (
+            f'=IF($C{r}="","",'
+            f'IF(N($E{r})<0,"★ 理論値がマイナス",'
+            f'IF(AND(COUNTIF({now_col},$D{r})>0,N({Q_CALC}!$Y{c})>0),"★ 今日発注する商品",'
+            f'IF(AND(N({Q_CALC}!$AA{c})>0,N({Q_CALC}!$AA{c})>=N($R$5)),"金額が大きい","－"))))')
+        style_row(ws, r, 'BCDEHIJK', fill=FILL_AUTO)
+        style_row(ws, r, 'FG', fill=FILL_INPUT)
+        ws[f'F{r}'].font = F_INPUT
+        ws[f'G{r}'].font = F_INPUT
+        for letter in 'EFH':
+            ws[f'{letter}{r}'].number_format = FMT_INT
+        ws[f'G{r}'].number_format = FMT_DATE
+        ws[f'I{r}'].number_format = FMT_YEN
+        for letter in 'JK':
+            ws[f'{letter}{r}'].font = Font(name=FONT, size=9, color=C_TEXT2)
+
+    ws.conditional_formatting.add(
+        f'K{COUNT_FIRST}:K{COUNT_LAST}',
+        FormulaRule(formula=[f'LEFT($K{COUNT_FIRST},1)="★"'], stopIfTrue=True,
+                    fill=FILL_ALERT,
+                    font=Font(name=FONT, size=9, bold=True, color=C_CRIT)))
+    ws.conditional_formatting.add(
+        f'J{COUNT_FIRST}:J{COUNT_LAST}',
+        CellIsRule(operator='equal', formula=['"採用中"'],
+                   fill=PatternFill('solid', bgColor=C_OK_SOFT),
+                   font=Font(name=FONT, size=9, bold=True, color=C_OK)))
+    ws.conditional_formatting.add(
+        f'J{COUNT_FIRST}:J{COUNT_LAST}',
+        CellIsRule(operator='equal', formula=['"日付が古い（使いません）"'],
+                   fill=PatternFill('solid', bgColor=C_WARN_SOFT),
+                   font=Font(name=FONT, size=9, bold=True, color=C_WARN)))
+    ws.conditional_formatting.add(
+        f'H{COUNT_FIRST}:H{COUNT_LAST}',
+        CellIsRule(operator='lessThan', formula=['0'], fill=FILL_ALERT))
+
+    for letter, w in zip('BCDEFGHIJKLMNOPQR',
+                         [5, 30, 15, 12, 11, 13, 18, 13, 20, 20, 4, 4, 10, 8, 8, 3, 20]):
+        ws.column_dimensions[letter].width = w
+    ws.freeze_panes = 'C10'
+
+    note = ws[f'B{COUNT_LAST + 2}']
+    note.value = ('※ カウント日が当日基準日より前の行は使いません。'
+                  '前に数えた数がそのまま残って発注量を狂わせるのを防ぐためです。'
+                  'CSVを貼り替えたら、数え直した商品だけカウント日を今日に更新してください。')
+    note.font = F_NOTE
     return ws
 
 
@@ -1222,11 +1368,12 @@ def build_calc(wb):
     sheet_title(ws, '発注計算',
                 '設定シートで選んだ劇場の商品別計算です。行は在庫CSV（当日＋前回）から自動生成されます。')
     headers = ['No', '商品コード', '商品名', '商品分類名', '支払先名', '入数', '税抜単価',
-               'L/T日数', '最低ロット', '当日理論在庫', '前回理論在庫', '期間納品数', '期間消費数',
+               'L/T日数', '最低ロット', '当日在庫(採用)', '前回理論在庫', '期間納品数', '期間消費数',
                '実績消費/日', 'PI値', 'PI予測消費/日', '規定数', '採用消費/日', '在庫日数',
                '安全在庫数量', '発注点', '発注残', '推奨発注数(バラ)', '推奨発注数(ケース)',
                '発注要否', '在庫金額', '状態', '推奨発注金額', '保管区分', '在庫ケース数',
-               '発注グループ', '発注サイクル', '図解用', '実測PI値', '動員連動消費/日', '動員/日(カバー期間)']
+               '発注グループ', '発注サイクル', '図解用', '実測PI値', '動員連動消費/日', '動員/日(カバー期間)',
+               '理論値在庫(CSV)', '実棚(有効)']
     kinds = ['自動'] * len(headers)
     put_headers(ws, 5, headers, kinds)
 
@@ -1260,8 +1407,17 @@ def build_calc(wb):
         ws[f'J{r}'] = (f'=IF($C{r}="","",MAX(1,IFERROR(INDEX({item_col("I")},'
                        f'MATCH($C{r},{item_col("B")},0)),1)))')
 
-        ws[f'K{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_CUR, "N")},'
-                       f'{csv_col(S_CUR, "B")},{Q_SET}!$C$4,{csv_col(S_CUR, "I")},$C{r}))')
+        # AL＝CSVの理論値、AM＝有効な実棚。K（＝以降すべてが使う在庫）は実棚を優先する。
+        # 現物を数えたならそれが正しいので、理論値より実棚を採る。
+        cr = COUNT_FIRST + (r - CALC_FIRST)
+        ws[f'AL{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_CUR, "N")},'
+                        f'{csv_col(S_CUR, "B")},{Q_SET}!$C$4,{csv_col(S_CUR, "I")},$C{r}))')
+        ws[f'AL{r}'].number_format = FMT_INT
+        ws[f'AM{r}'] = (f'=IF($C{r}="","",IF({Q_COUNT}!$F{cr}="","",'
+                        f'IF({Q_COUNT}!$G{cr}="","",'
+                        f'IF({Q_COUNT}!$G{cr}<{Q_SET}!$C$6,"",{Q_COUNT}!$F{cr}))))')
+        ws[f'AM{r}'].number_format = FMT_INT
+        ws[f'K{r}'] = f'=IF($C{r}="","",IF($AM{r}<>"",N($AM{r}),N($AL{r})))'
         ws[f'L{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_PRV, "N")},'
                        f'{csv_col(S_PRV, "B")},{Q_SET}!$C$4,{csv_col(S_PRV, "I")},$C{r}))')
         # 期間納品数: 発注管理の入荷実績（前回基準日〜当日基準日）
@@ -1367,7 +1523,7 @@ def build_calc(wb):
         CellIsRule(operator='lessThan', formula=['0'], fill=FILL_ALERT))
 
     widths = [5, 16, 30, 16, 22, 8, 11, 9, 10, 13, 13, 12, 12, 12, 9, 14, 10, 12,
-              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8, 11, 15, 17]
+              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8, 11, 15, 17, 15, 12]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     ws.freeze_panes = 'D6'
@@ -2255,11 +2411,12 @@ def main():
     build_item_master(wb, items)
     build_const_master(wb)
     build_mechanism(wb)
+    build_count_sheet(wb)
     build_all_theaters(wb)
 
     # 毎日の3枚を左に固め、たまに触るもの・管理者向けを右に置く。
     # 計算だけのシートは非表示にして、触る場所を減らす。
-    order = [S_INTRO, S_MECH, S_CUR, S_TT, S_SHEET, S_PRV, S_PLAN,
+    order = [S_INTRO, S_MECH, S_CUR, S_TT, S_SHEET, S_COUNT, S_PRV, S_PLAN,
              S_DASH, S_PO, S_ITEM, S_CONST, S_SET, S_CALC, S_ALL]
     wb._sheets = [wb[n] for n in order]
     for ws in wb.worksheets:
