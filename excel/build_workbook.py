@@ -82,6 +82,7 @@ FMT_YEN = '[$¥-411]#,##0;[Red][$¥-411]\\-#,##0'
 # 曜日書式(aaa)は環境によって日付そのものを壊すことがあるため使わない。
 # 曜日が要る場所は CHOOSE(WEEKDAY(...)) で別に組み立てる。
 FMT_DATE = 'yyyy/m/d'
+FMT_PI = '#,##0.00'          # 実測PI値。小さい値が多いので小数2桁で見る
 
 # 在庫CSVの列（システム出力そのままの並び）
 CSV_HEADERS = ['対象日付', '劇場コード', '劇場名', '支払先コード', '支払先名',
@@ -100,7 +101,13 @@ DRINK_STYLES = ['1杯売り', 'ドリンクバー']
 # 提供方式だけが商品構成を変えるため、プロファイルはこの2種類で足りる。
 PROFILES = list(DRINK_STYLES)
 
-BASIS_OPTIONS = ['実績消費', 'PI値予測', '最大値']
+# 採用消費/日の決め方。
+#   実績消費 … 在庫2時点の差を期間日数で割っただけ。動員とは連動しない
+#   動員連動 … 実績消費を「これからの動員 ÷ 期間の平均動員」で伸縮させる。
+#              購買率を人が入れなくても、実績と動員の比から自動で効く（既定）
+#   PI値予測 … 商品マスタに手入力したPI値を使う
+#   最大値   … 上の3つのうち最大。欠品を避けたいとき
+BASIS_OPTIONS = ['動員連動', '実績消費', 'PI値予測', '最大値']
 ORDER_STATUS = ['発注済', '入荷済み', '取消']
 
 MASTER_FIRST, MASTER_LAST = 6, 1005      # 商品マスタ
@@ -417,6 +424,8 @@ def build_intro(wb):
         ('t', '', '　商品が入れ替わっても発注から漏れないよう、両方の商品を見ています。'),
         ('s', S_PLAN, '大きな作品の公開週など、来場者の読みが変わる日に入力する'),
         ('t', '', '　空欄の日は劇場の標準来場者数が自動で使われます。毎日入れる必要はありません。'),
+        ('t', '', '　ここに入れた動員は、そのまま発注量に効きます。'),
+        ('t', '', '　動員が平常の1.3倍なら、消費も1.3倍で見積もって発注数が増えます。'),
         ('s', S_DASH, '劇場全体の状況を確認する'),
         ('s', S_ITEM, 'リードタイム・最低ロット・PI値を登録する'),
         ('s', S_CONST, '劇場・規模区分・季節の係数・保管設備を決める'),
@@ -426,7 +435,8 @@ def build_intro(wb):
         ('s', S_SET, '対象の劇場と、発注数の算出基準を選ぶ'),
         ('', '', ''),
         ('h', '', '発注数はどう決まっているか'),
-        ('t', '', '　この商品は1日に何個くらい減るか（実績、または来場者予測 × PI値）'),
+        ('t', '', '　この商品は1日に何個くらい減るか'),
+        ('t', '', '　　（前回と今日の在庫の差 ＝ 実績。これに動員の増減を掛ける）'),
         ('t', '', '　　　　　　↓'),
         ('t', '', '　届くまでの日数と、次に発注するまでの日数のあいだに何個必要か'),
         ('t', '', '　　　　　　↓'),
@@ -435,6 +445,7 @@ def build_intro(wb):
         ('t', '', '　入数で割って、ケース単位に切り上げる ＝ 推奨発注数'),
         ('', '', ''),
         ('t', '', '式で書くと次のとおりです。'),
+        ('t', '', '　1日あたり消費 ＝ 実績消費 ×（これからの動員 ÷ 期間の平均動員）'),
         ('t', '', '　安全在庫　＝ 1日あたり消費 × 安全在庫日数'),
         ('t', '', '　発注点　　＝ 1日あたり消費 ×（リードタイム＋発注サイクル）＋ 安全在庫'),
         ('t', '', '　推奨発注数 ＝ 発注点 − 今の在庫 − 発注済み未入荷'),
@@ -587,10 +598,11 @@ def build_mechanism(wb):
         ('商品の保管区分と発注グループ', S_ITEM, '（商品ごと）',
          f'=SUMPRODUCT(--({item_col("L")}<>""))&" 商品 設定済み"', None,
          '商品の入れ替え時', '社員'),
-        ('PI値（来場者100人あたりの消費数）', S_ITEM, '（商品ごと）',
-         f'=IF({Q_SET}!$C$9="実績消費","使っていません",'
-         f'SUMPRODUCT(--({col(S_ITEM, get_column_letter(PI_FIRST_COL), MASTER_FIRST, MASTER_LAST)}<>""))'
-         f'&" 商品 設定済み")', None, 'PI値を使うときだけ', '社員'),
+        ('期間の平均動員／日（実績）', S_SET, '（1か所）',
+         f'={Q_SET}!$C$22', FMT_INT, '月1回（CSV貼替と同時）', '副支配人'),
+        ('PI値（購買率）', '入力不要', '自動で測定',
+         f'=IF({Q_SET}!$C$9="PI値予測","商品マスタの手入力値を使用中","実測値を自動計算")',
+         None, '入れなくてよい', '—'),
     ]
     for i, (what, where, block, value, fmt, freq, who) in enumerate(const_rows):
         r = 16 + i
@@ -630,8 +642,10 @@ def build_mechanism(wb):
 
     group = f'INDEX({col(S_CALC, "AF", CALC_FIRST, CALC_LAST)},$AN$32)'
     basis = (f'=IF({Q_SET}!$C$9="実績消費",'
-             f'"①今日の在庫 と 月1回_前回の在庫 の差から計算",'
-             f'"商品マスタ の PI値 × 随時_動員を入れる の来場者予測")')
+             f'"①今日の在庫 と 月1回_前回の在庫 の差だけ。動員とは連動しません",'
+             f'IF({Q_SET}!$C$9="PI値予測","商品マスタ の PI値 × 動員予測",'
+             f'"実測PI値 × これからの動員 ÷ 100'
+             f'（＝実績消費 ×「これからの動員 ÷ 期間の平均動員」）"))')
     heads2 = [('B', 'C', ''), ('D', 'N', '見ている数字'), ('O', 'S', '値'),
               ('T', 'AL', 'どこから来た数字か')]
     for left, right, text in heads2:
@@ -639,6 +653,12 @@ def build_mechanism(wb):
             align='center', border=True)
 
     trace = [
+        ('動員', '期間の平均動員／日（実績）', (f'={Q_SET}!$C$22', FMT_INT),
+         '"設定シート。空欄なら 定数マスタ ②規模区分 の標準来場者数"', False),
+        ('動員', 'これからの動員／日（次の発注日まで）', val('AK', FMT_INT),
+         '"随時_動員を入れる の予測 × 季節係数。空欄の日は標準来場者数"', False),
+        ('定数', '実測PI値（来場者100人あたり何個減ったか）', val('AI', FMT_PI),
+         '"期間消費数 ÷（期間の平均動員 ÷ 100）。自動で測るので入力は不要です"', False),
         ('定数', '1日にどれだけ減るか', val('S', FMT_DEC), basis, False),
         ('定数', '届くまでの日数（リードタイム）', val('I', FMT_DAYS),
          '"商品マスタ の L/T日数"', False),
@@ -659,9 +679,11 @@ def build_mechanism(wb):
         ('＝', '発注する数（ケース）', val('Y'),
          '"足りない数 ÷ 入数 を切り上げ。最低ロットの単位に丸めます"', True),
     ]
+    trace_top = 34
     for i, (tag, label, (formula, fmt), src, total) in enumerate(trace):
-        r = 34 + i
-        color = {'定数': C_BUTTER, '在庫': C_TEXT2, '発注': C_CRIT, '＝': C_OK}[tag]
+        r = trace_top + i
+        color = {'定数': C_BUTTER, '在庫': C_TEXT2, '発注': C_CRIT,
+                 '動員': C_WARN, '＝': C_OK}[tag]
         mrg(f'B{r}:C{r}', tag, font=Font(name=FONT, size=9, bold=True, color=color),
             align='center', border=True)
         mrg(f'D{r}:N{r}', label,
@@ -676,28 +698,36 @@ def build_mechanism(wb):
         ws.row_dimensions[r].height = 21
 
     # ================= 帯の図 =================
-    section(45, '同じことを図にすると',
+    # trace の行数が変わっても崩れないよう、以降の行位置はここから逆算する
+    bar_sec = trace_top + len(trace) + 1
+    bar_row = bar_sec + 3
+    legend_row = bar_row + 1
+    faq_sec = legend_row + 2
+    section(bar_sec, '同じことを図にすると',
             '帯全体が「持っておくべき数（発注点）」です。'
             '緑がいまの在庫、黄が発注済みで届く分、赤が足りていない分＝今日発注する分です。')
-    ws['AN45'] = f'=IF($AN$32=0,0,N(INDEX({col(S_CALC, "V", CALC_FIRST, CALC_LAST)},$AN$32)))'
-    ws['AN46'] = f'=IF($AN$32=0,0,MAX(0,N(INDEX({col(S_CALC, "K", CALC_FIRST, CALC_LAST)},$AN$32))))'
-    ws['AN47'] = f'=IF($AN$32=0,0,N(INDEX({col(S_CALC, "W", CALC_FIRST, CALC_LAST)},$AN$32)))'
-    ws['AN48'] = '=IF($AN$45<=0,36,MIN(36,ROUND($AN$46/$AN$45*36,0)))'
-    ws['AN49'] = '=IF($AN$45<=0,36,MIN(36,ROUND(($AN$46+$AN$47)/$AN$45*36,0)))'
-    for r in range(45, 50):
+    ws[f'AN{bar_sec + 0}'] = f'=IF($AN$32=0,0,N(INDEX({col(S_CALC, "V", CALC_FIRST, CALC_LAST)},$AN$32)))'
+    ws[f'AN{bar_sec + 1}'] = f'=IF($AN$32=0,0,MAX(0,N(INDEX({col(S_CALC, "K", CALC_FIRST, CALC_LAST)},$AN$32))))'
+    ws[f'AN{bar_sec + 2}'] = f'=IF($AN$32=0,0,N(INDEX({col(S_CALC, "W", CALC_FIRST, CALC_LAST)},$AN$32)))'
+    ws[f'AN{bar_sec + 3}'] = (f'=IF($AN${bar_sec}<=0,36,'
+                                   f'MIN(36,ROUND($AN${bar_sec + 1}/$AN${bar_sec}*36,0)))')
+    ws[f'AN{bar_sec + 4}'] = (f'=IF($AN${bar_sec}<=0,36,MIN(36,ROUND('
+                                   f'($AN${bar_sec + 1}+$AN${bar_sec + 2})/$AN${bar_sec}*36,0)))')
+    for r in range(bar_sec, bar_sec + 5):
         ws[f'AN{r}'].font = F_NOTE
 
     for i in range(36):
-        cell = ws.cell(48, 2 + i)
+        cell = ws.cell(bar_row, 2 + i)
         cell.value = i + 1
         cell.font = Font(name=FONT, size=1, color='FFFFFFFF')
         cell.fill = FILL_TRACK
         cell.border = Border(right=Side(style='thin', color='FFFFFFFF'))
-    ws.row_dimensions[48].height = 26
-    bar = f'B48:{get_column_letter(37)}48'
-    for limit, color in (('$AN$48', C_OK), ('$AN$49', C_BUTTER), ('36', C_CRIT)):
+    ws.row_dimensions[bar_row].height = 26
+    bar = f'B{bar_row}:{get_column_letter(37)}{bar_row}'
+    for limit, color in ((f'$AN${bar_sec + 3}', C_OK),
+                         (f'$AN${bar_sec + 4}', C_BUTTER), ('36', C_CRIT)):
         ws.conditional_formatting.add(bar, FormulaRule(
-            formula=[f'B48<={limit}'], stopIfTrue=True,
+            formula=[f'B{bar_row}<={limit}'], stopIfTrue=True,
             fill=PatternFill('solid', fgColor=color)))
 
     legend = [('B', 'H', C_OK, 'いまの在庫'), ('J', 'P', C_BUTTER, '発注済みで届く分'),
@@ -705,22 +735,28 @@ def build_mechanism(wb):
               '帯の右端 ＝ 持っておくべき数（発注点）')]
     for left, right, color, text in legend:
         if color:
-            ws[f'{left}49'].fill = PatternFill('solid', fgColor=color)
-            ws[f'{left}49'].border = BORDER
-            mrg(f'{get_column_letter(ws[left + "49"].column + 1)}49:{right}49', text,
-                font=F_NOTE)
+            ws[f'{left}{legend_row}'].fill = PatternFill('solid', fgColor=color)
+            ws[f'{left}{legend_row}'].border = BORDER
+            nxt = get_column_letter(ws[f'{left}{legend_row}'].column + 1)
+            mrg(f'{nxt}{legend_row}:{right}{legend_row}', text, font=F_NOTE)
         else:
-            mrg(f'{left}49:{right}49', text, font=F_NOTE, align='right')
+            mrg(f'{left}{legend_row}:{right}{legend_row}', text, font=F_NOTE, align='right')
 
     # ================= 補足 =================
-    section(51, 'よくある質問')
+    section(faq_sec, 'よくある質問')
     faq = [
-        ('購買率やPI値は使わないのですか？',
-         '定数の考え方（＝持っておくべき数を決めて、差を発注する）で回すなら、'
-         'ふだんは要りません。1日にどれだけ減るかは、在庫2時点の差＝実績から出しています。'
-         'PI値を使うのは、過去の実績があてにならない週'
-         '（大型作品の公開週、GWなど）だけです。'
-         '設定シートの「算出基準」をPI値予測（または最大値）にすると切り替わります。'),
+        ('購買率が分からないのに、その日の動員と減り方が連動するのですか？',
+         '連動します。購買率は「人が知っている必要」も「入力する必要」もありません。'
+         '前回と今日の在庫の差＝期間消費数と、その期間の平均動員が分かれば、'
+         '商品ごとの実測PI値（来場者100人あたり何個減ったか）は割り算で出ます。'
+         'あとは、これからの動員がその平均の何倍かを掛けるだけです。'
+         '式にすると 1日に減る数 ＝ 実績消費 ×（これからの動員 ÷ 期間の平均動員）。'
+         'GWで動員が1.3倍なら、消費も1.3倍で見積もります。'),
+        ('その「期間の平均動員」はどこに入れるのですか？',
+         '設定シートの「期間の平均動員/日（実績）」です。月1回、前回CSVを貼り替えるときに'
+         '一緒に入れてください。空欄でも動きます'
+         '（定数マスタ②の標準来場者数を使うので、動員の増減比だけが効きます）。'
+         '実際の数字を入れると、実測PI値が本当の値になります。'),
         ('発注できる曜日が商品によって違いますが？',
          '定数マスタ ⑥発注サイクルにグループごとの曜日を入れてあります。'
          '冷凍品とドリンクシロップは週3回（月水金）、常温包材は木曜の1回だけです。'
@@ -729,13 +765,16 @@ def build_mechanism(wb):
          '納品がまだシステムに入っていない状態です。'
          '現物を数えて、在庫システム側を直してから貼り直してください。'),
     ]
-    r = 52
+    r = faq_sec + 1
     for q, a in faq:
+        # 回答の長さで行数を変える。2行に詰め込むと文字が重なって読めなくなる
+        lines = max(2, -(-len(a) // 58))
         mrg(f'B{r}:AL{r}', 'Q. ' + q, font=F_BOLD)
-        mrg(f'B{r + 1}:AL{r + 2}', 'A. ' + a,
+        mrg(f'B{r + 1}:AL{r + lines}', 'A. ' + a,
             font=Font(name=FONT, size=10, color=C_TEXT2))
-        ws.row_dimensions[r + 1].height = 15
-        r += 4
+        for k in range(1, lines + 1):
+            ws.row_dimensions[r + k].height = 15
+        r += lines + 2
 
     ws.print_area = f'B2:AL{r}'
     ws.page_setup.orientation = 'landscape'
@@ -1116,7 +1155,8 @@ def build_settings(wb):
         ('2ヶ月前の基準日', f'={prv_date}', '①在庫CSV_2ヶ月前の対象日付から自動取得します。', FILL_AUTO, FMT_DATE),
         ('期間日数', '=IF(OR($C$6="",$C$7=""),"",$C$6-$C$7)', '実績消費/日の算出に使う日数です。', FILL_AUTO, FMT_INT),
         ('算出基準', None,
-         '実績消費＝在庫2時点の差、PI値予測＝来場者予測、最大値＝実績とPI予測の大きい方。',
+         '動員連動＝実績消費に動員の増減を掛ける（推奨）、実績消費＝在庫2時点の差のみ、'
+         'PI値予測＝手入力のPI値、最大値＝いちばん大きい値。',
          FILL_INPUT, None),
         ('規模区分', f'=IFERROR(INDEX({theater_col("D")},MATCH($C$4,{theater_col("B")},0)),"")',
          '劇場マスタから自動取得します。', FILL_AUTO, None),
@@ -1137,6 +1177,13 @@ def build_settings(wb):
          '当日CSVと2ヶ月前CSVの和集合です。発注計算シートの行数と一致します。', FILL_AUTO, FMT_INT),
         ('動員計画の入力日数', f'=COUNT({col(S_PLAN, "D", PLAN_FIRST, PLAN_LAST)})',
          '0でも動きます（標準来場者数を使用）。読みが変わる日だけ入れてください。', FILL_AUTO, FMT_INT),
+        ('期間の平均動員/日（実績）', None,
+         '前回基準日〜当日基準日の、1日あたり実際の動員です。'
+         '空欄なら標準来場者数を使います。入れると「動員連動」の精度が上がります。',
+         FILL_INPUT, FMT_INT),
+        ('採用する期間平均動員', '=IF(N($C$21)>0,$C$21,N($C$14))',
+         '動員連動の分母です。これからの動員がこの値の何倍かで、消費量を伸縮させます。',
+         FILL_AUTO, FMT_INT),
     ]
 
     for i, (label, formula, note, fill, fmt) in enumerate(rows):
@@ -1157,12 +1204,16 @@ def build_settings(wb):
         ws[f'D{r}'].font = F_NOTE
 
     ws['C4'] = '0761'
-    ws['C9'] = '実績消費'
+    ws['C9'] = BASIS_OPTIONS[0]
     add_validation(ws, f'={theater_col("B")}', 'C4')
     add_validation(ws, '"' + ','.join(BASIS_OPTIONS) + '"', 'C9')
 
-    ws['B22'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
-    ws['B22'].font = F_NOTE
+    ws['B24'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
+    ws['B24'].font = F_NOTE
+    ws['B25'] = ('※「期間の平均動員/日」を入れると、商品ごとの実測PI値'
+                 '（来場者100人あたり何個売れたか）が自動で出ます。'
+                 '購買率を人が管理する必要はありません。')
+    ws['B25'].font = F_NOTE
     return ws
 
 
@@ -1175,7 +1226,7 @@ def build_calc(wb):
                '実績消費/日', 'PI値', 'PI予測消費/日', '規定数', '採用消費/日', '在庫日数',
                '安全在庫数量', '発注点', '発注残', '推奨発注数(バラ)', '推奨発注数(ケース)',
                '発注要否', '在庫金額', '状態', '推奨発注金額', '保管区分', '在庫ケース数',
-               '発注グループ', '発注サイクル', '図解用']
+               '発注グループ', '発注サイクル', '図解用', '実測PI値', '動員連動消費/日', '動員/日(カバー期間)']
     kinds = ['自動'] * len(headers)
     put_headers(ws, 5, headers, kinds)
 
@@ -1217,7 +1268,8 @@ def build_calc(wb):
         ws[f'M{r}'] = (f'=IF($C{r}="","",IF(OR({Q_SET}!$C$6="",{Q_SET}!$C$7=""),0,'
                        f'SUMIFS({po_col("S")},{po_col("C")},{Q_SET}!$C$4,{po_col("F")},$C{r},'
                        f'{po_col("R")},">="&{Q_SET}!$C$7,{po_col("R")},"<="&{Q_SET}!$C$6)))')
-        ws[f'N{r}'] = (f'=IF(OR($C{r}="",{Q_SET}!$C$15=0),"",$L{r}+$M{r}-$K{r})')
+        # 前回CSVが貼られていなければ期間消費は出せない（前回在庫が0のままだと嘘の値になる）
+        ws[f'N{r}'] = (f'=IF(OR($C{r}="",{Q_SET}!$C$18=0),"",$L{r}+$M{r}-$K{r})')
         ws[f'O{r}'] = (f'=IF(OR($N{r}="",{Q_SET}!$C$8="",{Q_SET}!$C$8<=0),"",'
                        f'MAX(0,$N{r})/{Q_SET}!$C$8)')
         # PI値: 商品を縦、PIプロファイルを横に検索する。
@@ -1235,12 +1287,16 @@ def build_calc(wb):
         plan_sum = (f'SUMIFS({col(S_PLAN, "G", PLAN_FIRST, PLAN_LAST)},'
                     f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},">="&{Q_SET}!$C$6,'
                     f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},"<="&{Q_SET}!$C$6+{cover}-1)')
+        plan_avg = f'IFERROR({plan_sum}/{cover},0)'
         ws[f'Q{r}'] = (f'=IF(OR($C{r}="",$P{r}="",$P{r}=0,{cover}<=0),"",'
-                       f'IFERROR({plan_sum}/{cover},0)*$P{r}/100)')
+                       f'{plan_avg}*$P{r}/100)')
         ws[f'R{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_CUR, "O")},'
                        f'{csv_col(S_CUR, "B")},{Q_SET}!$C$4,{csv_col(S_CUR, "I")},$C{r}))')
-        ws[f'S{r}'] = (f'=IF($C{r}="","",IF({Q_SET}!$C$9="実績消費",N($O{r}),'
-                       f'IF({Q_SET}!$C$9="PI値予測",N($Q{r}),MAX(N($O{r}),N($Q{r})))))')
+        ws[f'S{r}'] = (f'=IF($C{r}="","",'
+                       f'IF({Q_SET}!$C$9="実績消費",N($O{r}),'
+                       f'IF({Q_SET}!$C$9="動員連動",IF(N($AJ{r})>0,N($AJ{r}),N($O{r})),'
+                       f'IF({Q_SET}!$C$9="PI値予測",N($Q{r}),'
+                       f'MAX(N($O{r}),N($Q{r}),N($AJ{r}))))))')
         ws[f'T{r}'] = f'=IF(OR($S{r}="",$S{r}<=0),"",$K{r}/$S{r})'
         ws[f'U{r}'] = f'=IF($S{r}="","",ROUNDUP(N($S{r})*{Q_SET}!$C$12,0))'
         ws[f'V{r}'] = (f'=IF($C{r}="","",'
@@ -1277,6 +1333,19 @@ def build_calc(wb):
         # 「発注のしくみ」シートの既定表示を選ぶためだけの列。
         # 在庫があって発注も要る商品＝図として一番わかりやすい商品を選びたい
         ws[f'AH{r}'] = f'=IF(AND(N($K{r})>0,N($Y{r})>0),N($Y{r}),0)'
+        # 実測PI値＝この商品が来場者100人あたり何個減ったか。
+        # 購買率を人が入れるのではなく、期間消費と期間の平均動員から測る。
+        ws[f'AI{r}'] = (f'=IF(OR($C{r}="",$O{r}="",N({Q_SET}!$C$22)<=0),"",'
+                        f'N($O{r})/(N({Q_SET}!$C$22)/100))')
+        ws[f'AI{r}'].number_format = FMT_PI
+        # 動員連動の消費/日＝実測PI値 × これからの1日あたり動員 ÷ 100。
+        # 式を展開すると 実績消費/日 ×（これからの動員 ÷ 期間の平均動員）になる。
+        ws[f'AJ{r}'] = (f'=IF(OR($AI{r}="",$AI{r}=0,{cover}<=0),"",'
+                        f'{plan_avg}*$AI{r}/100)')
+        ws[f'AJ{r}'].number_format = FMT_DEC
+        # 「発注のしくみ」で動員の効き方を見せるための、カバー期間の1日あたり動員
+        ws[f'AK{r}'] = f'=IF(OR($C{r}="",{cover}<=0),"",{plan_avg})'
+        ws[f'AK{r}'].number_format = FMT_INT
 
         style_row(ws, r, letters, fill=FILL_AUTO)
         for c in 'KLMNRUVWX':
@@ -1298,7 +1367,7 @@ def build_calc(wb):
         CellIsRule(operator='lessThan', formula=['0'], fill=FILL_ALERT))
 
     widths = [5, 16, 30, 16, 22, 8, 11, 9, 10, 13, 13, 12, 12, 12, 9, 14, 10, 12,
-              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8]
+              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8, 11, 15, 17]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     ws.freeze_panes = 'D6'
