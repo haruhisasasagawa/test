@@ -782,6 +782,15 @@ def build_mechanism(wb):
          'あとは、これからの動員がその平均の何倍かを掛けるだけです。'
          '式にすると 1日に減る数 ＝ 実績消費 ×（これからの動員 ÷ 期間の平均動員）。'
          'GWで動員が1.3倍なら、消費も1.3倍で見積もります。'),
+        ('動員に合わせるなら、毎日在庫を数えるか、在庫一覧を毎日貼る必要があるのでは？',
+         'どちらも要りません。購買率を「その日の消費 ÷ その日の動員」で出すなら毎日の突き合わせが'
+         '必要になりますが、このツールは「期間の消費合計 ÷ 期間の動員合計」で出しています。'
+         '在庫2時点の差が期間の消費合計そのものなので、日ごとの対応づけは不要です。'
+         'さらに、発注数に効くのは購買率の絶対値ではなく'
+         '「これからの動員 ÷ 期間の平均動員」の比だけです。'
+         '動員の数字を実績も予測もまとめて2倍にしても、発注数は1品目も変わりません。'
+         '在庫CSVは発注する日に貼りますが、それは発注そのものに必要な作業なので、'
+         '動員に連動させるために増える手間はありません。'),
         ('日々の動員実績は入力しなくていいのですか？',
          '計算だけなら無くても動きますが、入れたほうが確実に良くなります。'
          '3つ効きます。(1) 期間の平均動員が自動で出るので、手入力の打ち間違いが消える。'
@@ -823,7 +832,51 @@ def build_mechanism(wb):
             ws.row_dimensions[r + k].height = 15
         r += lines + 2
 
-    ws.print_area = f'B2:AL{r}'
+    # ================= 入力の手間 =================
+    # 「結局どれだけ入れないといけないのか」が分からないと現場は不安になる。
+    # 頻度と、入れなかったときに何が起きるかを一覧にしておく。
+    effort_sec = r + 1
+    section(effort_sec, '入力の手間はこれだけです',
+            '毎日やるのは①だけです。ほかは月1回か、必要なときだけです。')
+    eff_heads = [('B', 'J', '入れるもの'), ('K', 'R', '入れる場所'),
+                 ('S', 'X', '頻度'), ('Y', 'AL', '入れないとどうなるか')]
+    for left, right, text in eff_heads:
+        mrg(f'{left}{effort_sec + 2}:{right}{effort_sec + 2}', text,
+            font=F_HEAD, fill=FILL_HEAD, align='center', border=True)
+    efforts = [
+        ('当日の在庫CSV', S_CUR, '発注する日ごと',
+         '発注できません。これは発注そのものに必要な作業です', True),
+        ('1ヶ月前・2ヶ月前の在庫CSV', S_MID + ' ／ ' + S_PRV, '月1回',
+         '消費量が出ないので、発注数を出せません', False),
+        ('動員の実績', S_PLAN, '月1回まとめてで可',
+         '曜日ごとの差が出ません。平日を多めに見積もってしまいます', False),
+        ('動員の予測', S_PLAN, '読みが変わる日だけ',
+         'その曜日の実績平均で代用されます。ふだんはそれで足ります', False),
+        ('実在庫（数えた数）', S_COUNT, '★が付いた商品だけ',
+         '理論値のズレがそのまま発注数のズレになります', False),
+        ('購買率（PI値）', '－', '入力不要',
+         '在庫の減りと動員から自動で出ます', False),
+    ]
+    for i, (what, where, freq, effect, daily) in enumerate(efforts):
+        rr = effort_sec + 3 + i
+        mrg(f'B{rr}:J{rr}', what,
+            font=F_BOLD if daily else Font(name=FONT, size=10, color=C_INK),
+            fill=FILL_ACCENT if daily else None, border=True)
+        mrg(f'K{rr}:R{rr}', where, font=Font(name=FONT, size=10, color=C_TEXT2),
+            fill=FILL_INPUT if where != '－' else None, align='center', border=True)
+        mrg(f'S{rr}:X{rr}', freq,
+            font=Font(name=FONT, size=10, bold=True,
+                      color=C_CRIT if daily else C_TEXT2),
+            align='center', border=True)
+        mrg(f'Y{rr}:AL{rr}', effect, font=F_NOTE, border=True)
+        ws.row_dimensions[rr].height = 20
+    last = effort_sec + 3 + len(efforts)
+    mrg(f'B{last + 1}:AL{last + 1}',
+        '※ 購買率は「期間の消費合計 ÷ 期間の動員合計」で出しています。'
+        'その日の消費とその日の動員を突き合わせているわけではないので、毎日数える必要はありません。',
+        font=F_NOTE)
+
+    ws.print_area = f'B2:AL{last + 2}'
     ws.page_setup.orientation = 'landscape'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
