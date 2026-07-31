@@ -160,7 +160,8 @@ Q_COUNT = f"'{S_COUNT}'"
 COUNT_FIRST = 10          # 4〜6行はまとめ、8行が入力/自動、9行が見出し
 COUNT_LAST = COUNT_FIRST + (CALC_LAST - CALC_FIRST)
 
-PLAN_FIRST, PLAN_LAST = 8, 97            # 動員計画（90日分）
+PLAN_FIRST, PLAN_LAST = 16, 235          # 動員（前回基準日から220日分）
+PLAN_DOW_ROW = 6                         # 曜日別実績平均ブロックの先頭行
 
 # 定数マスタは1枚に4ブロックを横に並べる。マスタが増えるほど管理が重くなるため、
 # 劇場・規模・月別係数・特別期間をこの1枚に集約している。
@@ -433,8 +434,11 @@ def build_intro(wb):
         ('s', S_PRV, '月に1回、2ヶ月前の在庫一覧CSVを貼り替える'),
         ('t', '', '　今日の在庫と突き合わせて、期間の消費量を出します。'),
         ('t', '', '　商品が入れ替わっても発注から漏れないよう、両方の商品を見ています。'),
-        ('s', S_PLAN, '大きな作品の公開週など、来場者の読みが変わる日に入力する'),
-        ('t', '', '　空欄の日は劇場の標準来場者数が自動で使われます。毎日入れる必要はありません。'),
+        ('s', S_PLAN, '動員の実績を入れる／公開週などの読みを入れる'),
+        ('t', '', '　「実績来場者数」は毎日でも、月1回まとめてでもかまいません。'),
+        ('t', '', '　実績を入れると、曜日ごとの平均が自動で出ます。'),
+        ('t', '', '　予測を入れていない日は、その曜日の実績平均が使われます。'),
+        ('t', '', '　「予測来場者数」は大型作品の公開週など、読みが変わる日だけで十分です。'),
         ('t', '', '　ここに入れた動員は、そのまま発注量に効きます。'),
         ('t', '', '　動員が平常の1.3倍なら、消費も1.3倍で見積もって発注数が増えます。'),
         ('s', S_DASH, '劇場全体の状況を確認する'),
@@ -610,8 +614,11 @@ def build_mechanism(wb):
         ('商品の保管区分と発注グループ', S_ITEM, '（商品ごと）',
          f'=SUMPRODUCT(--({item_col("L")}<>""))&" 商品 設定済み"', None,
          '商品の入れ替え時', '社員'),
-        ('期間の平均動員／日（実績）', S_SET, '（1か所）',
-         f'={Q_SET}!$C$22', FMT_INT, '月1回（CSV貼替と同時）', '副支配人'),
+        ('期間の平均動員／日', S_PLAN, '実績から自動',
+         f'={Q_SET}!$C$24', FMT_INT, '実績を入れれば自動', '副支配人'),
+        ('曜日ごとの動員の差', S_PLAN, '実績から自動',
+         f'=IF({Q_SET}!$C$21=0,"実績が未入力",{Q_SET}!$C$21&" 日ぶんの実績から算出")',
+         None, '実績を入れれば自動', '—'),
         ('PI値（購買率）', '入力不要', '自動で測定',
          f'=IF({Q_SET}!$C$9="PI値予測","商品マスタの手入力値を使用中","実測値を自動計算")',
          None, '入れなくてよい', '—'),
@@ -665,10 +672,11 @@ def build_mechanism(wb):
             align='center', border=True)
 
     trace = [
-        ('動員', '期間の平均動員／日（実績）', (f'={Q_SET}!$C$22', FMT_INT),
-         '"設定シート。空欄なら 定数マスタ ②規模区分 の標準来場者数"', False),
+        ('動員', '期間の平均動員／日（実績）', (f'={Q_SET}!$C$24', FMT_INT),
+         f'=IF({Q_SET}!$C$21>0,"随時_動員を入れる の実績 "&{Q_SET}!$C$21&"日ぶんの平均",'
+         f'"実績が未入力。設定シートの手入力値か標準来場者数を使用中")', False),
         ('動員', 'これからの動員／日（次の発注日まで）', val('AK', FMT_INT),
-         '"随時_動員を入れる の予測 × 季節係数。空欄の日は標準来場者数"', False),
+         '"随時_動員を入れる の予測 × 季節係数。予測がない日はその曜日の実績平均"', False),
         ('定数', '実測PI値（来場者100人あたり何個減ったか）', val('AI', FMT_PI),
          '"期間消費数 ÷（期間の平均動員 ÷ 100）。自動で測るので入力は不要です"', False),
         ('定数', '1日にどれだけ減るか', val('S', FMT_DEC), basis, False),
@@ -768,11 +776,14 @@ def build_mechanism(wb):
          'あとは、これからの動員がその平均の何倍かを掛けるだけです。'
          '式にすると 1日に減る数 ＝ 実績消費 ×（これからの動員 ÷ 期間の平均動員）。'
          'GWで動員が1.3倍なら、消費も1.3倍で見積もります。'),
-        ('その「期間の平均動員」はどこに入れるのですか？',
-         '設定シートの「期間の平均動員/日（実績）」です。月1回、前回CSVを貼り替えるときに'
-         '一緒に入れてください。空欄でも動きます'
-         '（定数マスタ②の標準来場者数を使うので、動員の増減比だけが効きます）。'
-         '実際の数字を入れると、実測PI値が本当の値になります。'),
+        ('日々の動員実績は入力しなくていいのですか？',
+         '計算だけなら無くても動きますが、入れたほうが確実に良くなります。'
+         '3つ効きます。(1) 期間の平均動員が自動で出るので、手入力の打ち間違いが消える。'
+         '(2) 曜日ごとの平均が出るので、予測を入れていない日の見積もりが'
+         '「劇場の標準来場者数」ではなく「その曜日の実績平均」になる。'
+         '映画館は曜日で動員が3倍近く違うので、ここがいちばん効きます。'
+         '(3) 予測と実績のズレが見えるので、読みの癖が分かります。'
+         '毎日でなくても、月1回まとめて貼るだけで構いません。'),
         ('発注できる曜日が商品によって違いますが？',
          '定数マスタ ⑥発注サイクルにグループごとの曜日を入れてあります。'
          '冷凍品とドリンクシロップは週3回（月水金）、常温包材は木曜の1回だけです。'
@@ -1323,11 +1334,18 @@ def build_settings(wb):
          '当日CSVと2ヶ月前CSVの和集合です。発注計算シートの行数と一致します。', FILL_AUTO, FMT_INT),
         ('動員計画の入力日数', f'=COUNT({col(S_PLAN, "D", PLAN_FIRST, PLAN_LAST)})',
          '0でも動きます（標準来場者数を使用）。読みが変わる日だけ入れてください。', FILL_AUTO, FMT_INT),
-        ('期間の平均動員/日（実績）', None,
-         '前回基準日〜当日基準日の、1日あたり実際の動員です。'
-         '空欄なら標準来場者数を使います。入れると「動員連動」の精度が上がります。',
+        ('動員実績の入力日数', f'=COUNT({col(S_PLAN, "E", PLAN_FIRST, PLAN_LAST)})',
+         '実績を入れるほど、曜日ごとの傾向と実測PI値が正確になります。', FILL_AUTO, FMT_INT),
+        ('期間の平均動員/日（実績から）',
+         f'=IFERROR(AVERAGEIFS({col(S_PLAN, "E", PLAN_FIRST, PLAN_LAST)},'
+         f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},">="&$C$7,'
+         f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},"<="&$C$6),"")',
+         '動員シートの実績から自動で出ます。実績を入れていなければ空欄です。',
+         FILL_AUTO, FMT_INT),
+        ('期間の平均動員/日（手入力）', None,
+         '実績を入れていないときの代わりです。上の自動値があればそちらが優先されます。',
          FILL_INPUT, FMT_INT),
-        ('採用する期間平均動員', '=IF(N($C$21)>0,$C$21,N($C$14))',
+        ('採用する期間平均動員', '=IF(N($C$22)>0,$C$22,IF(N($C$23)>0,$C$23,N($C$14)))',
          '動員連動の分母です。これからの動員がこの値の何倍かで、消費量を伸縮させます。',
          FILL_AUTO, FMT_INT),
     ]
@@ -1354,12 +1372,12 @@ def build_settings(wb):
     add_validation(ws, f'={theater_col("B")}', 'C4')
     add_validation(ws, '"' + ','.join(BASIS_OPTIONS) + '"', 'C9')
 
-    ws['B24'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
-    ws['B24'].font = F_NOTE
-    ws['B25'] = ('※「期間の平均動員/日」を入れると、商品ごとの実測PI値'
-                 '（来場者100人あたり何個売れたか）が自動で出ます。'
+    ws['B26'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
+    ws['B26'].font = F_NOTE
+    ws['B27'] = ('※ 動員シートに実績を入れておくと、期間の平均動員が自動で出て、'
+                 '商品ごとの実測PI値（来場者100人あたり何個売れたか）も正確になります。'
                  '購買率を人が管理する必要はありません。')
-    ws['B25'].font = F_NOTE
+    ws['B27'].font = F_NOTE
     return ws
 
 
@@ -1440,7 +1458,7 @@ def build_calc(wb):
                        f'{Q_ITEM}!${pi_first}$5:${pi_last}$5,0)),""))')
         # カバー期間（リードタイム＋発注サイクル）の動員合計から1日あたりを出す
         cover = f'(N($I{r})+N($AG{r}))'
-        plan_sum = (f'SUMIFS({col(S_PLAN, "G", PLAN_FIRST, PLAN_LAST)},'
+        plan_sum = (f'SUMIFS({col(S_PLAN, "H", PLAN_FIRST, PLAN_LAST)},'
                     f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},">="&{Q_SET}!$C$6,'
                     f'{col(S_PLAN, "B", PLAN_FIRST, PLAN_LAST)},"<="&{Q_SET}!$C$6+{cover}-1)')
         plan_avg = f'IFERROR({plan_sum}/{cover},0)'
@@ -1491,8 +1509,8 @@ def build_calc(wb):
         ws[f'AH{r}'] = f'=IF(AND(N($K{r})>0,N($Y{r})>0),N($Y{r}),0)'
         # 実測PI値＝この商品が来場者100人あたり何個減ったか。
         # 購買率を人が入れるのではなく、期間消費と期間の平均動員から測る。
-        ws[f'AI{r}'] = (f'=IF(OR($C{r}="",$O{r}="",N({Q_SET}!$C$22)<=0),"",'
-                        f'N($O{r})/(N({Q_SET}!$C$22)/100))')
+        ws[f'AI{r}'] = (f'=IF(OR($C{r}="",$O{r}="",N({Q_SET}!$C$24)<=0),"",'
+                        f'N($O{r})/(N({Q_SET}!$C$24)/100))')
         ws[f'AI{r}'].number_format = FMT_PI
         # 動員連動の消費/日＝実測PI値 × これからの1日あたり動員 ÷ 100。
         # 式を展開すると 実績消費/日 ×（これからの動員 ÷ 期間の平均動員）になる。
@@ -1791,66 +1809,134 @@ def build_timetable(wb):
 
 def build_plan(wb):
     """
-    動員計画。日別の来場者予測を入れる場所。
-    ここに入れた数字が PI値予測の基礎になる。
-    空欄の日は劇場の標準来場者数（規模マスタ／劇場個別）が使われるので、
-    大型作品の公開週など「読みが変わる日」だけ入力すればよい。
+    動員を入れる場所。予測と実績の両方をここに置く。
+
+    実績を入れると3つ効く。
+      1. 期間の平均動員（実測PI値の分母）が自動で出る。手入力の打ち間違いが消える
+      2. 曜日ごとの平均が出るので、予測を入れていない日の既定値が
+         「劇場の標準来場者数」ではなく「その曜日の実績平均」になる。
+         映画館は曜日で動員が3倍近く違うため、ここが効く
+      3. 予測と実績の差が見えるので、読みの癖が分かる
+
+    日付は「表の開始日」から作る。当日基準日に紐づけると、CSVを貼り替えるたびに
+    行がずれて、入力した予測が別の日の値になってしまう。
     """
     ws = wb.create_sheet(S_PLAN)
-    sheet_title(ws, '動員計画',
-                '来場者予測を入れる唯一の場所です。空欄の日は劇場の標準来場者数が使われます。')
+    sheet_title(ws, '動員を入れる',
+                '予測と実績の両方をここに入れます。空欄の日はその曜日の実績平均が使われます。')
 
     ws['B4'] = '入力のしかた'
     ws['B4'].font = F_BOLD
     for i, text in enumerate([
-        '・「予測来場者数」に読みを入れます。空欄なら標準来場者数（設定シートの値）を使います。',
-        '・「主な作品・備考」は自由入力です。あとで振り返るときの手がかりになります。',
-        '・季節係数は季節係数マスタから日付ごとに自動で決まり、予測来場者数に掛かります。',
-        '・発注計算は「当日基準日から リードタイム＋発注サイクル 日分」の動員合計を使います。',
+        '・「実績来場者数」は毎日でも、月1回まとめてでも構いません。入れるほど精度が上がります。',
+        '・「予測来場者数」は読みが変わる日だけで十分です。空欄の日はその曜日の実績平均を使います。',
+        '・実績が入っている日は実績をそのまま使います（季節係数は掛けません）。',
+        '・予測・曜日平均・標準来場者数を使う日には、季節係数が掛かります。',
+        '・発注計算は「当日基準日から リードタイム＋発注サイクル 日分」の動員を見ます。',
     ]):
         ws.cell(5 + i, 2, text).font = F_NOTE
 
-    headers = ['日付', '曜日', '予測来場者数', '主な作品・備考', '季節係数', '採用来場者数']
-    kinds = ['自動', '自動', '入力', '入力', '自動', '自動']
+    ws['B11'] = '表の開始日'
+    ws['B11'].font = F_BOLD
+    ws['B11'].fill = FILL_HEAD
+    ws['B11'].border = BORDER
+    # 曜日列(C)は幅6しかないので、日付が「###」に潰れないよう結合して幅を確保する
+    ws.merge_cells('C11:D11')
+    ws['C11'].fill = FILL_INPUT
+    ws['C11'].border = BORDER
+    ws['C11'].font = F_INPUT
+    ws['C11'].number_format = FMT_DATE
+    ws['C11'].alignment = Alignment(horizontal='center', vertical='center')
+    ws['D11'].border = BORDER
+    ws['E11'] = ('← 1回だけ入れてください。空欄なら「2ヶ月前の基準日」から始まります。'
+                 'ここを動かすと入力済みの行がずれるので、決めたら触らないでください。')
+    ws['E11'].font = F_NOTE
+
+    date_col = col(S_PLAN, 'B', PLAN_FIRST, PLAN_LAST)
+    dow_col = col(S_PLAN, 'C', PLAN_FIRST, PLAN_LAST)
+    actual_col = col(S_PLAN, 'E', PLAN_FIRST, PLAN_LAST)
+    in_period = (f'{date_col},">="&{Q_SET}!$C$7,{date_col},"<="&{Q_SET}!$C$6')
+
+    # ---- 曜日別の実績平均。予測を入れていない日の既定値になる ----
+    ws['N4'] = '曜日別の実績平均（前回基準日〜当日基準日）'
+    ws['N4'].font = F_BOLD
+    put_headers(ws, PLAN_DOW_ROW - 1, ['曜日', '実績の平均', '日数'],
+                ['自動'] * 3, start_col=14)
+    for i, day in enumerate('月火水木金土日'):
+        r = PLAN_DOW_ROW + i
+        ws[f'N{r}'] = day
+        ws[f'O{r}'] = (f'=IFERROR(AVERAGEIFS({actual_col},{dow_col},$N{r},{in_period}),"")')
+        ws[f'P{r}'] = f'=COUNTIFS({dow_col},$N{r},{in_period},{actual_col},">0")'
+        style_row(ws, r, 'NOP', fill=FILL_AUTO)
+        ws[f'N{r}'].alignment = Alignment(horizontal='center')
+        ws[f'O{r}'].number_format = FMT_INT
+        ws[f'P{r}'].number_format = FMT_INT
+    dow_key = col(S_PLAN, 'N', PLAN_DOW_ROW, PLAN_DOW_ROW + 6)
+    dow_avg = col(S_PLAN, 'O', PLAN_DOW_ROW, PLAN_DOW_ROW + 6)
+    ws[f'N{PLAN_DOW_ROW + 8}'] = ('※ 日数が0の曜日は、実績がまだ入っていない曜日です。'
+                                  'その曜日は標準来場者数が使われます。')
+    ws[f'N{PLAN_DOW_ROW + 8}'].font = F_NOTE
+
+    headers = ['日付', '曜日', '予測来場者数', '実績来場者数', '主な作品・備考',
+               '季節係数', '採用来場者数', '予測とのズレ']
+    kinds = ['自動', '自動', '入力', '入力', '入力', '自動', '自動', '自動']
     put_headers(ws, PLAN_FIRST - 1, headers, kinds)
 
     for r in range(PLAN_FIRST, PLAN_LAST + 1):
         offset = r - PLAN_FIRST
         special = (f'SUMPRODUCT(MAX(({special_col("F")}<=$B{r})*'
                    f'({special_col("G")}>=$B{r})*{special_col("H")}))')
-        ws[f'B{r}'] = f'=IF({Q_SET}!$C$6="","",{Q_SET}!$C$6+{offset})'
+        ws[f'B{r}'] = (f'=IF($C$11<>"",$C$11+{offset},'
+                       f'IF({Q_SET}!$C$7="","",{Q_SET}!$C$7+{offset}))')
         # 曜日は環境の言語設定に左右されないよう CHOOSE で組み立てる
-        ws[f'C{r}'] = (f'=IF($B{r}="","",'
-                       f'CHOOSE(WEEKDAY($B{r}),"日","月","火","水","木","金","土"))')
-        ws[f'F{r}'] = (f'=IF($B{r}="","",IF({special}=0,'
+        ws[f'C{r}'] = f'=IF($B{r}="","",{weekday_jp(f"$B{r}")})'
+        ws[f'G{r}'] = (f'=IF($B{r}="","",IF({special}=0,'
                        f'IFERROR(INDEX({month_col("C")},MONTH($B{r})),1),{special}))')
-        ws[f'G{r}'] = (f'=IF($B{r}="","",'
-                       f'ROUND(IF(ISNUMBER($D{r}),$D{r},N({Q_SET}!$C$14))*N($F{r}),0))')
+        # 採用来場者数の決め方。実績＞予測＞その曜日の実績平均＞標準来場者数 の順。
+        # 実績は実際に来た数なので、季節係数は掛けない（もう入っている）。
+        fallback = (f'IF(N(IFERROR(INDEX({dow_avg},MATCH($C{r},{dow_key},0)),0))>0,'
+                    f'IFERROR(INDEX({dow_avg},MATCH($C{r},{dow_key},0)),0),'
+                    f'N({Q_SET}!$C$14))')
+        ws[f'H{r}'] = (f'=IF($B{r}="","",IF(ISNUMBER($E{r}),$E{r},'
+                       f'ROUND(IF(ISNUMBER($D{r}),$D{r},{fallback})*N($G{r}),0)))')
+        ws[f'I{r}'] = (f'=IF(OR(NOT(ISNUMBER($D{r})),NOT(ISNUMBER($E{r})),$D{r}=0),"",'
+                       f'$E{r}/$D{r}-1)')
         # グラフの目盛り用。日付を軸に使うと環境によって目盛りがずれるため文字にする
-        ws[f'I{r}'] = f'=IF($B{r}="","",TEXT($B{r},"m/d")&"("&$C{r}&")")'
-        ws[f'I{r}'].font = F_NOTE
-        style_row(ws, r, 'BCDEFG', fill=FILL_AUTO)
-        for letter in 'DE':
+        ws[f'K{r}'] = f'=IF($B{r}="","",TEXT($B{r},"m/d")&"("&$C{r}&")")'
+        ws[f'K{r}'].font = F_NOTE
+        style_row(ws, r, 'BCDEFGHI', fill=FILL_AUTO)
+        for letter in 'DEF':
             ws[f'{letter}{r}'].fill = FILL_INPUT
             ws[f'{letter}{r}'].font = F_INPUT
         ws[f'B{r}'].number_format = FMT_DATE
-        ws[f'D{r}'].number_format = FMT_INT
-        ws[f'F{r}'].number_format = '0%'
-        ws[f'G{r}'].number_format = FMT_INT
+        for letter in 'DEH':
+            ws[f'{letter}{r}'].number_format = FMT_INT
+        ws[f'G{r}'].number_format = '0%'
+        ws[f'I{r}'].number_format = '+0%;-0%;0%'
         ws[f'C{r}'].alignment = Alignment(horizontal='center')
 
     # 土日を薄く塗って週のリズムを見せる
     ws.conditional_formatting.add(
-        f'B{PLAN_FIRST}:G{PLAN_LAST}',
+        f'B{PLAN_FIRST}:I{PLAN_LAST}',
         FormulaRule(formula=[f'OR(WEEKDAY($B{PLAN_FIRST})=1,WEEKDAY($B{PLAN_FIRST})=7)'],
                     fill=PatternFill('solid', bgColor='FFF4EFE2'), stopIfTrue=False))
+    # 当日基準日より前＝実績を入れるべき行。まだ空なら薄く警告する
+    ws.conditional_formatting.add(
+        f'E{PLAN_FIRST}:E{PLAN_LAST}',
+        FormulaRule(formula=[f'AND($B{PLAN_FIRST}<>"",$B{PLAN_FIRST}<{Q_SET}!$C$6,'
+                             f'$E{PLAN_FIRST}="")'],
+                    fill=PatternFill('solid', bgColor=C_WARN_SOFT), stopIfTrue=True))
+    # 読みが大きく外れた日を目立たせる
+    for op, val in (('greaterThan', '0.2'), ('lessThan', '-0.2')):
+        ws.conditional_formatting.add(
+            f'I{PLAN_FIRST}:I{PLAN_LAST}',
+            CellIsRule(operator=op, formula=[val],
+                       font=Font(name=FONT, size=10, bold=True, color=C_WARN)))
 
-    ws['I7'] = 'グラフ目盛り用'
-    ws['I7'].font = F_NOTE
-    for c, w in zip('BCDEFG', [14, 6, 14, 40, 10, 14]):
+    widths = {'B': 13, 'C': 6, 'D': 15, 'E': 15, 'F': 34, 'G': 11, 'H': 15, 'I': 13,
+              'J': 3, 'K': 14, 'L': 3, 'M': 3, 'N': 8, 'O': 12, 'P': 8}
+    for c, w in widths.items():
         ws.column_dimensions[c].width = w
-    ws.column_dimensions['I'].width = 12
-    ws.print_area = f'B2:G{PLAN_LAST}'
     ws.freeze_panes = f'B{PLAN_FIRST}'
     return ws
 
@@ -2317,10 +2403,10 @@ def build_dashboard(wb, categories, vendors):
     plan_chart.title = None
     plan_chart.legend = None
     plan_chart.height, plan_chart.width = 6.4, 13.0
-    plan_chart.add_data(Reference(ws.parent[S_PLAN], min_col=7,
+    plan_chart.add_data(Reference(ws.parent[S_PLAN], min_col=8,
                                   min_row=PLAN_FIRST, max_row=PLAN_FIRST + 13),
                         titles_from_data=False)
-    plan_chart.set_categories(Reference(ws.parent[S_PLAN], min_col=9,
+    plan_chart.set_categories(Reference(ws.parent[S_PLAN], min_col=11,
                                         min_row=PLAN_FIRST, max_row=PLAN_FIRST + 13))
     plan_chart.series[0].graphicalProperties.solidFill = C_INK[2:]
     plan_chart.gapWidth = 35
