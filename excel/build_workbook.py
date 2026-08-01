@@ -111,6 +111,10 @@ BASIS_OPTIONS = ['動員連動', '実績消費', 'PI値予測', '最大値']
 ORDER_STATUS = ['発注済', '入荷済み', '取消']
 # 実績消費をどの期間で見るか。2ヶ月はならして安定、1ヶ月は最近の動きに追随する
 SPAN_OPTIONS = ['2ヶ月', '直近1ヶ月']
+# 発注量の決め方。
+#   発注点方式 … 足りない分だけ発注する。最大保管数は「超えない上限」として効く
+#   定数方式   … 発注点を割ったら、最大保管数まで一気に補充する（棚を満たす運用）
+POLICY_OPTIONS = ['発注点方式', '定数方式（最大まで補充）']
 
 MASTER_FIRST, MASTER_LAST = 6, 1005      # 商品マスタ
 THEATER_FIRST, THEATER_LAST = 6, 105     # 劇場マスタ
@@ -448,7 +452,10 @@ def build_intro(wb):
         ('t', '', '　ここに入れた動員は、そのまま発注量に効きます。'),
         ('t', '', '　動員が平常の1.3倍なら、消費も1.3倍で見積もって発注数が増えます。'),
         ('s', S_DASH, '劇場全体の状況を確認する'),
-        ('s', S_ITEM, 'リードタイム・最低ロット・PI値を登録する'),
+        ('s', S_ITEM, 'リードタイム・最低ロット・最大保管数を登録する'),
+        ('t', '', '　「最大保管数(ケース)」＝その商品を棚に何ケース置けるか。'),
+        ('t', '', '　隣の「目安(自動)」に必要なケース数が出るので、それ以上を入れてください。'),
+        ('t', '', '　空欄でも動きますが、入れると発注数がその数を超えなくなります。'),
         ('s', S_CONST, '劇場・規模区分・季節の係数・保管設備を決める'),
         ('t', '', '　人が決める数字はこの1枚に集めてあります。'),
         ('t', '', '　⑤保管設備に冷蔵庫やストッカーを登録すると、収容ケース数が自動で集計され、'),
@@ -625,6 +632,9 @@ def build_mechanism(wb):
         ('曜日ごとの動員の差', S_PLAN, '実績から自動',
          f'=IF({Q_SET}!$C$21=0,"実績が未入力",{Q_SET}!$C$21&" 日ぶんの実績から算出")',
          None, '実績を入れれば自動', '—'),
+        ('商品ごとの最大保管数（棚に置ける上限）', S_ITEM, '（商品ごと）',
+         f'=SUMPRODUCT(--({col(S_ITEM, get_column_letter(PI_FIRST_COL + len(PROFILES)), MASTER_FIRST, MASTER_LAST)}<>""))'
+         f'&" 商品 設定済み"', None, '棚割りを変えたとき', '副支配人'),
         ('PI値（購買率）', '入力不要', '自動で測定',
          f'=IF({Q_SET}!$C$9="PI値予測","商品マスタの手入力値を使用中","実測値を自動計算")',
          None, '入れなくてよい', '—'),
@@ -694,6 +704,11 @@ def build_mechanism(wb):
          f'="定数マスタ ②規模区分 の安全在庫日数 "&TEXT({Q_SET}!$C$12,"0.0")&"日ぶん"', False),
         ('＝', '持っておくべき数（発注点）', val('V'),
          '"1日に減る数 ×（届くまで＋次の発注まで）＋ 安全在庫"', True),
+        ('定数', '棚に置ける上限（最大保管数）', val('AT'),
+         f'=IF($AN$32=0,"",IF(INDEX({col(S_CALC, "AT", CALC_FIRST, CALC_LAST)},$AN$32)="",'
+         f'"商品マスタに未設定。上限なしで計算しています",'
+         f'"商品マスタ の 最大保管数(ケース) × 入数。目安は "&'
+         f'INDEX({col(S_CALC, "AU", CALC_FIRST, CALC_LAST)},$AN$32)&" ケース"))', False),
         ('在庫', 'いま在庫にある数', val('K'),
          '=IF($AN$32=0,"",IF(INDEX(' + col(S_CALC, "AM", CALC_FIRST, CALC_LAST) +
          ',$AN$32)<>"","実棚を入れる で数えた数（CSVの理論値 "'
@@ -703,7 +718,9 @@ def build_mechanism(wb):
         ('在庫', '発注済みで、まだ届いていない数', val('W'),
          '"発注管理 の 発注済み"', False),
         ('＝', '足りない数', val('X'),
-         '"持っておくべき数 − いまの在庫 − 発注済み"', True),
+         f'=IF({Q_SET}!$C$30="{POLICY_OPTIONS[1]}",'
+         f'"発注点を割っているので、最大保管数まで補充します",'
+         f'"持っておくべき数 − いまの在庫 − 発注済み。最大保管数は超えません")', True),
         ('発注', '1ケースに何個入っているか（入数）', val('G'),
          '"商品マスタ の 入数"', False),
         ('＝', '発注する数（ケース）', val('Y'),
@@ -1235,8 +1252,9 @@ def build_item_master(wb, items):
                 'PI値は来場者100人あたりの消費数です。取り扱いのないプロファイルは空欄のままで構いません。')
     headers = ['商品コード', '商品名', '商品分類名', '支払先名', '入数', '税抜単価',
                'L/T日数', '最低ロット', '発注単位', '保管区分', '発注グループ'] + \
-              [f'PI値 {p}' for p in PROFILES] + ['備考']
-    kinds = ['入力'] * 11 + ['入力'] * len(PROFILES) + ['入力']
+              [f'PI値 {p}' for p in PROFILES] + \
+              ['最大保管数(ケース)', '目安(自動)', '備考']
+    kinds = ['入力'] * 11 + ['入力'] * len(PROFILES) + ['入力', '自動', '入力']
     put_headers(ws, 5, headers, kinds)
 
     last_col_idx = 2 + len(headers) - 1
@@ -1265,7 +1283,21 @@ def build_item_master(wb, items):
         ws[f'K{r}'] = '常温'
         ws[f'L{r}'] = ORDER_GROUPS[2][0]
 
-    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 10, 16] + [14] * len(PROFILES) + [24]
+    # 「この商品は最低何ケース置ければ回るか」を発注計算から引いてくる。
+    # 132商品ぶんの定数を手で決めるのは無理なので、目安を隣に出しておく。
+    const_col = get_column_letter(PI_FIRST_COL + len(PROFILES))          # 最大保管数
+    guide_col = get_column_letter(PI_FIRST_COL + len(PROFILES) + 1)      # 目安
+    for r in range(MASTER_FIRST, MASTER_LAST + 1):
+        ws[f'{guide_col}{r}'] = (
+            f'=IF($B{r}="","",IFERROR(INDEX('
+            f'{col(S_CALC, "AU", CALC_FIRST, CALC_LAST)},'
+            f'MATCH($B{r},{col(S_CALC, "C", CALC_FIRST, CALC_LAST)},0)),""))')
+        ws[f'{guide_col}{r}'].fill = FILL_AUTO
+        ws[f'{guide_col}{r}'].font = F_NOTE
+        ws[f'{guide_col}{r}'].number_format = FMT_INT
+        ws[f'{const_col}{r}'].number_format = FMT_INT
+
+    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 10, 16] + [14] * len(PROFILES) + [16, 11, 24]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     add_validation(ws, '"' + ','.join(STORAGE_KINDS) + '"',
@@ -1429,6 +1461,14 @@ def build_settings(wb):
         ('実績消費の集計期間', None,
          '2ヶ月＝ならして安定させる（推奨）。直近1ヶ月＝最近の動きに素早く追随する。',
          FILL_INPUT, None),
+        ('発注量の決め方', None,
+         '発注点方式＝足りない分だけ。定数方式＝発注点を割ったら最大保管数まで補充。'
+         'どちらでも最大保管数は超えません。',
+         FILL_INPUT, None),
+        ('最大保管数の設定済み商品数',
+         f'=SUMPRODUCT(--({col(S_ITEM, get_column_letter(PI_FIRST_COL + len(PROFILES)), MASTER_FIRST, MASTER_LAST)}<>""))',
+         '商品マスタの「最大保管数(ケース)」です。空欄の商品は上限なしで計算します。',
+         FILL_AUTO, FMT_INT),
     ]
 
     for i, (label, formula, note, fill, fmt) in enumerate(rows):
@@ -1451,16 +1491,18 @@ def build_settings(wb):
     ws['C4'] = '0761'
     ws['C9'] = BASIS_OPTIONS[0]
     ws['C29'] = SPAN_OPTIONS[0]
+    ws['C30'] = POLICY_OPTIONS[0]
     add_validation(ws, f'={theater_col("B")}', 'C4')
     add_validation(ws, '"' + ','.join(BASIS_OPTIONS) + '"', 'C9')
     add_validation(ws, '"' + ','.join(SPAN_OPTIONS) + '"', 'C29')
+    add_validation(ws, '"' + ','.join(POLICY_OPTIONS) + '"', 'C30')
 
-    ws['B31'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
-    ws['B31'].font = F_NOTE
-    ws['B32'] = ('※ 動員シートに実績を入れておくと、期間の平均動員が自動で出て、'
+    ws['B33'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
+    ws['B33'].font = F_NOTE
+    ws['B34'] = ('※ 動員シートに実績を入れておくと、期間の平均動員が自動で出て、'
                  '商品ごとの実測PI値（来場者100人あたり何個売れたか）も正確になります。'
                  '購買率を人が管理する必要はありません。')
-    ws['B32'].font = F_NOTE
+    ws['B34'].font = F_NOTE
     return ws
 
 
@@ -1475,7 +1517,8 @@ def build_calc(wb):
                '発注要否', '在庫金額', '状態', '推奨発注金額', '保管区分', '在庫ケース数',
                '発注グループ', '発注サイクル', '図解用', '実測PI値', '動員連動消費/日', '動員/日(カバー期間)',
                '理論値在庫(CSV)', '実棚(有効)', '1ヶ月前在庫', '直近1ヶ月消費数',
-               '直近1ヶ月消費/日', '前1ヶ月消費/日', '消費の変化', '取扱の変化']
+               '直近1ヶ月消費/日', '前1ヶ月消費/日', '消費の変化', '取扱の変化',
+               '最大保管数(個)', '定数の目安(ケース)']
     kinds = ['自動'] * len(headers)
     put_headers(ws, 5, headers, kinds)
 
@@ -1569,7 +1612,29 @@ def build_calc(wb):
                        f'ROUNDUP(N($S{r})*(N($I{r})+N($AG{r}))+N($U{r}),0))')
         ws[f'W{r}'] = (f'=IF($C{r}="","",SUMIFS({po_col("L")},{po_col("C")},{Q_SET}!$C$4,'
                        f'{po_col("F")},$C{r},{po_col("Q")},"発注済"))')
-        ws[f'X{r}'] = f'=IF($C{r}="","",MAX(0,N($V{r})-N($K{r})-N($W{r})))'
+        # ---- 最大保管数（定数）。棚に置ける上限であり、定数方式では補充の目標にもなる ----
+        # 商品マスタの設定（ケース）＞ 在庫CSVの規定数（個）＞ 未設定 の順に採る
+        ws[f'AT{r}'] = (
+            f'=IF($C{r}="","",'
+            f'IFERROR(IF(INDEX({item_col(get_column_letter(PI_FIRST_COL + len(PROFILES)))},'
+            f'MATCH($C{r},{item_col("B")},0))="","",'
+            f'INDEX({item_col(get_column_letter(PI_FIRST_COL + len(PROFILES)))},'
+            f'MATCH($C{r},{item_col("B")},0))*MAX(1,N($G{r}))),'
+            f'IF(N($R{r})>0,N($R{r}),"")))')
+        ws[f'AT{r}'].number_format = FMT_INT
+        # 定数の目安＝発注点をケース単位に切り上げた数。これ未満だと切らしやすい
+        ws[f'AU{r}'] = (f'=IF($C{r}="","",ROUNDUP(N($V{r})/MAX(1,N($G{r})),0))')
+        ws[f'AU{r}'].number_format = FMT_INT
+
+        # 足りない分（発注点方式）と、最大保管数までの空き（定数方式）
+        need = f'MAX(0,N($V{r})-N($K{r})-N($W{r}))'
+        room = f'MAX(0,N($AT{r})-N($K{r})-N($W{r}))'
+        ws[f'X{r}'] = (
+            f'=IF($C{r}="","",'
+            f'IF($AT{r}="",{need},'
+            f'IF({Q_SET}!$C$30="{POLICY_OPTIONS[1]}",'
+            f'IF(N($K{r})+N($W{r})<=N($V{r}),{room},0),'
+            f'MIN({need},{room}))))')
         ws[f'Y{r}'] = (f'=IF($C{r}="","",IF(N($X{r})<=0,0,'
                        f'CEILING($X{r}/MAX(1,N($G{r})),MAX(1,N($J{r})))))')
         ws[f'Z{r}'] = f'=IF($C{r}="","",IF(N($Y{r})>0,"要発注","正常"))'
@@ -1579,6 +1644,7 @@ def build_calc(wb):
             f'IF(COUNTIF({item_col("B")},$C{r})=0,"マスタ未登録",""),'
             f'IF(OR($AS{r}="継続",$AS{r}="－"),"",$AS{r}),'
             f'IF(N($K{r})<0,"在庫マイナス",""),'
+            f'IF(AND($AT{r}<>"",N($AT{r})<N($V{r})),"定数が発注点より小さい",""),'
             f'IF(AND({Q_SET}!$C$9="PI値予測",$P{r}=""),"PI値未設定","")))')
         # 集計用（空文字を含まない数値列にしておき、ダッシュボードから合計する）
         ws[f'AC{r}'] = f'=N($Y{r})*N($H{r})'
@@ -1665,7 +1731,7 @@ def build_calc(wb):
         CellIsRule(operator='lessThan', formula=['0'], fill=FILL_ALERT))
 
     widths = [5, 16, 30, 16, 22, 8, 11, 9, 10, 13, 13, 12, 12, 12, 9, 14, 10, 12,
-              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8, 11, 15, 17, 15, 12, 13, 15, 15, 15, 12, 18]
+              11, 13, 11, 10, 15, 17, 10, 13, 26, 15, 10, 13, 16, 13, 8, 11, 15, 17, 15, 12, 13, 15, 15, 15, 12, 18, 14, 15]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     ws.freeze_panes = 'D6'
@@ -2554,6 +2620,8 @@ def build_dashboard(wb, categories, vendors):
          '2ヶ月前にだけあった。もう扱っていない', C_TEXT3),
         ('復活（先月は無し）', f'=COUNTIF({calc_change},"復活（先月は無し）")',
          '2ヶ月前と当日にあり、1ヶ月前に無い。要確認', C_WARN),
+        ('定数が発注点より小さい', f'=COUNTIF({calc_status},"*定数が発注点より小さい*")',
+         '棚を満たしても次の便まで持たない。棚割りか発注頻度の見直しが要る', C_WARN),
         ('マスタ未登録', f'=COUNTIF({calc_status},"*マスタ未登録*")',
          'L/T・ロット・PI値が既定値のまま', C_WARN),
         ('在庫マイナス', f'=COUNTIF({calc_status},"*在庫マイナス*")',
