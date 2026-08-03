@@ -111,15 +111,12 @@ BASIS_OPTIONS = ['動員連動', '実績消費', 'PI値予測', '最大値']
 ORDER_STATUS = ['発注済', '入荷済み', '取消']
 # 実績消費をどの期間で見るか。2ヶ月はならして安定、1ヶ月は最近の動きに追随する
 SPAN_OPTIONS = ['2ヶ月', '直近1ヶ月']
-# 発注量の決め方。既定は「毎回、定数まで補充」。
-# これは消費量をまったく使わないので、発注管理の入荷記録が揃っていなくても正しく回る。
-# 消費量（＝前回在庫＋納品−当日在庫）は納品記録が完全であることが前提で、
-# 実際には記録が抜けると消費が過小に出る。定数運用ならその影響を受けない。
-POLICY_OPTIONS = [
-    '定数方式（毎回、定数まで補充）',
-    '定数方式（発注点を割ったら補充）',
-    '発注点方式（足りない分だけ）',
-]
+# 発注量は定数から決める。消費量は使わない。
+#   発注数 ＝ 定数（最大保管数） − 今の在庫 − 発注済み
+# 消費量（＝前回在庫＋納品−当日在庫）は、期間中の納品が発注管理にすべて
+# 記録されていることが前提で、記録が抜けると過小に出る。実運用でその前提は
+# 成り立たないため、発注量の計算からは外した。
+# 消費量は「定数をいくつにするか」の目安と、残り日数の表示にだけ使う。
 
 MASTER_FIRST, MASTER_LAST = 6, 1005      # 商品マスタ
 THEATER_FIRST, THEATER_LAST = 6, 105     # 劇場マスタ
@@ -129,7 +126,11 @@ PO_FIRST, PO_LAST = 6, 1005              # 発注管理
 SPAN_DAYS = 14                           # タイムテーブルに表示する日数
 TT_FIRST = 10                            # タイムテーブルのデータ開始行
 TT_LAST = TT_FIRST + (CALC_LAST - CALC_FIRST)
-TT_DAY_COL = 12                          # L列から14日分のグリッド
+TT_DAY_COL = 14                          # N列から14日分のグリッド
+# ②発注数を決める の列。定数管理が主線なので、定数と在庫を明細に出す
+TT_COL = {'no': 'B', 'name': 'C', 'group': 'D', 'par': 'E', 'stock': 'F',
+          'days': 'G', 'dead': 'H', 'state': 'I', 'after': 'J',
+          'rec': 'K', 'qty': 'L', 'amt': 'M', 'pick': 'AB'}
 
 # シート名。日々の作業順に番号を振り、上から順にたどれば発注が終わるようにしている。
 # シート名は「何をするか」で付ける。毎日さわる3枚に①②③を振り、
@@ -418,6 +419,8 @@ def build_intro(wb):
         ('t', '', '　0のままなら貼り付けに失敗しています。もう一度やり直してください。'),
         ('s', S_TT, '帯を見ながら、黄色の「発注数」に数字を入れる'),
         ('t', '', '　いちばん上に「今日どのグループを発注できるか」が出ます。まずそこを見てください。'),
+        ('t', '', '　「定数」と「在庫」が並んでいます。発注数＝定数−在庫−発注済み です。'),
+        ('t', '', '　定数が赤く「未設定」の商品は、暫定の数字です。社員に伝えてください。'),
         ('t', '', '　発注グループが薄いグレーの行は、今日が発注日ではない商品です。'),
         ('t', '', '　帯が赤い商品は、今日発注しないと在庫が切れます。'),
         ('t', '', '　迷ったら「推奨(ケース)」に出ている数字をそのまま入れて構いません。'),
@@ -669,13 +672,9 @@ def build_mechanism(wb):
     # 既定の定数方式では発注点を使わない。どの行が効いているかを先に言っておかないと、
     # 表を上から読んだ人が「発注点から出している」と誤解する。
     mrg('B32:AL32',
-        f'=IF({Q_SET}!$C$30="{POLICY_OPTIONS[0]}",'
-        f'"いまの方式：{POLICY_OPTIONS[0]}　→　発注数は「定数 − 今の在庫 − 発注済み」だけで決まります。'
-        f'下の動員・消費・発注点の行は、定数をいくつにするか決めるときの目安です",'
-        f'IF({Q_SET}!$C$30="{POLICY_OPTIONS[1]}",'
-        f'"いまの方式：{POLICY_OPTIONS[1]}　→　発注点を割ったかどうかの判定に消費量を使い、'
-        f'補充する量は定数で決まります",'
-        f'"いまの方式：{POLICY_OPTIONS[2]}　→　下の行を上から順にたどった結果が発注数です"))',
+        '発注数は「定数 − 今の在庫 − 発注済み」だけで決まります。'
+        '下の動員・消費・発注点の行は、定数をいくつにするか決めるときの目安です'
+        '（発注数の計算には使っていません）。',
         font=Font(name=FONT, size=10, bold=True, color=C_WARN))
     mrg('B31:E31', '追いかける商品', font=F_BOLD, fill=FILL_HEAD, align='center', border=True)
     pick = mrg('F31:Q31', None, font=F_INPUT, fill=FILL_INPUT, align='left', border=True)
@@ -736,9 +735,9 @@ def build_mechanism(wb):
         ('在庫', '発注済みで、まだ届いていない数', val('W'),
          '"発注管理 の 発注済み"', False),
         ('＝', '足りない数', val('X'),
-         f'=IF({Q_SET}!$C$30="{POLICY_OPTIONS[1]}",'
-         f'"発注点を割っているので、最大保管数まで補充します",'
-         f'"持っておくべき数 − いまの在庫 − 発注済み。最大保管数は超えません")', True),
+         f'=IF($AN$32=0,"",IF(INDEX({col(S_CALC, "AT", CALC_FIRST, CALC_LAST)},$AN$32)="",'
+         f'"定数が未設定なので、暫定で発注点から計算しています",'
+         f'"定数 − いまの在庫 − 発注済み"))', True),
         ('発注', '1ケースに何個入っているか（入数）', val('G'),
          '"商品マスタ の 入数"', False),
         ('＝', '発注する数（ケース）', val('Y'),
@@ -818,10 +817,11 @@ def build_mechanism(wb):
          '式にすると 1日に減る数 ＝ 実績消費 ×（これからの動員 ÷ 期間の平均動員）。'
          'GWで動員が1.3倍なら、消費も1.3倍で見積もります。'),
         ('動員に合わせるなら、毎日在庫を数えるか、在庫一覧を毎日貼る必要があるのでは？',
-         'どちらも要りません。そもそも既定の定数方式では消費量を使いません。'
-         '発注点方式などを選んで消費量を使う場合でも、購買率は'
-         '「その日の消費 ÷ その日の動員」ではなく「期間の合計 ÷ 期間の合計」で出すため、'
-         '日ごとの対応づけは不要です。'
+         'どちらも要りません。発注数は「定数 − 在庫 − 発注済み」で決まるので、'
+         '消費量そのものを使いません。'
+         '消費量は定数を決めるときの目安と残り日数の表示に使うだけで、'
+         'そこでも「その日の消費 ÷ その日の動員」ではなく'
+         '「期間の合計 ÷ 期間の合計」で出すため、日ごとの対応づけは不要です。'
          'さらに、発注数に効くのは購買率の絶対値ではなく'
          '「これからの動員 ÷ 期間の平均動員」の比だけです。'
          '動員の数字を実績も予測もまとめて2倍にしても、発注数は1品目も変わりません。'
@@ -853,13 +853,13 @@ def build_mechanism(wb):
          '3枚を突き合わせれば、新商品・終売・復活が今月からか先月からかまで分かります。'
          'それぞれのシートの上に、その結果を出しています。'),
         ('消費量の計算は使わないのですか？',
-         '既定の「定数方式（毎回、定数まで補充）」では使いません。'
+         '発注数の計算には使いません。'
          '定数 − 今の在庫 − 発注済み、それだけです。'
          '消費量（前回在庫＋納品−当日在庫）は、発注管理に入荷が'
          'すべて記録されていることが前提で、記録が抜けると消費が過小に出ます。'
          '定数運用ならその影響を受けません。'
          '消費量は、定数をいくつにするか決めるときの目安（商品マスタの「目安」列）と、'
-         '発注点方式を選んだときにだけ使います。'),
+         '「②発注数を決める」の残り日数と帯の表示にだけ使います。'),
         ('在庫がマイナスになっています',
          '納品がまだシステムに入っていない状態です。'
          'そのまま発注すると、実際には棚にあるものを大量に頼むことになります。'
@@ -900,7 +900,7 @@ def build_mechanism(wb):
         ('実在庫（数えた数）', S_COUNT, '★が付いた商品だけ',
          '理論値のズレがそのまま発注数のズレになります', False),
         ('商品ごとの最大保管数', S_ITEM, '棚割りを変えたとき',
-         '定数方式が使えません。消費量からの計算に切り替わります', False),
+         '暫定で消費量から計算します。定数を入れるまでの仮の数字です', False),
         ('購買率（PI値）', '－', '入力不要',
          '在庫の減りと動員から自動で出ます', False),
     ]
@@ -1519,10 +1519,6 @@ def build_settings(wb):
         ('実績消費の集計期間', None,
          '2ヶ月＝ならして安定させる（推奨）。直近1ヶ月＝最近の動きに素早く追随する。',
          FILL_INPUT, None),
-        ('発注量の決め方', None,
-         '既定の「毎回、定数まで補充」は消費量を使わないので、'
-         '発注管理の入荷記録が揃っていなくても正しく動きます。',
-         FILL_INPUT, None),
         # 空行の期間納品数は "" で、Excelでは ""＞0 が TRUE になるため
         # SUMPRODUCT ではなく COUNTIF を使う（文字列は数値条件に一致しない）
         ('入荷記録のある商品数',
@@ -1556,11 +1552,9 @@ def build_settings(wb):
     ws['C4'] = '0761'
     ws['C9'] = BASIS_OPTIONS[0]
     ws['C29'] = SPAN_OPTIONS[0]
-    ws['C30'] = POLICY_OPTIONS[0]
     add_validation(ws, f'={theater_col("B")}', 'C4')
     add_validation(ws, '"' + ','.join(BASIS_OPTIONS) + '"', 'C9')
     add_validation(ws, '"' + ','.join(SPAN_OPTIONS) + '"', 'C29')
-    add_validation(ws, '"' + ','.join(POLICY_OPTIONS) + '"', 'C30')
 
     ws['B34'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
     ws['B35'].font = F_NOTE
@@ -1677,7 +1671,7 @@ def build_calc(wb):
                        f'ROUNDUP(N($S{r})*(N($I{r})+N($AG{r}))+N($U{r}),0))')
         ws[f'W{r}'] = (f'=IF($C{r}="","",SUMIFS({po_col("L")},{po_col("C")},{Q_SET}!$C$4,'
                        f'{po_col("F")},$C{r},{po_col("Q")},"発注済"))')
-        # ---- 最大保管数（定数）。棚に置ける上限であり、定数方式では補充の目標にもなる ----
+        # ---- 最大保管数（定数）。棚に置ける上限であり、補充の目標でもある ----
         # 商品マスタの設定（ケース）＞ 在庫CSVの規定数（個）＞ 未設定 の順に採る
         ws[f'AT{r}'] = (
             f'=IF($C{r}="","",'
@@ -1691,16 +1685,12 @@ def build_calc(wb):
         ws[f'AU{r}'] = (f'=IF($C{r}="","",ROUNDUP(N($V{r})/MAX(1,N($G{r})),0))')
         ws[f'AU{r}'].number_format = FMT_INT
 
-        # 足りない分（発注点方式）と、最大保管数までの空き（定数方式）
+        # need＝定数未設定のときの暫定値、room＝定数までの空き（これが発注数）
         need = f'MAX(0,N($V{r})-N($K{r})-N($W{r}))'
         room = f'MAX(0,N($AT{r})-N($K{r})-N($W{r}))'
-        ws[f'X{r}'] = (
-            f'=IF($C{r}="","",'
-            f'IF($AT{r}="",{need},'                                   # 定数未設定は従来どおり
-            f'IF({Q_SET}!$C$30="{POLICY_OPTIONS[0]}",{room},'         # 毎回、定数まで
-            f'IF({Q_SET}!$C$30="{POLICY_OPTIONS[1]}",'                # 発注点を割ったら
-            f'IF(N($K{r})+N($W{r})<=N($V{r}),{room},0),'
-            f'MIN({need},{room})))))')
+        # 定数があればそれだけで決まる。無い商品は暫定で消費量から出し、
+        # 状態欄に「定数未設定」と出して、定数を入れるべきことが分かるようにする
+        ws[f'X{r}'] = f'=IF($C{r}="","",IF($AT{r}="",{need},{room}))'
         ws[f'Y{r}'] = (f'=IF($C{r}="","",IF(N($X{r})<=0,0,'
                        f'CEILING($X{r}/MAX(1,N($G{r})),MAX(1,N($J{r})))))')
         ws[f'Z{r}'] = f'=IF($C{r}="","",IF(N($Y{r})>0,"要発注","正常"))'
@@ -1710,7 +1700,8 @@ def build_calc(wb):
             f'IF(COUNTIF({item_col("B")},$C{r})=0,"マスタ未登録",""),'
             f'IF(OR($AS{r}="継続",$AS{r}="－"),"",$AS{r}),'
             f'IF(N($K{r})<0,"在庫マイナス",""),'
-            f'IF(AND($AT{r}<>"",N($AT{r})<N($V{r})),"定数が発注点より小さい",""),'
+            f'IF($AT{r}="","定数未設定（暫定計算）",""),'
+            f'IF(AND($AT{r}<>"",N($AT{r})<N($V{r})),"定数が小さい（次の便まで持たない）",""),'
             f'IF(AND({Q_SET}!$C$9="PI値予測",$P{r}=""),"PI値未設定","")))')
         # 集計用（空文字を含まない数値列にしておき、ダッシュボードから合計する）
         ws[f'AC{r}'] = f'=N($Y{r})*N($H{r})'
@@ -1828,8 +1819,8 @@ def build_timetable(wb):
     ws['B2'] = '発注数を決める'
     ws['B2'].font = F_TITLE
 
-    state_col = col(S_TT, 'G', TT_FIRST, TT_LAST)
-    amount_col = col(S_TT, 'K', TT_FIRST, TT_LAST)
+    state_col = col(S_TT, TT_COL['state'], TT_FIRST, TT_LAST)
+    amount_col = col(S_TT, TT_COL['amt'], TT_FIRST, TT_LAST)
 
     # ---- 結論ブロック ----
     ws['B4'] = '今日の結論'
@@ -1854,7 +1845,7 @@ def build_timetable(wb):
     now_col = col(S_CONST, CYCLE_LBL_NOW, CYCLE_FIRST, CYCLE_LAST)
     wait_col = col(S_CONST, CYCLE_LBL_WAIT, CYCLE_FIRST, CYCLE_LAST)
     joined_now = f'_xlfn.TEXTJOIN("・",TRUE,{now_col})'
-    ws.merge_cells('D2:Y2')
+    ws.merge_cells('D2:AA2')
     ws['D2'] = (f'=IF({Q_SET}!$C$6="","在庫CSVを貼ると、今日の発注対象がここに出ます。",'
                 f'IF({joined_now}="",'
                 f'"今日 "&TEXT({Q_SET}!$C$6,"m/d")&"（"&{weekday_jp(f"{Q_SET}!$C$6")}&'
@@ -1863,7 +1854,7 @@ def build_timetable(wb):
                 f'"）に発注できるのは　"&{joined_now}))')
     ws['D2'].font = Font(name=FONT, size=12, bold=True, color=C_INK)
     ws['D2'].alignment = Alignment(horizontal='left', vertical='center')
-    ws.merge_cells('D3:Y3')
+    ws.merge_cells('D3:AA3')
     ws['D3'] = (f'=IF({Q_SET}!$C$6="","",'
                 f'IF(_xlfn.TEXTJOIN("　",TRUE,{wait_col})="","",'
                 f'"次に発注できる日　"&_xlfn.TEXTJOIN("　／　",TRUE,{wait_col})))')
@@ -1872,14 +1863,14 @@ def build_timetable(wb):
     ws.row_dimensions[2].height = 20
 
     # 保管スペースの埋まり具合。発注しながら「入りきるか」が見える
-    ws['L4'] = '保管スペースの埋まり具合（今の在庫＋発注ぶん ÷ 収容ケース数）'
-    ws['L4'].font = F_NOTE
+    ws['N4'] = '保管スペースの埋まり具合（今の在庫＋発注ぶん ÷ 収容ケース数）'
+    ws['N4'].font = F_NOTE
     calc_kind = col(S_CALC, 'AD', CALC_FIRST, CALC_LAST)
     calc_case = col(S_CALC, 'AE', CALC_FIRST, CALC_LAST)
-    tt_qty = col(S_TT, 'J', TT_FIRST, TT_LAST)
+    tt_qty = col(S_TT, TT_COL['qty'], TT_FIRST, TT_LAST)
     for i, (kind, cap_col) in enumerate(zip(STORAGE_KINDS, 'IJK')):
-        left = get_column_letter(12 + i * 4)
-        right = get_column_letter(15 + i * 4)
+        left = get_column_letter(14 + i * 4)
+        right = get_column_letter(17 + i * 4)
         cap = (f'IFERROR(INDEX({theater_col(cap_col)},'
                f'MATCH({Q_SET}!$C$4,{theater_col("B")},0)),0)')
         used = (f'(SUMIF({calc_kind},"{kind}",{calc_case})'
@@ -1903,20 +1894,20 @@ def build_timetable(wb):
                                    fill=PatternFill('solid', bgColor=C_WARN_SOFT),
                                    font=Font(name=FONT, size=14, bold=True, color=C_WARN)))
 
-    ws.merge_cells('G4:K4')
+    ws.merge_cells('G4:M4')
     ws['G4'] = '発注予定額（税抜）'
     ws['G4'].font = F_NOTE
     ws['G4'].alignment = Alignment(horizontal='right')
-    ws.merge_cells('G5:K5')
+    ws.merge_cells('G5:M5')
     ws['G5'] = f'=SUM({amount_col})'
     ws['G5'].font = Font(name=FONT, size=16, bold=True, color=C_INK)
     ws['G5'].number_format = FMT_YEN
     ws['G5'].alignment = Alignment(horizontal='right', vertical='center')
 
     # ---- 見出し ----
-    headers = ['No', '商品名', '発注グループ', '残り日数', 'デッドライン', '状態', '発注後日数',
-               '推奨(ケース)', '発注数', '金額']
-    kinds = ['自動', '自動', '自動', '自動', '自動', '自動', '自動', '自動', '入力', '自動']
+    headers = ['No', '商品名', '発注グループ', '定数', '在庫', '残り日数', 'デッドライン',
+               '状態', '発注後日数', '推奨(ケース)', '発注数', '金額']
+    kinds = ['自動'] * 9 + ['自動', '入力', '自動']
     put_headers(ws, 9, headers, kinds)
 
     # 日付の目盛り。行9に日付、行8に日番号（条件付き書式が参照する）
@@ -1944,30 +1935,37 @@ def build_timetable(wb):
         ws[f'C{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$D{c})'
         # 分類より「どの便で発注する商品か」のほうが現場の判断に効く
         ws[f'D{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$AF{c})'
-        ws[f'E{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$T{c})'
-        ws[f'F{r}'] = f'=IF(ISNUMBER($E{r}),$E{r}-N({Q_CALC}!$I{c}),"")'
-        ws[f'G{r}'] = (f'=IF({Q_CALC}!$C{c}="","",IF(NOT(ISNUMBER($F{r})),"データなし",'
-                       f'IF($F{r}<=0,"今日が期限",'
-                       f'IF($F{r}<=N({Q_CALC}!$AG{c}),"要発注","余裕"))))')
-        ws[f'H{r}'] = (f'=IF(OR({Q_CALC}!$C{c}="",NOT(ISNUMBER({Q_CALC}!$S{c})),{Q_CALC}!$S{c}<=0),"",'
-                       f'({Q_CALC}!$K{c}+N($J{r})*N({Q_CALC}!$G{c}))/{Q_CALC}!$S{c})')
-        ws[f'I{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$Y{c})'
-        ws[f'K{r}'] = f'=IF($J{r}="","",N($J{r})*N({Q_CALC}!$H{c}))'
+        # 定数は棚の単位（ケース）で見せる。個数だと現場の感覚と合わない
+        ws[f'E{r}'] = (f'=IF({Q_CALC}!$C{c}="","",IF({Q_CALC}!$AT{c}="","未設定",'
+                       f'ROUND(N({Q_CALC}!$AT{c})/MAX(1,N({Q_CALC}!$G{c})),0)))')
+        ws[f'F{r}'] = (f'=IF({Q_CALC}!$C{c}="","",'
+                       f'ROUND(N({Q_CALC}!$K{c})/MAX(1,N({Q_CALC}!$G{c})),1))')
+        ws[f'G{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$T{c})'
+        ws[f'H{r}'] = f'=IF(ISNUMBER($G{r}),$G{r}-N({Q_CALC}!$I{c}),"")'
+        ws[f'I{r}'] = (f'=IF({Q_CALC}!$C{c}="","",IF(NOT(ISNUMBER($H{r})),"データなし",'
+                       f'IF($H{r}<=0,"今日が期限",'
+                       f'IF($H{r}<=N({Q_CALC}!$AG{c}),"要発注","余裕"))))')
+        ws[f'J{r}'] = (f'=IF(OR({Q_CALC}!$C{c}="",NOT(ISNUMBER({Q_CALC}!$S{c})),{Q_CALC}!$S{c}<=0),"",'
+                       f'({Q_CALC}!$K{c}+N($L{r})*N({Q_CALC}!$G{c}))/{Q_CALC}!$S{c})')
+        ws[f'K{r}'] = f'=IF({Q_CALC}!$C{c}="","",{Q_CALC}!$Y{c})'
+        ws[f'M{r}'] = f'=IF($L{r}="","",N($L{r})*N({Q_CALC}!$H{c}))'
         # 発注書シートの抽出用。発注数が入っていて、選んだ仕入先に一致する行に番号を振る
-        ws[f'Z{r}'] = (f'=IF(OR(N($J{r})<=0,AND({Q_SHEET}!$C$5<>"すべて",'
-                       f'{Q_CALC}!$F{c}<>{Q_SHEET}!$C$5)),N(Z{r - 1}),N(Z{r - 1})+1)')
-        ws[f'Z{r}'].font = F_NOTE
+        ws[f'AB{r}'] = (f'=IF(OR(N($L{r})<=0,AND({Q_SHEET}!$C$5<>"すべて",'
+                        f'{Q_CALC}!$F{c}<>{Q_SHEET}!$C$5)),N(AB{r - 1}),N(AB{r - 1})+1)')
+        ws[f'AB{r}'].font = F_NOTE
 
-        style_row(ws, r, 'BCDEFGHIJK', fill=FILL_AUTO)
-        ws[f'J{r}'].fill = FILL_INPUT
-        ws[f'J{r}'].font = F_INPUT
-        ws[f'E{r}'].number_format = FMT_DAYS
-        ws[f'F{r}'].number_format = FMT_DAYS
-        ws[f'H{r}'].number_format = FMT_DAYS
-        ws[f'I{r}'].number_format = FMT_INT
-        ws[f'J{r}'].number_format = FMT_INT
-        ws[f'K{r}'].number_format = FMT_YEN
-        ws[f'G{r}'].alignment = Alignment(horizontal='center')
+        style_row(ws, r, 'BCDEFGHIJKLM', fill=FILL_AUTO)
+        ws[f'L{r}'].fill = FILL_INPUT
+        ws[f'L{r}'].font = F_INPUT
+        ws[f'E{r}'].font = F_BOLD
+        ws[f'E{r}'].number_format = FMT_INT
+        ws[f'F{r}'].number_format = FMT_DEC
+        for letter in 'GHJ':
+            ws[f'{letter}{r}'].number_format = FMT_DAYS
+        ws[f'K{r}'].number_format = FMT_INT
+        ws[f'L{r}'].number_format = FMT_INT
+        ws[f'M{r}'].number_format = FMT_YEN
+        ws[f'I{r}'].alignment = Alignment(horizontal='center')
         for d in range(SPAN_DAYS):
             cell = ws.cell(r, TT_DAY_COL + d)
             cell.fill = FILL_TRACK
@@ -1987,18 +1985,18 @@ def build_timetable(wb):
 
     # 発注デッドライン（この日を過ぎるとリードタイム的に間に合わない）
     ws.conditional_formatting.add(band, FormulaRule(
-        formula=[f'AND(ISNUMBER($F{TT_FIRST}),$F{TT_FIRST}>0,'
-                 f'{day_ref}=ROUNDUP($F{TT_FIRST},0))'],
+        formula=[f'AND(ISNUMBER($H{TT_FIRST}),$H{TT_FIRST}>0,'
+                 f'{day_ref}=ROUNDUP($H{TT_FIRST},0))'],
         border=Border(left=Side(style='medium', color=C_INK)), stopIfTrue=False))
     ws.conditional_formatting.add(band, rule(
-        f'AND(ISNUMBER($E{TT_FIRST}),{day_ref}<=$E{TT_FIRST},$G{TT_FIRST}="今日が期限")', C_CRIT))
+        f'AND(ISNUMBER($G{TT_FIRST}),{day_ref}<=$G{TT_FIRST},$I{TT_FIRST}="今日が期限")', C_CRIT))
     ws.conditional_formatting.add(band, rule(
-        f'AND(ISNUMBER($E{TT_FIRST}),{day_ref}<=$E{TT_FIRST},$G{TT_FIRST}="要発注")', C_WARN))
+        f'AND(ISNUMBER($G{TT_FIRST}),{day_ref}<=$G{TT_FIRST},$I{TT_FIRST}="要発注")', C_WARN))
     ws.conditional_formatting.add(band, rule(
-        f'AND(ISNUMBER($E{TT_FIRST}),{day_ref}<=$E{TT_FIRST},$G{TT_FIRST}="余裕")', C_OK))
+        f'AND(ISNUMBER($G{TT_FIRST}),{day_ref}<=$G{TT_FIRST},$I{TT_FIRST}="余裕")', C_OK))
     # 発注すると伸びる分
     ws.conditional_formatting.add(band, rule(
-        f'AND(ISNUMBER($H{TT_FIRST}),{day_ref}>N($E{TT_FIRST}),{day_ref}<=$H{TT_FIRST})', C_BUTTER))
+        f'AND(ISNUMBER($J{TT_FIRST}),{day_ref}>N($G{TT_FIRST}),{day_ref}<=$J{TT_FIRST})', C_BUTTER))
 
     # 今日が発注日でないグループは、発注グループ列を薄くして「今日は入れられない」と分かるようにする。
     # 行ごと消さないのは、切れそうなのに次の便まで待つしかない商品こそ気づいてほしいため。
@@ -2012,12 +2010,19 @@ def build_timetable(wb):
         FormulaRule(formula=[f'$D{TT_FIRST}<>""'],
                     font=Font(name=FONT, size=10, bold=True, color=C_INK), stopIfTrue=True))
 
+    # 定数が未設定の商品は、暫定計算になっていることが分かるようにする
+    ws.conditional_formatting.add(
+        f'E{TT_FIRST}:E{TT_LAST}',
+        CellIsRule(operator='equal', formula=['"未設定"'],
+                   fill=PatternFill('solid', bgColor=C_CRIT_SOFT),
+                   font=Font(name=FONT, size=10, bold=True, color=C_CRIT)))
+
     # 状態列は色だけに頼らず、文字でも読めるようにする
     for text, fill, font_color in (('今日が期限', C_CRIT_SOFT, C_CRIT),
                                    ('要発注', C_WARN_SOFT, C_WARN),
                                    ('余裕', C_OK_SOFT, C_OK)):
         ws.conditional_formatting.add(
-            f'G{TT_FIRST}:G{TT_LAST}',
+            f'I{TT_FIRST}:I{TT_LAST}',
             CellIsRule(operator='equal', formula=[f'"{text}"'],
                        fill=PatternFill('solid', bgColor=fill),
                        font=Font(name=FONT, size=10, bold=True, color=font_color)))
@@ -2029,36 +2034,43 @@ def build_timetable(wb):
               ('余裕', C_OK),
               ('発注すると伸びる分', C_BUTTER)]
     for i, (text, color) in enumerate(legend):
-        cell = ws.cell(legend_row + i, 12)
+        cell = ws.cell(legend_row + i, 14)
         cell.fill = PatternFill('solid', fgColor=color)
-        label = ws.cell(legend_row + i, 13, text)
+        label = ws.cell(legend_row + i, 15, text)
         label.font = F_NOTE
-    ws.cell(legend_row + len(legend), 12, '│').font = Font(name=FONT, size=9, bold=True, color=C_INK)
-    ws.cell(legend_row + len(legend), 13, '発注デッドライン（在庫が尽きる日 − リードタイム）').font = F_NOTE
-    axis = ws.cell(legend_row + len(legend) + 2, 12,
+    ws.cell(legend_row + len(legend), 14, '│').font = Font(name=FONT, size=9, bold=True, color=C_INK)
+    ws.cell(legend_row + len(legend), 15, '発注デッドライン（在庫が尽きる日 − リードタイム）').font = F_NOTE
+    axis = ws.cell(legend_row + len(legend) + 2, 14,
                    '横軸は当日基準日からの14日間です。帯の長さがその商品の在庫が持つ日数を表します。')
     axis.font = F_NOTE
-    ws.cell(legend_row + len(legend) + 3, 12,
+    ws.cell(legend_row + len(legend) + 3, 14,
             '発注数を入れると、伸びた分がバター色で帯の先に足されます。').font = F_NOTE
-    ws.cell(legend_row + len(legend) + 4, 12,
+    ws.cell(legend_row + len(legend) + 5, 14,
+            '「定数」が未設定（赤）の商品は、暫定で消費量から計算しています。'
+            '商品マスタに最大保管数を入れてください。').font = F_NOTE
+    ws.cell(legend_row + len(legend) + 6, 14,
+            '在庫が定数に足りているのに帯が赤い商品は、定数が小さすぎます。'
+            '棚を広げるか、発注の回数を増やしてください。').font = F_NOTE
+    ws.cell(legend_row + len(legend) + 4, 14,
             '発注グループが薄いグレーの行は、今日が発注日ではない商品です'
             '（次に発注できる日は画面上部に出ています）。'
             '赤い帯なのにグレーの行は、次の便まで在庫が持たないということなので、'
             '早めに支配人へ相談してください。').font = F_NOTE
 
-    ws['Z9'] = '発注書用'
-    ws['Z9'].font = F_NOTE
+    ws['AB9'] = '発注書用'
+    ws['AB9'].font = F_NOTE
     # デッドラインと発注後日数は帯で見えるので、列としては隠す
-    for letter in ('F', 'H', 'Z'):
+    for letter in ('H', 'J', 'AB'):
         ws.column_dimensions[letter].hidden = True
-    ws.print_area = f'B2:Y{TT_LAST}'
+    ws.print_area = f'B2:AA{TT_LAST}'
     ws.page_setup.orientation = 'landscape'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    for c, w in zip('BCDEFGHIJK', [5, 30, 15, 11, 13, 12, 12, 12, 11, 13]):
+    for c, w in zip('BCDEFGHIJKLM',
+                    [5, 30, 15, 8, 8, 11, 13, 12, 12, 12, 11, 13]):
         ws.column_dimensions[c].width = w
-    ws.column_dimensions['Z'].width = 9
+    ws.column_dimensions['AB'].width = 9
     ws.freeze_panes = f'C{TT_FIRST}'
     return ws
 
@@ -2248,7 +2260,7 @@ def build_order_sheet(wb, vendors):
     put_headers(ws, 10, headers, ['自動'] * len(headers))
 
     first, last = 11, 110
-    tt_pick = col(S_TT, 'Z', TT_FIRST, TT_LAST)
+    tt_pick = col(S_TT, TT_COL['pick'], TT_FIRST, TT_LAST)
     for r in range(first, last + 1):
         k = r - first + 1
         pick = f'MATCH({k},{tt_pick},0)'
@@ -2257,13 +2269,13 @@ def build_order_sheet(wb, vendors):
                        f'{pick}),""))')
         ws[f'D{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_CALC, "C", CALC_FIRST, CALC_LAST)},'
                        f'{pick})&"",""))')
-        ws[f'E{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_TT, "C", TT_FIRST, TT_LAST)},'
+        ws[f'E{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_TT, TT_COL["name"], TT_FIRST, TT_LAST)},'
                        f'{pick})&"",""))')
         ws[f'F{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({item_col("J")},'
                        f'MATCH($D{r},{item_col("B")},0)),"ケース"))')
         ws[f'G{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_CALC, "G", CALC_FIRST, CALC_LAST)},'
                        f'{pick}),""))')
-        ws[f'H{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_TT, "J", TT_FIRST, TT_LAST)},'
+        ws[f'H{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_TT, TT_COL["qty"], TT_FIRST, TT_LAST)},'
                        f'{pick}),""))')
         ws[f'I{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_CALC, "H", CALC_FIRST, CALC_LAST)},'
                        f'{pick}),""))')
@@ -2421,8 +2433,8 @@ def build_dashboard(wb, categories, vendors):
     for i in range(2, 2 + CANVAS_LAST):
         ws.column_dimensions[get_column_letter(i)].width = 3.3
 
-    tt_state = col(S_TT, 'G', TT_FIRST, TT_LAST)
-    tt_days = col(S_TT, 'E', TT_FIRST, TT_LAST)
+    tt_state = col(S_TT, TT_COL['state'], TT_FIRST, TT_LAST)
+    tt_days = col(S_TT, TT_COL['days'], TT_FIRST, TT_LAST)
     # ②のD列は発注グループに変えたので、分類別の集計は発注計算から直接引く。
     # 行数が同じ（400行）なので、シートをまたいでもCOUNTIFSで突き合わせられる。
     tt_cat = col(S_CALC, 'E', CALC_FIRST, CALC_LAST)
