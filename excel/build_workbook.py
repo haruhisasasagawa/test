@@ -183,7 +183,7 @@ SIZE_COL = {'B': 'N', 'C': 'O', 'D': 'P', 'E': 'Q', 'F': 'R'}      # 規模区�
 MONTH_COL = {'B': 'T', 'C': 'U'}                                    # 月別係数ブロック
 SPECIAL_COL = {'E': 'W', 'F': 'X', 'G': 'Y', 'H': 'Z'}              # 特別期間ブロック
 EQUIP_FIRST, EQUIP_LAST = 110, 309       # ⑤保管設備（劇場ブロックの下）
-PI_FIRST_COL = 13                        # 商品マスタのPI値開始列（M列）
+PI_FIRST_COL = 12                        # 商品マスタのPI値開始列（L列）
 # ⑥発注サイクルは AB列から。列幅はシート単位でしか決められないため、
 # 曜日の○（幅3）を置く列は他のブロックと重ならない位置に逃がしている。
 CYCLE_FIRST, CYCLE_LAST = 6, 15
@@ -635,7 +635,7 @@ def build_mechanism(wb):
          f'=SUMPRODUCT(--({item_col("B")}<>""))&" 商品 登録済み"', None,
          '商品の入れ替え時', '社員'),
         ('商品の保管区分と発注グループ', S_ITEM, '（商品ごと）',
-         f'=SUMPRODUCT(--({item_col("L")}<>""))&" 商品 設定済み"', None,
+         f'=SUMPRODUCT(--({item_col("K")}<>""))&" 商品 設定済み"', None,
          '商品の入れ替え時', '社員'),
         ('期間の平均動員／日', S_PLAN, '実績から自動',
          f'={Q_SET}!$C$24', FMT_INT, '実績を入れれば自動', '副支配人'),
@@ -1281,10 +1281,10 @@ def build_item_master(wb, items):
     sheet_title(ws, '商品マスタ',
                 'PI値は来場者100人あたりの消費数です。取り扱いのないプロファイルは空欄のままで構いません。')
     headers = ['商品コード', '商品名', '商品分類名', '支払先名', '入数', '税抜単価',
-               'L/T日数', '最低ロット', '発注単位', '保管区分', '発注グループ'] + \
+               'L/T日数', '最低ロット', '保管区分', '発注グループ'] + \
               [f'PI値 {p}' for p in PROFILES] + \
               ['最大保管数(ケース)', '目安(自動)', '備考']
-    kinds = ['入力'] * 11 + ['入力'] * len(PROFILES) + ['入力', '自動', '入力']
+    kinds = ['入力'] * 10 + ['入力'] * len(PROFILES) + ['入力', '自動', '入力']
     put_headers(ws, 5, headers, kinds)
 
     last_col_idx = 2 + len(headers) - 1
@@ -1309,9 +1309,8 @@ def build_item_master(wb, items):
         ws[f'G{r}'] = float(it['税抜単価'])
         ws[f'H{r}'] = 3
         ws[f'I{r}'] = 1
-        ws[f'J{r}'] = 'ケース'
-        ws[f'K{r}'] = '常温'
-        ws[f'L{r}'] = ORDER_GROUPS[2][0]
+        ws[f'J{r}'] = '常温'
+        ws[f'K{r}'] = ORDER_GROUPS[2][0]
 
     # 「この商品は最低何ケース置ければ回るか」を発注計算から引いてくる。
     # 132商品ぶんの定数を手で決めるのは無理なので、目安を隣に出しておく。
@@ -1327,12 +1326,12 @@ def build_item_master(wb, items):
         ws[f'{guide_col}{r}'].number_format = FMT_INT
         ws[f'{const_col}{r}'].number_format = FMT_INT
 
-    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 10, 16] + [14] * len(PROFILES) + [16, 11, 24]
+    widths = [16, 30, 16, 22, 8, 12, 9, 11, 10, 16] + [14] * len(PROFILES) + [16, 11, 24]
     for c, w in zip(letters, widths):
         ws.column_dimensions[c].width = w
     add_validation(ws, '"' + ','.join(STORAGE_KINDS) + '"',
-                   f'K{MASTER_FIRST}:K{MASTER_LAST}')
-    add_validation(ws, f'={cycle_col(CYCLE_NAME)}', f'L{MASTER_FIRST}:L{MASTER_LAST}')
+                   f'J{MASTER_FIRST}:J{MASTER_LAST}')
+    add_validation(ws, f'={cycle_col(CYCLE_NAME)}', f'K{MASTER_FIRST}:K{MASTER_LAST}')
     ws.freeze_panes = 'D6'
     return ws
 
@@ -1707,13 +1706,13 @@ def build_calc(wb):
         ws[f'AC{r}'] = f'=N($Y{r})*N($H{r})'
         ws[f'AC{r}'].number_format = FMT_YEN
         # 保管スペースの判定に使う。ケース単位に丸めた在庫量
-        ws[f'AD{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("K")},'
+        ws[f'AD{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("J")},'
                        f'MATCH($C{r},{item_col("B")},0)),"常温"))')
         ws[f'AE{r}'] = f'=IF($C{r}="","",MAX(0,ROUNDUP(N($K{r})/MAX(1,N($G{r})),0)))'
         ws[f'AE{r}'].number_format = FMT_INT
         # 発注サイクルは商品グループごとに違う（冷凍は週3回、包材は週1回など）。
         # グループが未設定の商品だけ、劇場の既定サイクルにフォールバックする
-        ws[f'AF{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("L")},'
+        ws[f'AF{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({item_col("K")},'
                        f'MATCH($C{r},{item_col("B")},0)),""))')
         ws[f'AG{r}'] = (f'=IF($C{r}="","",IFERROR(INDEX({cycle_col(CYCLE_DAYS)},'
                        f'MATCH($AF{r},{cycle_col(CYCLE_NAME)},0)),N({Q_SET}!$C$13)))')
@@ -2271,8 +2270,10 @@ def build_order_sheet(wb, vendors):
                        f'{pick})&"",""))')
         ws[f'E{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_TT, TT_COL["name"], TT_FIRST, TT_LAST)},'
                        f'{pick})&"",""))')
-        ws[f'F{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({item_col("J")},'
-                       f'MATCH($D{r},{item_col("B")},0)),"ケース"))')
+        # 入数1の商品（BIBシロップ・樽・缶など）に「ケース」と印字すると
+        # 仕入先に別の数量として伝わる。入数から単位を組み立てる。
+        ws[f'F{r}'] = (f'=IF($B{r}="","",IF(N($G{r})<=1,"単品",'
+                       f'"ケース("&TEXT(N($G{r}),"#,##0")&"入)"))')
         ws[f'G{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_CALC, "G", CALC_FIRST, CALC_LAST)},'
                        f'{pick}),""))')
         ws[f'H{r}'] = (f'=IF($B{r}="","",IFERROR(INDEX({col(S_TT, TT_COL["qty"], TT_FIRST, TT_LAST)},'
