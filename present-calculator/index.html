@@ -185,8 +185,9 @@ details.det>summary{cursor:pointer;font-size:12px;color:var(--accent)}
 </section>
 
 <div class="toolbar noprint">
-  <button class="primary" onclick="window.print()">🖨 印刷 / PDF保存</button>
-  <span class="hint">A4横・余白10mmを推奨。印刷時は入力欄が省かれ、結果一覧のみ出力されます。</span>
+  <button class="primary" onclick="window.print()">印刷 / PDF保存</button>
+  <button id="toExcel">Excelで書き出し（数式入り）</button>
+  <span class="hint">印刷はA4横・余白10mm推奨。Excelは在庫や稼働率を書き換えるとその場で再計算されます（マクロ不要）。</span>
 </div>
 </main>
 
@@ -822,6 +823,7 @@ function simulateGift(gift, perfs, opts){
   });
   var stock=gift.qty||0, per=gift.per||1, rate=opts.rate;
   var served=0, skipped=0, handed=0, lastDate=null, lastProjected=false, firstSkip=null, stopped=false;
+  var lastServedIndex=-1;   /* 最後に配布できた上映回の位置（Excel明細の行数決定に使う） */
   var days={}, order=[];
   for(var k=0;k<list.length;k++){
     var q=list[k];
@@ -832,7 +834,7 @@ function simulateGift(gift, perfs, opts){
     if(stopped){ skipped++; day.left=stock; continue; }
     if(need>0&&stock>=need){
       stock-=need; handed+=need; served++; day.served++; day.handed+=need;
-      lastDate=q.date; lastProjected=q.projected;
+      lastDate=q.date; lastProjected=q.projected; lastServedIndex=k;
     } else {
       skipped++;
       if(!firstSkip) firstSkip={date:q.date, min:q.min, screen:q.screen, need:need, left:stock, title:q.title};
@@ -855,6 +857,7 @@ function simulateGift(gift, perfs, opts){
   else status="surplus";
   return {
     gift:gift, targets:list.length, served:served, skipped:skipped, handed:handed,
+    perfs:list, lastServedIndex:lastServedIndex,
     left:stock, lastDate:lastDate, lastProjected:lastProjected, firstSkip:firstSkip,
     daily:trimmed, hiddenDays:hiddenDays, hiddenShows:hiddenShows,
     status:status, from:from, to:to,
@@ -863,7 +866,317 @@ function simulateGift(gift, perfs, opts){
 }
 
 /* =========================================================================
-   7. 画面（UI）
+   7. Excel(.xlsx) 書き出し — 数式入り。マクロ不要。
+   ========================================================================= */
+var CRC_TABLE=(function(){
+  var t=new Uint32Array(256);
+  for(var n=0;n<256;n++){
+    var c=n;
+    for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);
+    t[n]=c>>>0;
+  }
+  return t;
+})();
+function crc32(u8){
+  var c=0xFFFFFFFF;
+  for(var i=0;i<u8.length;i++) c=CRC_TABLE[(c^u8[i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+/* 無圧縮(stored)のZIPを組み立てる。xlsxはこれで問題なく開ける。 */
+function zipStore(entries){
+  var enc=new TextEncoder(), parts=[], central=[], offset=0, i;
+  function u16(n){ return [n&0xFF,(n>>8)&0xFF]; }
+  function u32(n){ return [n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>>24)&0xFF]; }
+  /* MS-DOS形式の日時。0のままだと月0日0の不正な日付になり、弾くソフトがある */
+  var now=new Date();
+  var dosTime=((now.getHours()&0x1F)<<11)|((now.getMinutes()&0x3F)<<5)|((now.getSeconds()/2)&0x1F);
+  var dosDate=(((now.getFullYear()-1980)&0x7F)<<9)|(((now.getMonth()+1)&0x0F)<<5)|(now.getDate()&0x1F);
+  for(i=0;i<entries.length;i++){
+    var name=enc.encode(entries[i].name), data=entries[i].data, crc=crc32(data);
+    var local=[].concat([0x50,0x4B,0x03,0x04],u16(20),u16(0x0800),u16(0),u16(dosTime),u16(dosDate),
+      u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0));
+    parts.push(new Uint8Array(local), name, data);
+    central.push({name:name,crc:crc,size:data.length,offset:offset});
+    offset+=local.length+name.length+data.length;
+  }
+  var cdir=[], cstart=offset;
+  for(i=0;i<central.length;i++){
+    var c=central[i];
+    var head=[].concat([0x50,0x4B,0x01,0x02],u16(20),u16(20),u16(0x0800),u16(0),u16(dosTime),u16(dosDate),
+      u32(c.crc),u32(c.size),u32(c.size),u16(c.name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.offset));
+    cdir.push(new Uint8Array(head), c.name);
+    offset+=head.length+c.name.length;
+  }
+  var eocd=new Uint8Array([].concat([0x50,0x4B,0x05,0x06],u16(0),u16(0),
+    u16(central.length),u16(central.length),u32(offset-cstart),u32(cstart),u16(0)));
+  var all=parts.concat(cdir,[eocd]);
+  var total=0;
+  for(i=0;i<all.length;i++) total+=all[i].length;
+  var out=new Uint8Array(total), pos=0;
+  for(i=0;i<all.length;i++){ out.set(all[i],pos); pos+=all[i].length; }
+  return out;
+}
+function xe(s){
+  /* 制御文字が1つでも混じるとExcelが「ファイルが破損しています」と判定するため必ず除去する */
+  return String(s==null?"":s)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,"")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function colName(i){
+  var s="";
+  i++;
+  while(i>0){ var m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); }
+  return s;
+}
+function ymdToSerial(s){
+  var d=parseYmd(s);
+  if(!d) return null;
+  return Math.round((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(1899,11,30))/86400000);
+}
+/* セル定義: {s:文字列} {n:数値} {f:数式} / st=スタイル番号 */
+function T(v,st){ return {s:v,st:st}; }
+function N(v,st){ return {n:v,st:st}; }
+function F(v,st){ return {f:v,st:st}; }
+function D(ymdStr,st){ var v=ymdToSerial(ymdStr); return v===null?{s:"",st:st}:{n:v,st:st===undefined?3:st}; }
+function buildSheetXml(rows,widths,freezeRow){
+  var x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+   +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+  x+='<sheetViews><sheetView workbookViewId="0"';
+  x+= freezeRow?'>' + '<pane ySplit="'+freezeRow+'" topLeftCell="A'+(freezeRow+1)+'" activePane="bottomLeft" state="frozen"/>':'>';
+  x+='</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>';
+  if(widths&&widths.length){
+    x+='<cols>';
+    for(var w=0;w<widths.length;w++) x+='<col min="'+(w+1)+'" max="'+(w+1)+'" width="'+widths[w]+'" customWidth="1"/>';
+    x+='</cols>';
+  }
+  x+='<sheetData>';
+  for(var r=0;r<rows.length;r++){
+    var row=rows[r];
+    if(!row||!row.length) continue;
+    x+='<row r="'+(r+1)+'">';
+    for(var c=0;c<row.length;c++){
+      var cell=row[c];
+      if(cell===null||cell===undefined||cell==="") continue;
+      if(typeof cell==="string") cell={s:cell};
+      if(typeof cell==="number") cell={n:cell};
+      var ref=colName(c)+(r+1);
+      var st=cell.st?' s="'+cell.st+'"':"";
+      if(cell.f!==undefined) x+='<c r="'+ref+'"'+st+'><f>'+xe(cell.f)+'</f></c>';
+      else if(cell.n!==undefined&&cell.n!==null) x+='<c r="'+ref+'"'+st+'><v>'+cell.n+'</v></c>';
+      else if(cell.s!==undefined&&cell.s!=="") x+='<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+xe(cell.s)+'</t></is></c>';
+      else if(st) x+='<c r="'+ref+'"'+st+'/>';
+    }
+    x+='</row>';
+  }
+  x+='</sheetData></worksheet>';
+  return x;
+}
+var XLSX_STYLES='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+ +'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+ +'<fonts count="4">'
+ +'<font><sz val="11"/><name val="Meiryo UI"/></font>'
+ +'<font><b/><sz val="11"/><name val="Meiryo UI"/></font>'
+ +'<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Meiryo UI"/></font>'
+ +'<font><b/><sz val="14"/><name val="Meiryo UI"/></font>'
+ +'</fonts>'
+ +'<fills count="4">'
+ +'<fill><patternFill patternType="none"/></fill>'
+ +'<fill><patternFill patternType="gray125"/></fill>'
+ +'<fill><patternFill patternType="solid"><fgColor rgb="FF12233D"/><bgColor indexed="64"/></patternFill></fill>'
+ +'<fill><patternFill patternType="solid"><fgColor rgb="FFEAF1FC"/><bgColor indexed="64"/></patternFill></fill>'
+ +'</fills>'
+ +'<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
+ +'<border><left style="thin"><color rgb="FFB8BFCC"/></left><right style="thin"><color rgb="FFB8BFCC"/></right>'
+ +'<top style="thin"><color rgb="FFB8BFCC"/></top><bottom style="thin"><color rgb="FFB8BFCC"/></bottom><diagonal/></border></borders>'
+ +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+ +'<cellXfs count="10">'
+ +'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'                                                   /* 0 標準 */
+ +'<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'                                     /* 1 太字 */
+ +'<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' /* 2 見出し */
+ +'<xf numFmtId="14" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'            /* 3 日付 */
+ +'<xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'             /* 4 数値 */
+ +'<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>'                                   /* 5 文字 */
+ +'<xf numFmtId="9" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>' /* 6 入力(％) */
+ +'<xf numFmtId="3" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>' /* 7 入力(数値) */
+ +'<xf numFmtId="14" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>' /* 8 日付(太字) */
+ +'<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>'                                     /* 9 タイトル */
+ +'</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+
+function buildWorkbook(sheets){
+  var enc=new TextEncoder(), i;
+  var wb='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+   +'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+   +' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+   +'<workbookPr/><bookViews><workbookView activeTab="0"/></bookViews><sheets>';
+  for(i=0;i<sheets.length;i++) wb+='<sheet name="'+xe(sheets[i].name)+'" sheetId="'+(i+1)+'" state="visible" r:id="rId'+(i+1)+'"/>';
+  /* fullCalcOnLoad: 数式の計算結果を保存していないため、開いた時に必ず再計算させる */
+  wb+='</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>';
+  var rels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+   +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+  for(i=0;i<sheets.length;i++) rels+='<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>';
+  rels+='<Relationship Id="rId'+(sheets.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+  rels+='</Relationships>';
+  var ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+   +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+   +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+   +'<Default Extension="xml" ContentType="application/xml"/>'
+   +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+   +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+  for(i=0;i<sheets.length;i++) ct+='<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+  ct+='</Types>';
+  var root='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+   +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+   +'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  var files=[
+    {name:"[Content_Types].xml", data:enc.encode(ct)},
+    {name:"_rels/.rels", data:enc.encode(root)},
+    {name:"xl/workbook.xml", data:enc.encode(wb)},
+    {name:"xl/_rels/workbook.xml.rels", data:enc.encode(rels)},
+    {name:"xl/styles.xml", data:enc.encode(XLSX_STYLES)}
+  ];
+  for(i=0;i<sheets.length;i++){
+    files.push({name:"xl/worksheets/sheet"+(i+1)+".xml",
+      data:enc.encode(buildSheetXml(sheets[i].rows, sheets[i].widths, sheets[i].freeze))});
+  }
+  return zipStore(files);
+}
+
+var XLSX_MAX_ROWS_PER_GIFT=400;
+var SUMMARY_FIRST_ROW=10;   /* 「配布可能期間」シートで1件目のプレゼントが入る行 */
+function exportExcel(){
+  if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
+  var o=state.opts, rs=state.results, i, j;
+  var SUM="'配布可能期間'", DET="'明細'";
+
+  /* --- 明細シート（上映回ごとの逐次計算・数式） --- */
+  var det=[], blocks=[];
+  det.push([T("明細：上映回ごとの引き当て計算",9)]);
+  det.push([T("「配布可能期間」シートの在庫・1人あたり・稼働率を書き換えると自動で再計算されます。",1)]);
+  det.push([]);
+  for(i=0;i<rs.length;i++){
+    var r=rs[i], g=r.gift;
+    var sumRow=SUMMARY_FIRST_ROW+i;              // 「配布可能期間」シート上の行
+    var stockRef=SUM+"!$E$"+sumRow, perRef=SUM+"!$F$"+sumRow, rateRef=SUM+"!$B$5";
+    /* 最後に配布できた回まで必ず含める（在庫不足でスキップした回を挟んでも配布は続くため） */
+    var limit=Math.min(r.perfs.length, Math.max(r.lastServedIndex+1+20, 30), XLSX_MAX_ROWS_PER_GIFT);
+    det.push([T((i+1)+". "+(g.title||"(作品名なし)")+"　／　"+(g.present||""),1)]);
+    var head=det.length+1;
+    det.push([T("No",2),T("日付",2),T("曜日",2),T("開始",2),T("SC",2),T("キャパ",2),T("区分",2),
+              T("必要数",2),T("配布",2),T("配布数",2),T("残数",2),T("配布日",2)]);
+    var first=head+1;
+    for(j=0;j<limit;j++){
+      var p=r.perfs[j], row=first+j;
+      var prev = j===0 ? stockRef : ("K"+(row-1));
+      var dd=parseYmd(p.date);
+      det.push([
+        N(j+1,5), D(p.date,3), T(WD[dd.getDay()],5), T(fmtMin(p.min),5), N(p.screen,5), N(p.cap,4),
+        T(p.projected?"推計":"PS",5),
+        F("ROUNDUP(F"+row+"*"+rateRef+",0)*"+perRef,4),
+        F('IF('+prev+'>=H'+row+',"○","×")',5),
+        F('IF(I'+row+'="○",H'+row+',0)',4),
+        F(prev+"-J"+row,4),
+        F('IF(I'+row+'="○",B'+row+',"")',3)
+      ]);
+    }
+    if(limit===0){
+      // 対象上映が無い場合も範囲が逆転しないよう、空の1行を置く
+      det.push([N(0,5),T("対象となる上映回がありません",5)]);
+    }
+    var last=first+Math.max(limit,1)-1;
+    blocks.push({first:first,last:last,limit:limit,truncated:r.perfs.length>limit,targets:r.perfs.length});
+    if(r.perfs.length>limit){
+      det.push([T("",5),T("対象上映は全"+r.perfs.length+"回。在庫が尽きる見込みのため以降は省略しています。",1)]);
+    }
+    det.push([]);
+  }
+
+  /* --- サマリー（入力兼用）シート --- */
+  var sum=[];
+  sum.push([T("入場者プレゼント 配布可能期間",9)]);
+  sum.push([T("劇場",1), T(state.schedule.theater||"")]);
+  sum.push([T("スケジュール",1), T(fmtDateFull(state.schedule.start)+" 〜 "+fmtDateFull(state.schedule.end)
+    +"（以降 "+o.weeks+"週先まで同じ編成が続くと仮定して推計）")]);
+  sum.push([T("計算起算日",1), D(o.base,8)]);
+  sum.push([T("想定稼働率",1), N(o.rate,6), T("← 変更できます（満席＝100%）",1)]);
+  sum.push([T("作成日",1), D(ymd(new Date()),3),
+    T(o.strict?"在庫不足の回が出たら以降は配布終了として計算":"在庫不足の回のみ配布中止として計算")]);
+  sum.push([]);
+  sum.push([T("薄い青のセル（在庫・1人あたり・稼働率）が入力欄です。書き換えると右側の結果が自動で変わります。",1)]);
+  sum.push([T("No",2),T("作品",2),T("プレゼント",2),T("種別",2),T("在庫",2),T("1人",2),T("配布開始",2),T("配布終了",2),
+            T("対象回数",2),T("配布回数",2),T("配布見込",2),T("残数",2),T("配布可能最終日",2),T("判定",2),T("備考",2)]);
+  for(i=0;i<rs.length;i++){
+    var r2=rs[i], g2=r2.gift, b=blocks[i], row=SUMMARY_FIRST_ROW+i;
+    var rng=function(col){ return DET+"!$"+col+"$"+b.first+":$"+col+"$"+b.last; };
+    var note=[];
+    if(g2.note) note.push(g2.note);
+    if(r2.startedBefore) note.push("配布開始が起算日より前。在庫は起算日時点の残数を入力");
+    if(b.truncated) note.push("在庫を増やす場合は明細行が不足するため再出力が必要");
+    if(!b.targets) note.push("対象上映なし（作品名の紐付けを確認）");
+    sum.push([
+      N(i+1,5), T(g2.title,5), T(g2.present,5), T(g2.kind,5),
+      N(g2.qty||0,7), N(g2.per||1,7),
+      g2.start?D(g2.start,3):T("-",5),
+      g2.end?D(g2.end,3):T("無くなるまで",5),
+      N(b.targets,4),
+      F('COUNTIF('+rng("I")+',"○")',4),
+      F("SUM("+rng("J")+")",4),
+      F("E"+row+"-K"+row,4),
+      F('IF(MAX('+rng("L")+')=0,"-",MAX('+rng("L")+'))',8),
+      F('IF(I'+row+'=0,"対象上映なし",IF(J'+row+'=0,"在庫不足で配布不可",IF(J'+row+'<I'+row+',"在庫切れ","期間内は充足")))',5),
+      T(note.join(" / "),5)
+    ]);
+  }
+
+  /* --- 上映回シート（PSの読み取り結果そのもの） --- */
+  var perf=[];
+  perf.push([T("上映回一覧（読み込んだパフォーマンススケジュール）",9)]);
+  perf.push([T("推計分は含みません。ピボットテーブル等で自由に集計できます。",1)]);
+  perf.push([]);
+  perf.push([T("日付",2),T("曜日",2),T("SC",2),T("キャパ",2),T("作品",2),T("開始",2)]);
+  var src=state.schedule.perfs.slice().sort(function(a,b){
+    if(a.date!==b.date) return a.date<b.date?-1:1;
+    if(a.screen!==b.screen) return a.screen-b.screen;
+    return a.min-b.min;
+  });
+  for(i=0;i<src.length;i++){
+    var q=src[i], qd=parseYmd(q.date);
+    perf.push([D(q.date,3),T(WD[qd.getDay()],5),N(q.screen,5),N(q.cap,4),T(q.title,5),T(fmtMin(q.min),5)]);
+  }
+
+  /* --- 前提シート --- */
+  var memo=[
+    [T("計算の前提と注意点",9)],[],
+    [T("計算方法",1)],
+    [T("1回の上映で必要な数 ＝ キャパ × 想定稼働率（切り上げ）× 1人あたりの配布数")],
+    [T("その回のお客様全員に配布できない場合は、その回は配布しない（在庫は減らさない）")],
+    [T("上映回を日付・開始時刻の順に並べ、先頭から在庫を引き当て、最後に配布できた日を配布可能最終日とする")],
+    [],
+    [T("注意点",1)],
+    [T("1. 在庫欄は「計算起算日の時点で手元にある数」。配布開始が起算日より前のものは残数を入力してください。")],
+    [T("2. 満席想定は「最短でいつ無くなるか」の値です。実際の稼働率では最終日は後ろに伸びます。")],
+    [T("3. 読み込んだ期間より先は同じ編成が続く前提の推計です。新作入替でずれるため、毎週作り直してください。")],
+    [T("4. 補助席は計上していません。キャパはパフォーマンススケジュール記載の座席数です。")],
+    [T("5. 明細の行数には上限があります。在庫を大きく増やした場合は元のツールから出し直してください。")],
+    [],
+    [T("元ツール",1)],
+    [T("present-calculator.html（ブラウザで開くだけで動作。パフォーマンススケジュールの読み込みはこちらで行います）")]
+  ];
+
+  var wbData=buildWorkbook([
+    {name:"配布可能期間", rows:sum, widths:[5,26,26,16,9,6,12,12,9,9,10,9,15,14,30], freeze:9},
+    {name:"明細", rows:det, widths:[5,11,5,7,5,8,7,9,6,9,10,11], freeze:0},
+    {name:"上映回", rows:perf, widths:[11,5,5,8,32,7], freeze:4},
+    {name:"前提・注意", rows:memo, widths:[110]}
+  ]);
+  var url=URL.createObjectURL(new Blob([wbData],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  var a=document.createElement("a");
+  a.href=url; a.download="present-distribution-"+ymd(new Date())+".xlsx";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+}
+
+/* =========================================================================
+   8. 画面（UI）
    ========================================================================= */
 var state={ schedule:null, gifts:[], results:null, opts:{} };
 var GID=1;
@@ -1360,6 +1673,7 @@ function initUI(){
     if(confirm("登録中の入場者プレゼントをすべて削除します。よろしいですか？")){ state.gifts=[]; renderGifts(); save(); }
   });
   el("calc").addEventListener("click",runCalc);
+  el("toExcel").addEventListener("click",exportExcel);
   ["optBase","optRate","optWeeks","optStrict","optDetail"].forEach(function(id){
     el(id).addEventListener("change",save);
   });
