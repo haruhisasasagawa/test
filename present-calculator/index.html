@@ -948,6 +948,13 @@ function renderTitles(){
 
 /* ---- ③④プレゼント表 ---- */
 var KINDS=["通常（無くなるまで）","週替わり","イベント・特別上映限定","サンプリング"];
+function matchBadge(g){
+  if(!state.schedule) return '<span class="tag mute">-</span>';
+  var links=g.links||autoLinks(g.title);
+  var n=links?links.length:0;
+  if(!n) return '<span class="tag ng">未一致</span>';
+  return '<span class="tag '+(g.links?"ok":"info")+'">'+n+'作品'+(g.links?"":"(自動)")+'</span>';
+}
 function renderGifts(){
   var t=el("giftTable");
   var h='<thead><tr>'
@@ -958,10 +965,6 @@ function renderGifts(){
   for(var i=0;i<state.gifts.length;i++){
     var g=state.gifts[i];
     var links=g.links||autoLinks(g.title);
-    var nMatch=0;
-    if(state.schedule&&links) nMatch=links.length;
-    var badge = !state.schedule ? '<span class="tag mute">-</span>'
-      : (nMatch? '<span class="tag ok">'+nMatch+'作品</span>' : '<span class="tag ng">未一致</span>');
     h+='<tr data-i="'+i+'">'
       +'<td class="c"><input type="checkbox" data-f="enabled" '+(g.enabled?"checked":"")+'></td>'
       +'<td><input type="text" data-f="title" value="'+esc(g.title)+'"></td>'
@@ -972,7 +975,7 @@ function renderGifts(){
       +'<td><input type="date" data-f="start" value="'+esc(g.start)+'"></td>'
       +'<td><input type="date" data-f="end" value="'+esc(g.end)+'"><div style="font-size:10px;color:var(--muted)">空欄=無くなるまで</div></td>'
       +'<td><input type="text" data-f="group" value="'+esc(g.group)+'" style="width:70px" placeholder="同時配布"></td>'
-      +'<td class="c">'+badge+' <button class="mini" data-toggle="'+i+'">⚙</button></td>'
+      +'<td class="c"><span data-badge="'+i+'">'+matchBadge(g)+'</span> <button class="mini" data-toggle="'+i+'">⚙</button></td>'
       +'<td class="c"><button class="mini danger" data-del="'+i+'">×</button></td></tr>';
     if(g.open) h+=giftDetailRow(g,i,links);
   }
@@ -1059,7 +1062,10 @@ function bindGiftEvents(){
       var keys=[];
       row.querySelectorAll("[data-link]").forEach(function(x){ if(x.checked) keys.push(x.getAttribute("data-link")); });
       g.links=keys.length?keys:null;
-      save(); renderGifts();
+      // 表全体を作り直すと候補一覧が並び替わりチェック位置がずれるため、バッジだけ更新する
+      var badge=t.querySelector('[data-badge="'+i+'"]');
+      if(badge) badge.innerHTML=matchBadge(g);
+      save();
     });
   });
 }
