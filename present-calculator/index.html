@@ -1361,7 +1361,7 @@ function initUI(){
     var blob=new Blob([JSON.stringify({gifts:state.gifts},null,2)],{type:"application/json"});
     var a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
-    a.download="入場者プレゼント設定_"+ymd(new Date())+".json";
+    a.download="present-settings-"+ymd(new Date())+".json";
     a.click(); URL.revokeObjectURL(a.href);
   });
   el("importJson").addEventListener("change",function(){
@@ -1378,7 +1378,8 @@ function initUI(){
   });
 }
 if(typeof document!=="undefined"&&document.addEventListener){
-  document.addEventListener("DOMContentLoaded",initUI);
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",initUI);
+  else initUI();
 }
 if(typeof globalThis!=="undefined"){
   globalThis.__PGC={

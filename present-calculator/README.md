@@ -71,3 +71,13 @@ node test/check.mjs <パフォーマンススケジュール.xlsx> [入場者プ
 ```
 
 `index.html` 内のロジックをそのまま読み込んで実行するため、アプリ本体と同じ結果になります。
+
+## 配布用ページの生成
+
+```
+node build-artifact.mjs
+```
+
+`index.html` 自身を Base64 で同梱した `artifact.html` を生成します。
+Web に置くと、ページ上の「HTMLファイルをダウンロード」ボタンから
+`present-calculator.html`（`index.html` と完全に同一のファイル）を保存できます。
