@@ -290,11 +290,14 @@ def build(path):
         style(res.cell(row=r, column=9, value=(
             f'=IF(F{r}=0,"-",SUMPRODUCT(MAX(({rngC}>0)*計算!$A${FIRST}:$A${last})))')),
             fmt="yyyy/m/d")
+        # 判定は「対象の回すべてに配れたか」で行う。計算期間の末日と比べる方法では、
+        # 配布終了日が先に来るプレゼント（週替わりなど）を在庫切れと誤判定する。
         style(res.cell(row=r, column=10, value=(
             f'=IF(プレゼント!$B${gr}="","",'
             f'IF(E{r}=0,"対象上映なし（キーワードを確認）",'
             f'IF(F{r}=0,"在庫不足で1回も配布できません",'
-            f'IF(I{r}>=設定!$B$2+{DAYS - 1},"計算期間内は在庫あり","この日で在庫切れ"))))')))
+            f'IF(F{r}>=E{r},"対象の回すべてに配布できます（残 "&TEXT(H{r},"#,##0")&"）",'
+            f'"この日で在庫切れ（配れない回 "&TEXT(E{r}-F{r},"#,##0")&"回）"))))')))
     res.freeze_panes = "A4"
 
     wb.save(path)
