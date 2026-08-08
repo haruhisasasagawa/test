@@ -21,6 +21,8 @@ KMAX = int(os.environ.get("PC_KMAX", 45))      # PS 1シートあたりに読み
 PSROWS = int(os.environ.get("PC_PSROWS", 250)) # PS 1シートあたりに読み取る行数
 GIFTS = int(os.environ.get("PC_GIFTS", 12))    # 登録できる入場者プレゼントの数
 PSHEETS = int(os.environ.get("PC_PSHEETS", 7)) # 貼り付けられる PS のシート数（1週間=最大7）
+GROWS = int(os.environ.get("PC_GROWS", 150))   # 入場者プレゼント情報から読み取る行数
+KEYLEN = int(os.environ.get("PC_KEYLEN", 8))   # 作品名から自動生成するキーワードの文字数
 FIRST = 9                                      # 「計算」シートのデータ開始行
 
 NAVY = "FF12233D"
@@ -45,6 +47,39 @@ def style(cell, spec=None, fmt=None, border=True):
     return cell
 
 
+def clean_text(ref):
+    """括弧・空白・全角記号を取り除いた比較用の文字列を作る数式。"""
+    expr = ref
+    for a, b in [("『", ""), ("』", ""), ("「", ""), ("」", ""), ("【", ""), ("】", ""),
+                 ("〈", ""), ("〉", ""), ("　", ""), (" ", "")]:
+        expr = f'SUBSTITUTE({expr},"{a}","{b}")'
+    return expr
+
+
+# 突き合わせのときに落とす記号。全角・半角どちらで書かれていても同じ文字列になるようにする
+#（実データに「スパイダーマン：」と「スパイダーマン:」の両方が出てくるため）
+MATCH_NOISE = ["　", " ", "・", "･", "：", ":", "／", "/", "＆", "&", "！", "!",
+               "？", "?", "、", "，", ",", "。", ".", "～", "〜", "＝", "=",
+               "『", "』", "「", "」", "【", "】", "〈", "〉", "（", "(", "）", ")"]
+
+
+def strip_noise(ref):
+    """突き合わせ用に、空白と記号を取り除いた文字列を作る数式。"""
+    expr = ref
+    for ch in MATCH_NOISE:
+        expr = f'SUBSTITUTE({expr},"{ch}","")'
+    return expr
+
+
+def to_half(ref, extra=()):
+    """全角数字と指定した全角記号を半角にする数式。"""
+    expr = ref
+    for a, b in [("０", "0"), ("１", "1"), ("２", "2"), ("３", "3"), ("４", "4"),
+                 ("５", "5"), ("６", "6"), ("７", "7"), ("８", "8"), ("９", "9")] + list(extra):
+        expr = f'SUBSTITUTE({expr},"{a}","{b}")'
+    return expr
+
+
 def fullwidth_to_half(ref):
     """全角数字・全角スラッシュ・改行を半角スラッシュ区切りに正規化する数式を組み立てる。
     ASC() は環境差があるため使わず、SUBSTITUTE の入れ子で行う。"""
@@ -54,6 +89,21 @@ def fullwidth_to_half(ref):
                  ("／", "/"), ("　", "")]:
         expr = f'SUBSTITUTE({expr},"{a}","{b}")'
     return f'SUBSTITUTE({expr},CHAR(10),"/")'
+
+
+def _date_formula(ref):
+    """「8/7(金)」「7月24日(金)」「45678」「無くなるまで」等を日付に直す数式。
+    年は書かれていないので、設定の起算日の年を使い、半年以上ずれる場合は前後の年に寄せる。"""
+    t = to_half(f'{ref}&""', [("／", "/"), ("（", "("), ("　", ""), ("月", "/"), ("日", "")])
+    t = f'TRIM(IFERROR(LEFT({t},FIND("(",{t})-1),{t}))'
+    m = f'VALUE(LEFT({t},FIND("/",{t})-1))'
+    dd = f'VALUE(MID({t},FIND("/",{t})+1,10))'
+    y = "YEAR(設定!$B$2)"
+    d0 = f'DATE({y},{m},{dd})'
+    # 起算日から前後240日を超える場合は年をずらす
+    fixed = (f'IF({d0}-設定!$B$2>240,DATE({y}-1,{m},{dd}),'
+             f'IF(設定!$B$2-{d0}>240,DATE({y}+1,{m},{dd}),{d0}))')
+    return f'IF({ref}="","",IF(ISNUMBER({ref}),{ref},IFERROR({fixed},"")))'
 
 
 def build(path):
@@ -76,10 +126,16 @@ def build(path):
         ("2. 「設定」シートで、計算起算日・想定稼働率・曜日ごとにどのPSを使うかを指定します。", False),
         ("   1枚しか貼っていない場合は、7曜日すべてに 1 を指定します。", False),
         ("   貼り付けが済むと「PS別の読み取り状況」に上映行数が出ます。0 のままなら貼り付け先が違います。", False),
-        ("3. 「プレゼント」シートに、プレゼント名・作品キーワード・在庫・配布期間を入力します。", False),
-        ("   作品キーワードは PS の作品名に含まれる文字列です（例：ミニオンズ、トイ・ストーリー）。", False),
-        ("   （字）（吹）（IMAXレーザー）などの表記違いをまとめて拾うため、共通部分だけを入れてください。", False),
-        ("4. 「結果」シートに、プレゼントごとの配布可能最終日が表示されます。", False),
+        ("3. 入場者プレゼント情報（作品名／プレゼント内容／納品数／配布開始日／配布終了日）を、", False),
+        ("   「プレゼント貼付」シートの A1 にそのまま貼り付けます。", False),
+        ("   プレゼント名・納品数・配布開始日／終了日・作品キーワードが「プレゼント」シートに自動で入ります。", False),
+        ("   （手入力でも使えます。貼り付けない場合は「プレゼント」シートに直接書いてください）", False),
+        ("4. 「プレゼント」シートの『一致した作品数』を確認します。ここが最重要です。", True),
+        ("   0 のものは PS の作品名と結びついていないので、作品キーワードを書き換えてください。", False),
+        ("   キーワードは PS の作品名に含まれる文字列です（例：ミニオンズ、トイ・ストーリー）。", False),
+        ("   （字）（吹）（IMAXレーザー）などの表記違いをまとめて拾うため、共通部分だけを入れます。", False),
+        ("   0 でなくても、別の作品を拾っていることがあります。作品名が似ている週はご注意ください。", False),
+        ("5. 「結果」シートに、プレゼントごとの配布可能最終日が表示されます。", False),
         ("", False),
         ("■ 計算のルール", True),
         ("1回の上映で必要な数 ＝ スクリーンのキャパ × 想定稼働率（切り上げ）× 1人あたりの配布数", False),
@@ -97,8 +153,10 @@ def build(path):
         (f"   貼り付けられる PS は最大 {PSHEETS} 枚です。", False),
         (f"5. 登録できるプレゼントは {GIFTS} 件までです。", False),
         ("6. 在庫欄には『起算日の時点で手元にある数』を入力してください。", False),
-        ("   起算日より前に配った分は計算に含まれません。", False),
-        ("7. 補助席は計上していません。キャパは PS の記載どおりです。", False),
+        ("   貼り付けから入るのは納品数です。起算日より前に配った分は差し引かれていません。", False),
+        ("7. 作品キーワードは作品名の先頭から自動で作ります。必ず当たるわけではありません。", False),
+        ("   『一致した作品数』が 0 のものは手で直してください（例：「映画クレヨンしんちゃん…」→「クレヨンしん」）。", False),
+        ("8. 補助席は計上していません。キャパは PS の記載どおりです。", False),
         ("", False),
         ("■ 上映行の見分け方（PSの書式が変わったとき用）", True),
         ("D列が「A」で、E〜N列に「時:分」が1つ以上ある行を上映行として扱います。", False),
@@ -169,6 +227,15 @@ def build(path):
         c = s.cell(row=1, column=16, value=f"← A1 を選んで、PS の {p} 番目のシートをそのまま貼り付けてください")
         c.font = Font(bold=True, color="FF1F5FBF")
 
+    # ------------------------------------------- 入場者プレゼント情報の貼り付け先
+    gp = wb.create_sheet("プレゼント貼付")
+    for col, w in zip("ABCDE", [34, 34, 14, 14, 14]):
+        gp.column_dimensions[col].width = w
+    c = gp.cell(row=1, column=7,
+                value="← A1 を選んで、入場者プレゼント情報（作品名／プレゼント内容／納品数／"
+                      "配布開始日／配布終了日）をそのまま貼り付けてください")
+    c.font = Font(bold=True, color="FF1F5FBF")
+
     # ------------------------------------------------------------------ 解析
     for p in range(1, PSHEETS + 1):
         a = wb.create_sheet(f"解析{p}")
@@ -200,25 +267,76 @@ def build(path):
             a.cell(row=k, column=11, value=f'=IF(J{k}=0,"",INDEX($F$1:$F${PSROWS},J{k}))')
             a.cell(row=k, column=12, value=f'=IF(J{k}=0,0,INDEX($C$1:$C${PSROWS},J{k}))')
             a.cell(row=k, column=13, value=f'=IF(J{k}=0,0,INDEX($E$1:$E${PSROWS},J{k}))')
+            # N列: 空白を除いた作品名。プレゼントのキーワードはこの列と突き合わせる
+            a.cell(row=k, column=14, value=f'=IF(K{k}="","",{strip_noise(f"K{k}")})')
+
+    # ------------------------------------------------------- 取込（貼り付けたプレゼント情報の解析）
+    im = wb.create_sheet("取込")
+    for col, w in zip("ABCDEFGHI", [7, 7, 34, 34, 12, 12, 12, 20, 22]):
+        im.column_dimensions[col].width = w
+    for i, h in enumerate(["データ行", "通番", "作品名", "プレゼント名", "納品数",
+                           "配布開始日", "配布終了日", "キーワード候補", "元の納品数表記"], start=1):
+        style(im.cell(row=1, column=i), HEAD).value = h
+    for r in range(2, GROWS + 2):
+        src = r - 1                       # プレゼント貼付シートの行番号
+        P = "プレゼント貼付!"
+        a, b, cc, d, e = (f'{P}$A{src}', f'{P}$B{src}', f'{P}$C{src}',
+                          f'{P}$D{src}', f'{P}$E{src}')
+        # データ行の判定: 作品名があり、見出し行（「作品名」「納品数」）ではないこと
+        im.cell(row=r, column=1, value=(
+            f'=IF(AND({a}<>"",{a}<>"作品名",ISERROR(SEARCH("納品数",{cc}&"")),'
+            f'OR({b}<>"",{cc}<>"")),1,0)'))
+        im.cell(row=r, column=2, value=f'=IF(A{r}=1,SUM($A$2:A{r}),"")')
+        im.cell(row=r, column=3, value=f'=IF(A{r}=1,{a},"")')
+        im.cell(row=r, column=4, value=f'=IF(A{r}=1,{b},"")')
+        # 納品数: 「2800（200）」の括弧内は一束の数なので落とし、「初回42000」等の語も除く
+        qty = to_half(cc, [("（", "("), ("，", ""), (",", "")])
+        qty = f'IFERROR(LEFT({qty},FIND("(",{qty})-1),{qty})'
+        for w in ("初回", "約", "計", "枚", "個"):
+            qty = f'SUBSTITUTE({qty},"{w}","")'
+        im.cell(row=r, column=5, value=f'=IF(A{r}=0,"",IF({cc}="",0,IFERROR(VALUE(TRIM({qty})),0)))')
+        for col, ref in ((6, d), (7, e)):
+            im.cell(row=r, column=col, value=f'=IF(A{r}=0,"",{_date_formula(ref)})').number_format = "yyyy/m/d"
+        # 「映画」「劇場版」はPSの作品名に付いていないことがあるので落としてからキーワードにする
+        key = strip_noise(a)
+        for w in ("映画", "劇場版"):
+            key = f'SUBSTITUTE({key},"{w}","")'
+        im.cell(row=r, column=8, value=f'=IF(A{r}=0,"",LEFT({key},{KEYLEN}))')
+        im.cell(row=r, column=9, value=f'=IF(A{r}=0,"",{cc}&"")')
 
     # ------------------------------------------------------------------ プレゼント
     g = wb.create_sheet("プレゼント")
     headers = ["No", "プレゼント名", "作品キーワード", "除外キーワード", "在庫",
-               "1人あたり", "配布開始日", "配布終了日"]
-    widths = [5, 30, 22, 16, 10, 9, 13, 13]
+               "1人あたり", "配布開始日", "配布終了日", "一致した作品数", "取込元"]
+    widths = [5, 30, 22, 16, 10, 9, 13, 13, 12, 30]
     for i, (h, w) in enumerate(zip(headers, widths), start=1):
         g.column_dimensions[CL(i)].width = w
         style(g.cell(row=2, column=i, value=h), HEAD)
     style(g.cell(row=1, column=1,
-                 value="作品キーワードは PS の作品名に含まれる文字列（例：ミニオンズ）。配布終了日が空欄なら「無くなるまで」。"),
+                 value="「プレゼント貼付」に貼り付けると自動で入ります。直したいセルは上書きしてください"
+                       "（数式が消えますが問題ありません）。"),
           dict(font=Font(bold=True)), border=False)
     for i in range(GIFTS):
         r = 3 + i
-        style(g.cell(row=r, column=1, value=i + 1), fmt="0")
-        for col in range(2, 9):
-            fmt = {5: "#,##0", 6: "0", 7: "yyyy/m/d", 8: "yyyy/m/d"}.get(col)
-            style(g.cell(row=r, column=col), INPUT, fmt=fmt)
-        g.cell(row=r, column=6, value=1)
+        n = i + 1
+        style(g.cell(row=r, column=1, value=n), fmt="0")
+        # 取込シートの n 件目を引く。貼り付けが無ければ空欄のまま手入力できる
+        row_ref = f'MATCH({n},取込!$B$2:$B${GROWS + 1},0)+1'
+        def pick(col, empty='""'):
+            return (f'=IFERROR(IF(INDEX(取込!${col}$2:${col}${GROWS + 1},{row_ref}-1)="",{empty},'
+                    f'INDEX(取込!${col}$2:${col}${GROWS + 1},{row_ref}-1)),{empty})')
+        style(g.cell(row=r, column=2, value=pick("D")), INPUT)
+        style(g.cell(row=r, column=3, value=pick("H")), INPUT)
+        style(g.cell(row=r, column=4), INPUT)
+        style(g.cell(row=r, column=5, value=pick("E", "0")), INPUT, fmt="#,##0")
+        style(g.cell(row=r, column=6, value=1), INPUT, fmt="0")
+        style(g.cell(row=r, column=7, value=pick("F")), INPUT, fmt="yyyy/m/d")
+        style(g.cell(row=r, column=8, value=pick("G")), INPUT, fmt="yyyy/m/d")
+        # キーワードが PS の作品名に何本当たったか。0 ならキーワードを直す必要がある
+        hits = "+".join(f'COUNTIF(解析{p}!$N$1:$N${KMAX},"*"&$C{r}&"*")'
+                        for p in range(1, PSHEETS + 1))
+        style(g.cell(row=r, column=9, value=f'=IF($C{r}="","",{hits})'), fmt="0")
+        style(g.cell(row=r, column=10, value=pick("C")))
 
     # ------------------------------------------------------------------ 計算
     c = wb.create_sheet("計算")
@@ -227,11 +345,11 @@ def build(path):
         c.column_dimensions[col].width = w
     labels = ["プレゼント名", "作品キーワード", "除外キーワード", "在庫", "1人あたり", "配布開始日", "配布終了日"]
     for i, lab in enumerate(labels, start=1):
-        style(c.cell(row=i, column=6, value=lab), dict(font=Font(bold=True, size=9)),
+        style(c.cell(row=i, column=7, value=lab), dict(font=Font(bold=True, size=9)),
               border=False)
     for gi in range(GIFTS):
         gr = 3 + gi
-        base = 7 + gi * 3
+        base = 8 + gi * 3      # A〜G を共通列に使うため、プレゼントの列は H から
         # 空欄のセルを参照すると "" ではなく 0 が返るため、必ず IF で空欄を空文字に戻す。
         # これを省くと「配布終了日が空欄＝無くなるまで」の判定が成立しない。
         def blank(ref, empty='""'):
@@ -246,8 +364,9 @@ def build(path):
         for off, name in enumerate(["対象回数", "配布回数", "残数"]):
             style(c.cell(row=8, column=base + off, value=name), HEAD)
             c.column_dimensions[CL(base + off)].width = 8
-    for i, h in enumerate(["日付", "PS", "作品（PS表記）", "キャパ", "回数", "必要数"], start=1):
+    for i, h in enumerate(["日付", "PS", "作品（PS表記）", "キャパ", "回数", "必要数", "照合用"], start=1):
         style(c.cell(row=8, column=i, value=h), HEAD)
+    c.column_dimensions["G"].width = 32
 
     for d in range(DAYS):
         for k in range(1, KMAX + 1):
@@ -266,16 +385,19 @@ def build(path):
                          value="=IFERROR(" + pick.format(r=r, col="M", k=k) + ",0)"), fmt="0")
             style(c.cell(row=r, column=6,
                          value=f'=IF($D{r}=0,0,ROUNDUP($D{r}*設定!$B$3,0))'), fmt="#,##0")
+            # 突き合わせは空白を除いた作品名で行う（PSは全角空白、プレゼント情報は半角空白のことがある）
+            style(c.cell(row=r, column=7,
+                         value='=IFERROR(' + pick.format(r=r, col="N", k=k) + ',"")'))
             for gi in range(GIFTS):
-                base = 7 + gi * 3
+                base = 8 + gi * 3
                 B = CL(base)          # 対象回数
                 C_ = CL(base + 1)     # 配布回数
                 D_ = CL(base + 2)     # 残数
                 prev = f"{D_}{r - 1}" if k > 1 or d > 0 else f"{B}$4"
                 style(c.cell(row=r, column=base, value=(
-                    f'=IF(OR({B}$2="",$C{r}=""),0,'
-                    f'IF(AND(ISNUMBER(SEARCH({B}$2,$C{r})),'
-                    f'OR({B}$3="",NOT(ISNUMBER(SEARCH({B}$3,$C{r})))),'
+                    f'=IF(OR({B}$2="",$G{r}=""),0,'
+                    f'IF(AND(ISNUMBER(SEARCH({B}$2,$G{r})),'
+                    f'OR({B}$3="",NOT(ISNUMBER(SEARCH({B}$3,$G{r})))),'
                     f'$A{r}>={B}$6,OR({B}$7="",$A{r}<={B}$7)),$E{r},0))')), fmt="0")
                 style(c.cell(row=r, column=base + 1, value=(
                     f'=IF(OR({B}{r}=0,$F{r}<=0),0,MIN({B}{r},INT({prev}/($F{r}*{B}$5))))')), fmt="0")
@@ -299,7 +421,7 @@ def build(path):
     for gi in range(GIFTS):
         r = 4 + gi
         gr = 3 + gi
-        base = 7 + gi * 3
+        base = 8 + gi * 3
         B, C_, D_ = CL(base), CL(base + 1), CL(base + 2)
         rngB = f"計算!${B}${FIRST}:${B}${last}"
         rngC = f"計算!${C_}${FIRST}:${C_}${last}"
