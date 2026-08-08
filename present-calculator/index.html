@@ -693,6 +693,9 @@ function projectPerfs(schedule, horizonYmd){
   if(!schedule.start||!schedule.end||!horizonYmd) return base;
   var cycle=daysBetween(schedule.start,schedule.end)+1;
   if(cycle<1) return base;
+  /* 編成は週替わりが基本のため、読み込みが7日未満でも繰り返しは週単位にする。
+     （3日分だけ読み込んだものを3日周期で繰り返すと、実際の倍以上の上映回になってしまう） */
+  if(cycle<7) cycle=7;
   var out=base.slice();
   var span=daysBetween(schedule.end,horizonYmd);
   var loops=Math.ceil(span/cycle);
@@ -1218,6 +1221,13 @@ function renderScheduleSummary(){
     +' ／ 作品数 <b>'+s.titles.length+'</b><br>'
     +'シート：'+s.sheets.map(function(x){return esc(x.name)+"（"+x.dates.length+"日/"+x.count+"回）";}).join("、")
     +'</div>';
+  var span=daysBetween(s.start,s.end)+1;
+  if(span<7){
+    html+='<div class="warnbox" style="margin-top:8px">読み込んだスケジュールは <b>'+span+'日分</b>です'
+      +'（PSのシート数は週によって変わります。1週間分をすべて読み込むと精度が上がります）。<br>'
+      +'先の期間は<b>週単位で繰り返す前提</b>で推計します。読み込んでいない曜日は「上映なし」として扱うため、'
+      +'配布可能最終日は実際より後ろに出ます。</div>';
+  }
   if(s.warnings.length){
     html+='<div class="warnbox" style="margin-top:8px"><b>読み取り時の注意</b><br>'+s.warnings.slice(0,10).map(esc).join("<br>")+'</div>';
   }

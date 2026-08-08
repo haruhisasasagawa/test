@@ -20,6 +20,7 @@ DAYS = int(os.environ.get("PC_DAYS", 42))      # 計算する日数（6週）
 KMAX = int(os.environ.get("PC_KMAX", 45))      # PS 1シートあたりに読み取る上映行の最大数
 PSROWS = int(os.environ.get("PC_PSROWS", 250)) # PS 1シートあたりに読み取る行数
 GIFTS = int(os.environ.get("PC_GIFTS", 12))    # 登録できる入場者プレゼントの数
+PSHEETS = int(os.environ.get("PC_PSHEETS", 7)) # 貼り付けられる PS のシート数（1週間=最大7）
 FIRST = 9                                      # 「計算」シートのデータ開始行
 
 NAVY = "FF12233D"
@@ -66,10 +67,15 @@ def build(path):
         ("入場者プレゼント 配布可能期間 計算シート（貼り付けるだけ・マクロ不要）", True),
         ("", False),
         ("■ 手順", True),
-        ("1. パフォーマンススケジュールの各シートを、そのまま PS1／PS2／PS3 シートの A1 に貼り付けます。", False),
-        ("   例）金曜のシート → PS1、土日月火木のシート → PS2、水曜のシート → PS3", False),
+        (f"1. パフォーマンススケジュールの各シートを、PS1〜PS{PSHEETS} シートの A1 に順に貼り付けます。", False),
+        (f"   PS は週によってシート数が変わります（1枚〜7枚）。使う枚数だけ貼り付けてください。", False),
+        ("   例1）3枚のとき：金曜 → PS1、土日月火木 → PS2、水曜 → PS3", False),
+        ("   例2）1枚（1週間同じ編成）のとき：PS1 だけに貼り付け", False),
+        ("   例3）7枚（毎日違う）のとき：PS1〜PS7 に1日ずつ貼り付け", False),
         ("   ※コピー元をそのまま貼り付けてください（結合セルのままで構いません）。", False),
         ("2. 「設定」シートで、計算起算日・想定稼働率・曜日ごとにどのPSを使うかを指定します。", False),
+        ("   1枚しか貼っていない場合は、7曜日すべてに 1 を指定します。", False),
+        ("   貼り付けが済むと「PS別の読み取り状況」に上映行数が出ます。0 のままなら貼り付け先が違います。", False),
         ("3. 「プレゼント」シートに、プレゼント名・作品キーワード・在庫・配布期間を入力します。", False),
         ("   作品キーワードは PS の作品名に含まれる文字列です（例：ミニオンズ、トイ・ストーリー）。", False),
         ("   （字）（吹）（IMAXレーザー）などの表記違いをまとめて拾うため、共通部分だけを入れてください。", False),
@@ -88,6 +94,7 @@ def build(path):
         ("3. PS のヘッダにある日本語の日付（例：2026年8月8日（土）～…）は読み取りません。", False),
         ("   起算日と曜日ごとのPS対応だけで日付を組み立てます。", False),
         (f"4. 読み取るのは PS 1シートにつき先頭 {PSROWS} 行、上映行は最大 {KMAX} 本までです。", False),
+        (f"   貼り付けられる PS は最大 {PSHEETS} 枚です。", False),
         (f"5. 登録できるプレゼントは {GIFTS} 件までです。", False),
         ("6. 在庫欄には『起算日の時点で手元にある数』を入力してください。", False),
         ("   起算日より前に配った分は計算に含まれません。", False),
@@ -136,19 +143,34 @@ def build(path):
         st.cell(row=4 + i, column=6).alignment = Alignment(horizontal="center")
     style(st.cell(row=11, column=5, value="※「その曜日はPS1〜PS3のどれを使うか」を指定します"),
           dict(font=Font(size=9)), border=False)
-    dv = DataValidation(type="list", formula1='"1,2,3"', allow_blank=False)
+    dv = DataValidation(type="list",
+                        formula1='"' + ",".join(str(i) for i in range(1, PSHEETS + 1)) + '"',
+                        allow_blank=False)
     st.add_data_validation(dv)
     dv.add("G4:G10")
 
+    # 貼り付けが正しくできたか一目で分かるようにする（0 のままなら貼り付け先が違う）
+    style(st.cell(row=13, column=1, value="PS別の読み取り状況"), dict(font=Font(bold=True)), border=False)
+    for i, h in enumerate(["PS", "上映行数", "1日の座席数", "使う曜日"], start=1):
+        style(st.cell(row=14, column=i, value=h), HEAD)
+    for p in range(1, PSHEETS + 1):
+        r = 14 + p
+        style(st.cell(row=r, column=1, value=f"PS{p}"))
+        style(st.cell(row=r, column=2, value=f"=SUM(解析{p}!$D$1:$D${PSROWS})"), fmt="0")
+        style(st.cell(row=r, column=3,
+                      value=f"=SUMPRODUCT(解析{p}!$C$1:$C${PSROWS},解析{p}!$E$1:$E${PSROWS})"), fmt="#,##0")
+        style(st.cell(row=r, column=4, value=(
+            f'=IF(COUNTIF($G$4:$G$10,{p})=0,"（未使用）",COUNTIF($G$4:$G$10,{p})&"日/週")')))
+
     # ------------------------------------------------------------------ PS貼付
-    for p in (1, 2, 3):
+    for p in range(1, PSHEETS + 1):
         s = wb.create_sheet(f"PS{p}")
         s.column_dimensions["B"].width = 34
         c = s.cell(row=1, column=16, value=f"← A1 を選んで、PS の {p} 番目のシートをそのまま貼り付けてください")
         c.font = Font(bold=True, color="FF1F5FBF")
 
     # ------------------------------------------------------------------ 解析
-    for p in (1, 2, 3):
+    for p in range(1, PSHEETS + 1):
         a = wb.create_sheet(f"解析{p}")
         a.sheet_state = "visible"
         for col, w in zip("ABCDEFGIJKLM", [14, 8, 8, 6, 6, 34, 8, 5, 8, 34, 8, 6]):
@@ -233,7 +255,9 @@ def build(path):
             style(c.cell(row=r, column=1, value=f"=設定!$B$2+{d}"), fmt="yyyy/m/d")
             style(c.cell(row=r, column=2,
                          value=f'=IFERROR(VLOOKUP(WEEKDAY($A{r},1),設定!$E$4:$G$10,3,FALSE),"")'), fmt="0")
-            pick = "CHOOSE($B{r},解析1!${col}${k},解析2!${col}${k},解析3!${col}${k})"
+            # 曜日ごとに使う PS が変わるため、貼り付け枚数分の CHOOSE で切り替える
+            pick = ("CHOOSE($B{r},"
+                    + ",".join(f"解析{p}!${{col}}${{k}}" for p in range(1, PSHEETS + 1)) + ")")
             style(c.cell(row=r, column=3,
                          value='=IFERROR(' + pick.format(r=r, col="K", k=k) + ',"")'))
             style(c.cell(row=r, column=4,
