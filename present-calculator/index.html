@@ -541,8 +541,8 @@ table.daily .ng{color:var(--alert);font-weight:700}
         </select></label>
       <label class="f"><span>何週先まで見るか</span>
         <select id="optWeeks">
-          <option value="4">4週</option><option value="8">8週</option>
-          <option value="13">13週</option><option value="26" selected>26週</option><option value="52">52週</option>
+          <option value="4" selected>4週（1か月）</option><option value="8">8週（2か月）</option>
+          <option value="13">13週（3か月）</option><option value="26">26週（半年）</option><option value="52">52週（1年）</option>
         </select></label>
       <button class="primary big" id="calc">この内容で計算する</button>
     </div>
@@ -1990,7 +1990,9 @@ function bindGiftEvents(){
 /* ---- 計算実行 ---- */
 function readOpts(){
   var base=el("optBase").value||(state.schedule?state.schedule.start:ymd(new Date()));
-  var weeks=Math.max(0,parseInt(el("optWeeks").value,10)||26);
+  /* 既定は4週。PSは毎週入れ替わるので、それより先は編成が続く前提の推計にすぎない。
+     長く取るほど「当面 終了予定なし」が減って日付が出るが、その日付の根拠は薄くなる。 */
+  var weeks=Math.max(0,parseInt(el("optWeeks").value,10)||4);
   var rate=Math.min(100,Math.max(1,parseInt(el("optRate").value,10)||100))/100;
   return {
     base:base, weeks:weeks, rate:rate,
