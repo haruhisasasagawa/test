@@ -270,6 +270,13 @@ table.daily .ng{color:var(--alert);font-weight:700}
   table{font-size:9pt}
   /* 複数ページに渡るときも見出しを毎ページ出し、行が途中で切れないようにする */
   thead{display:table-header-group}
+  /* 画面用の切り詰めを印刷では解除する。紙の上で作品名が確定的に切れるため */
+  section.card,.gcard{overflow:visible}
+  .gcard .eyebrow{white-space:normal;overflow:visible;text-overflow:clip}
+  .prep-i .pn{height:auto;overflow:visible}
+  th{white-space:normal}
+  .big-notice:last-child{page-break-after:auto}
+  .prep,.notice-foot,.ended-list{break-inside:avoid;page-break-inside:avoid}
   tr,.nrow,.gcard,.gift-block,.prep-i{break-inside:avoid;page-break-inside:avoid}
   tbody tr:nth-child(even) td{background:#F7F6F3}
   .printhead{display:block;margin-bottom:9px;border-bottom:2px solid #000;padding-bottom:5px}
@@ -311,7 +318,7 @@ table.daily .ng{color:var(--alert);font-weight:700}
   @page{size:A4 portrait;margin:12mm}
   /* その日の配布指示と明細は横向きで刷る（名前付きページ。未対応ブラウザでは縦のまま） */
   @page yoko{size:A4 landscape;margin:10mm}
-  body.land .view.active{page:yoko}
+  body.land{page:yoko}
 }
 </style>
 </head>
@@ -884,6 +891,7 @@ function parseScheduleSheet(sheet){
 }
 function parseSchedule(sheets){
   var perfs=[], dates={}, warnings=[], sheetsUsed=[], theater="";
+  var seenPerf={}, dupCount=0;
   for(var i=0;i<sheets.length;i++){
     var res;
     try{ res=parseScheduleSheet(sheets[i]); }
@@ -891,10 +899,18 @@ function parseSchedule(sheets){
     if(!res||!res.perfs.length) continue;
     if(!theater) theater=cellStr(sheets[i].rows,1,0);
     sheetsUsed.push({name:res.name,dateText:res.dateText,dates:res.dates,count:res.perfs.length});
-    perfs=perfs.concat(res.perfs);
+    /* シートの日付範囲が重なっていると同じ回が二重に入り、在庫を倍消費して
+       配布可能期間を半分に見誤る。日付・スクリーン・開始時刻・作品で重複を落とす。 */
+    for(var q=0;q<res.perfs.length;q++){
+      var x0=res.perfs[q], k0=x0.date+"|"+x0.screen+"|"+x0.min+"|"+x0.title;
+      if(seenPerf[k0]){ dupCount++; continue; }
+      seenPerf[k0]=1;
+      perfs.push(x0);
+    }
     for(var d=0;d<res.dates.length;d++) dates[res.dates[d]]=1;
     warnings=warnings.concat(res.warnings);
   }
+  if(dupCount) warnings.push("同じ上映回が "+dupCount+"件 重複していたため1件にまとめました（シートの日付範囲が重なっています）");
   var dateList=Object.keys(dates).sort();
   // 作品ごとの集計
   var byKey={};
@@ -1113,8 +1129,12 @@ function simulateGift(gift, perfs, opts){
      小さいスクリーンの回では配り続ける。lastDate をそのまま掲示すると、
      まだ配れるはずの日に大箱の回で品切れる＝客対応の事故になるため、両方を持つ。 */
   var safeUntil = firstSkip ? addDays(firstSkip.date,-1) : lastDate;
-  if(safeUntil&&safeUntil<opts.base) safeUntil=null;
+  /* 配布開始前の日付を「〜まで配布できます」と出さない */
+  if(safeUntil&&(safeUntil<opts.base||safeUntil<from)) safeUntil=null;
   var safeDaysLeft = safeUntil ? daysBetween(opts.base, safeUntil) : null;
+  /* 在庫が尽きず、配布終了日も推計期間の外にある場合、最終日は計算を打ち切った地点にすぎない。
+     これを確定した終了日として掲示すると嘘になる。 */
+  var endedByHorizon = !firstSkip && (!gift.end || gift.end>opts.horizon);
   /* 品切れが金土日にかかるかどうか。週末は客数が多く、機会損失もクレームも大きい */
   var weekendRisk=false;
   if(firstSkip){
@@ -1131,13 +1151,15 @@ function simulateGift(gift, perfs, opts){
   for(var w=0;w<list.length;w++) capSum+=list[w].cap;
   var avgCap = list.length ? Math.round(capSum/list.length) : 0;
   var needPerShow = avgCap ? Math.ceil(avgCap*rate)*per : 0;
-  var showsLeft = needPerShow ? Math.floor(stock/needPerShow) : null;
-  if(showsLeft===0) showsLeft=null;   /* 1回分に満たない残りは「約0回分」と書いても情報がない */
+  /* 現場が知りたいのは「今ある在庫であと何回配れるか」。
+     計算を終えた時点の残り(stock)ではなく、起算日時点の手持ち(gift.qty)から求める。 */
+  var showsLeft = needPerShow ? Math.floor((gift.qty||0)/needPerShow) : null;
+  if(showsLeft===0) showsLeft=null;   /* 1回分に満たないなら「約0回分」と書いても情報がない */
   /* 何%の入りまでなら期間を賄えるか（満席=100%）。回ごとの必要数は切り上げのため探索で求める */
   var safeRate=null;
   if(list.length&&gift.qty&&shortfall===0){
     safeRate=Math.round(rate*100);      /* 今の想定でも足りているなら、それがそのまま上限 */
-  } else if(list.length&&gift.qty){
+  } else if(list.length){
     var lo=0, hi=Math.round(rate*100);
     for(var it=0;it<8;it++){
       var mid=Math.floor((lo+hi)/2);
@@ -1155,6 +1177,7 @@ function simulateGift(gift, perfs, opts){
     daily:trimmed, hiddenDays:hiddenDays, hiddenShows:hiddenShows,
     status:status, from:from, to:to,
     needTotal:needTotal, shortfall:shortfall, daysLeft:daysLeft, unknownCap:unknownCap,
+    endedByHorizon:endedByHorizon,
     safeUntil:safeUntil, safeDaysLeft:safeDaysLeft, weekendRisk:weekendRisk,
     avgCap:avgCap, needPerShow:needPerShow, showsLeft:showsLeft,
     avgPerDay:avgPerDay, servedDays:servedDays, perShowLimit:perShowLimit, safeRate:safeRate,
@@ -1370,7 +1393,11 @@ function exportExcel(){
         N(j+1,5), D(p.date,3), T(WD[dd.getDay()],5), T(fmtMin(p.min),5), N(p.screen,5), N(p.cap,4),
         T(p.projected?"推計":"PS",5),
         F("ROUNDUP(F"+row+"*"+rateRef+",0)*"+perRef,4),
-        F('IF('+prev+'>=H'+row+',"○","×")',5),
+        /* 「1回でも配れなければ以降終了」の設定では、前の回が×なら以降も×にする。
+           これを入れないと画面とExcelで最終日が食い違う */
+        F(o.strict && j>0
+          ? 'IF(OR(I'+(row-1)+'="×",'+prev+'<H'+row+'),"×","○")'
+          : 'IF('+prev+'>=H'+row+',"○","×")', 5),
         F('IF(I'+row+'="○",H'+row+',0)',4),
         F(prev+"-J"+row,4),
         F('IF(I'+row+'="○",B'+row+',"")',3)
@@ -1401,7 +1428,8 @@ function exportExcel(){
   sum.push([]);
   sum.push([T("薄い青のセル（在庫・1人あたり・稼働率）が入力欄です。書き換えると右側の結果が自動で変わります。",1)]);
   sum.push([T("No",2),T("作品",2),T("プレゼント",2),T("種別",2),T("在庫",2),T("1人",2),T("配布開始",2),T("配布終了",2),
-            T("対象回数",2),T("配布回数",2),T("配布見込",2),T("残数",2),T("配布可能最終日",2),T("判定",2),T("備考",2)]);
+            T("対象回数",2),T("配布回数",2),T("配布見込",2),T("残数",2),T("一部の回を含む最終日",2),
+            T("全回に配れる最終日（掲示に出る日）",2),T("判定",2),T("備考",2)]);
   for(i=0;i<rs.length;i++){
     var r2=rs[i], g2=r2.gift, b=blocks[i], row=SUMMARY_FIRST_ROW+i;
     var rng=function(col){ return DET+"!$"+col+"$"+b.first+":$"+col+"$"+b.last; };
@@ -1420,6 +1448,7 @@ function exportExcel(){
       F("SUM("+rng("J")+")",4),
       F("E"+row+"-K"+row,4),
       F('IF(MAX('+rng("L")+')=0,"-",MAX('+rng("L")+'))',8),
+      r2.safeUntil?D(r2.safeUntil,8):T("-",5),
       F('IF(I'+row+'=0,"対象上映なし",IF(J'+row+'=0,"在庫不足で配布不可",IF(J'+row+'<I'+row+',"在庫切れ","期間内は充足")))',5),
       T(note.join(" / "),5)
     ]);
@@ -1461,7 +1490,7 @@ function exportExcel(){
   ];
 
   var wbData=buildWorkbook([
-    {name:"配布可能期間", rows:sum, widths:[5,26,26,16,9,6,12,12,9,9,10,9,15,14,30], freeze:9},
+    {name:"配布可能期間", rows:sum, widths:[5,26,26,16,9,6,12,12,9,9,10,9,15,16,14,30], freeze:9},
     {name:"明細", rows:det, widths:[5,11,5,7,5,8,7,9,6,9,10,11], freeze:0},
     {name:"上映回", rows:perf, widths:[11,5,5,8,32,7], freeze:4},
     {name:"前提・注意", rows:memo, widths:[110]}
@@ -1747,8 +1776,9 @@ function buildDailyPlan(dateYmd, results){
       }
       var d=r.decisions[k];
       byPerf[key].items.push({
-        name:r.gift.present||r.gift.title, need:d.need, ok:d.ok,
-        per:r.gift.per||1, kind:r.gift.kind
+        id:r.gift.id, name:r.gift.present||r.gift.title, title:r.gift.title,
+        need:d.need, ok:d.ok, per:r.gift.per||1, kind:r.gift.kind,
+        lastDate:r.lastDate, res:r
       });
     }
   }
@@ -1793,20 +1823,24 @@ function urgencyOf(r){
   if(r.status==="ended") return {k:"dead", label:"配布期間終了", mark:"×"};
   if(r.status==="none")  return {k:"dead", label:"要確認",       mark:"?"};
   if(r.status==="short") return {k:"dead", label:"在庫不足",     mark:"?"};
-  if(r.status==="period") return {k:"ok", label:"期間終了まで足ります", mark:"■"};
-  if(r.status==="surplus") return {k:"ok", label:"当面 終了予定なし", mark:"■"};
-  /* 週替わりは金曜切替。7日=1サイクルを跨げるか、3日=週末を跨げるかが現場の判断軸 */
-  var d=r.daysLeft===null?99:r.daysLeft;
-  if(d<=0) return {k:"alert", label:"本日で終了",   mark:"◎"};
-  if(d<=3) return {k:"alert", label:"まもなく終了", mark:"◎"};
-  if(d<=7) return {k:"warn",  label:"残りわずか",   mark:"▲"};
-  return {k:"ok", label:"配布中", mark:"■"};
+  if(r.status==="period"&&!r.endedByHorizon) return {k:"ok", label:"期間終了まで足ります", mark:"○"};
+  if(r.status==="surplus"||r.endedByHorizon) return {k:"ok", label:"当面 終了予定なし", mark:"○"};
+  /* 週替わりは金曜切替。7日=1サイクルを跨げるか、3日=週末を跨げるかが現場の判断軸。
+     判定は「掲示に出す日付」と同じ軸（全回に配れる最終日）で行う。
+     ここを lastDate で判定すると、「あと1日」と大書きしたカードが緑の「配布中」になる。 */
+  var d = (r.safeDaysLeft!==null&&r.safeDaysLeft!==undefined) ? r.safeDaysLeft
+        : (r.lastDate ? 0 : 99);
+  if(d<=0) return {k:"alert", label:"この日で終了", mark:"▲"};
+  if(d<=3) return {k:"alert", label:"まもなく終了", mark:"▲"};
+  if(d<=7) return {k:"warn",  label:"残りわずか",   mark:"△"};
+  return {k:"ok", label:"配布中", mark:"○"};
 }
 /* 掲示に「◯月◯日まで」と書いてよいか。在庫に余裕があるものの最終日は
    推計を打ち切った地点にすぎず、終了日ではないので日付を出してはいけない */
 function hasRealEndDate(r){
   if(!r.lastDate) return false;
   if(r.status==="surplus") return false;
+  if(r.endedByHorizon) return false;   /* 推計を打ち切った日は終了日ではない */
   return true;
 }
 /* 掲示に出す日付は「全回に配れる最終日」。これを過ぎると大きいスクリーンの回から配れなくなる */
@@ -1814,7 +1848,7 @@ function noticeDate(r){ return hasRealEndDate(r) ? r.safeUntil : null; }
 /* 「そのあと小さい回だけ配れる期間」があるかどうか */
 function tailText(r){
   if(!hasRealEndDate(r)||!r.lastDate) return "";
-  if(!r.safeUntil) return "本日から一部の回のみ（"+fmtDate(r.lastDate)+"まで）";
+  if(!r.safeUntil) return fmtDate(state.opts.base)+"から一部の回のみ（"+fmtDate(r.lastDate)+"まで）";
   if(r.lastDate<=r.safeUntil) return "";
   var from=addDays(r.safeUntil,1);
   return (from===r.lastDate ? fmtDate(from) : fmtDate(from)+"〜"+fmtDate(r.lastDate))
@@ -1825,8 +1859,9 @@ function sortedResults(){
   rs.sort(function(a,b){
     var ua=urgencyOf(a), ub=urgencyOf(b);
     if(ua.k!==ub.k) return URGENCY_RANK[ua.k]-URGENCY_RANK[ub.k];
-    if(a.lastDate&&b.lastDate&&a.lastDate!==b.lastDate) return a.lastDate<b.lastDate?-1:1;
-    if(!!a.lastDate!==!!b.lastDate) return a.lastDate?-1:1;
+    var da=noticeDate(a)||a.lastDate, db=noticeDate(b)||b.lastDate;
+    if(da&&db&&da!==db) return da<db?-1:1;
+    if(!!da!==!!db) return da?-1:1;
     return 0;
   });
   return rs;
@@ -1881,7 +1916,7 @@ function viewDash(rs){
     if(real&&d0){
       h+='<div class="hero"><span class="d">'+(d0.getMonth()+1)+"/"+d0.getDate()+'</span>'
         +'<span class="u">('+WD[d0.getDay()]+")まで"+'</span>'
-        +'<span class="left">'+(r.safeDaysLeft<=0?"本日まで":"あと"+r.safeDaysLeft+"日")+'</span></div>';
+        +'<span class="left">'+(r.safeDaysLeft<=0?"この日まで":"あと"+r.safeDaysLeft+"日")+'</span></div>';
       var tt=tailText(r);
       if(tt) h+='<div class="tail">'+esc(tt)+'</div>';
     } else if(real&&!d0){
@@ -1937,14 +1972,19 @@ function viewNotice(rs){
     +'<option value="big"'+(mode==="big"?" selected":"")+'>単票（1件1枚／もぎり・配布ワゴン向け）</option>'
     +'</select></label>'
     +'<span class="hint" style="margin:0">A4縦・余白12mm推奨。'+live.length+'件を掲載'
-    +(done.length?'／終了済み'+done.length+'件は末尾に':'')
-    +(hidden?'／要確認'+hidden+'件は掲示から除外（画面で確認してください）':'')+'</span></div>';
+    +(done.length?'／終了済み'+done.length+'件は末尾に':'')+'</span></div>';
+  /* 掲示から抜けている件数は、紙を見た人にも分かる位置に出す（noprint にしない） */
+  if(hidden){
+    h+='<div class="warnbox"><b>この掲示に載っていないプレゼントが '+hidden+' 件あります。</b>'
+      +'（PSの作品と結びついていない、または在庫が1回分に足りないもの）'
+      +'事務所のダッシュボードで内容を確認してください。</div>';
+  }
 
   if(!live.length&&!done.length) return h+'<div class="warnbox">掲示できるプレゼントがありません。</div>';
   /* 「あと◯日」は起算日からの日数。起算日が今日でないまま貼ると日数がずれる */
   var today=ymd(new Date());
   if(base!==today){
-    h+='<div class="warnbox noprint"><b>計算起算日が今日ではありません（起算日 '+fmtDate(base)
+    h+='<div class="warnbox"><b>計算起算日が今日ではありません（起算日 '+fmtDate(base)
       +' ／ 今日 '+fmtDate(today)+'）。</b>掲示の「あと◯日」は起算日からの日数です。'
       +'貼り出す前に⑤の起算日を今日に合わせて計算し直してください。</div>';
   }
@@ -1959,7 +1999,7 @@ function viewNotice(rs){
         +'<div class="item">'+esc(g.present||"")+'</div>'
         +'<div class="until">'
         +(d?(d.getMonth()+1)+"<small>月</small>"+d.getDate()+"<small>日("+WD[d.getDay()]+")まで</small>"
-            :'<span style="font-size:40px">'+(hasRealEndDate(r)?"本日から一部の回のみ":"当面 終了予定なし")+'</span>')
+            :'<span style="font-size:40px">'+(hasRealEndDate(r)?fmtDate(base)+"から一部の回のみ":"当面 終了予定なし")+'</span>')
         +'</div>'
         +(tt?'<div class="tail">'+esc(tt)+'</div>':'')
         +'<div class="band">'+u.mark+" "+esc(u.label)
@@ -2052,29 +2092,40 @@ function viewDaily(rs){
   /* 配布できるものが1つもない回は指示表に出さない。
      在庫切れで配らないものは、回ごとに繰り返さず冒頭に1度だけ書く。 */
   var rows=[], totalNeed=0, byItem={}, itemOrder=[], tally={};
+  /* 集計は必ずプレゼントのIDで行う。名前で集計すると、別作品の同名プレゼント
+     （例：作品Aのクリアファイルと作品Bのクリアファイル）が1件に混ざり、
+     片方の在庫切れがもう片方の成功に打ち消されてしまう。 */
+  function label(it){ return it.name+(dupName[it.name]>1?"（"+it.title+"）":""); }
+  var dupName={};
+  plan.forEach(function(p){ p.items.forEach(function(it){
+    if(!tally[it.id]){ tally[it.id]={ok:0,ng:0,it:it}; dupName[it.name]=(dupName[it.name]||0)+1; }
+  });});
   plan.forEach(function(p){
     var live=p.items.filter(function(it){ return it.ok; });
     var dead=p.items.filter(function(it){ return !it.ok; });
-    /* 品目ごとに「その日の何回中、何回配れるか」を数える。
-       1回でも配れない回があるだけで「本日は配布しません」と書くと、
-       同じ紙の別の回では配れと書いてあることになり、客への案内が矛盾する。 */
-    p.items.forEach(function(it){
-      if(!tally[it.name]) tally[it.name]={ok:0, ng:0};
-      tally[it.name][it.ok?"ok":"ng"]++;
-    });
+    p.items.forEach(function(it){ tally[it.id][it.ok?"ok":"ng"]++; });
     if(!p.items.length) return;
     var need=0;
     live.forEach(function(it){
       need+=it.need; totalNeed+=it.need;
-      if(!byItem[it.name]){ byItem[it.name]={name:it.name, qty:0, shows:0}; itemOrder.push(it.name); }
-      byItem[it.name].qty+=it.need; byItem[it.name].shows++;
+      if(!byItem[it.id]){ byItem[it.id]={name:label(it), qty:0, shows:0}; itemOrder.push(it.id); }
+      byItem[it.id].qty+=it.need; byItem[it.id].shows++;
     });
     /* 配れない回も行を残す。表から消すと「作り忘れ」と読まれ、
        気を利かせたスタッフが配ってしまう（配布ルール違反の事故になる） */
     rows.push({p:p, live:live, dead:dead, need:need});
   });
-  var stoppedNames=Object.keys(tally).filter(function(n){ return tally[n].ok===0; });
-  var mixedNames=Object.keys(tally).filter(function(n){ return tally[n].ok>0&&tally[n].ng>0; });
+  /* その日の全回が配布不可のものを2つに分ける。
+     翌日以降に配布があるものを「配布は終了しました」と案内させてはいけない。 */
+  var overNames=[], todayNames=[];
+  Object.keys(tally).forEach(function(id){
+    var t=tally[id];
+    if(t.ok>0) return;
+    if(t.it.lastDate&&t.it.lastDate>day) todayNames.push(label(t.it));
+    else overNames.push(label(t.it));
+  });
+  var mixedNames=Object.keys(tally).filter(function(id){ return tally[id].ok>0&&tally[id].ng>0; })
+    .map(function(id){ return label(tally[id].it); });
 
   var h='<div class="daily-head noprint">'
     +'<label class="f"><span>対象日</span><input type="date" id="dailyDate" value="'+esc(day)+'"'
@@ -2088,7 +2139,10 @@ function viewDaily(rs){
   }
 
   /* 朝の準備用。配布物ごとに「今日いくつ要るか」を先に出す */
-  h+='<div class="prep"><div class="prep-t">本日の準備数（満席想定）</div><div class="prep-g">';
+  if(!itemOrder.length){
+    h+='<div class="warnbox"><b>この日に配布するものはありません。</b></div>';
+  } else {
+  h+='<div class="prep"><div class="prep-t">この日の準備数（満席想定）</div><div class="prep-g">';
   itemOrder.forEach(function(n){
     var b=byItem[n];
     h+='<div class="prep-i"><div class="pn">'+esc(n)+'</div>'
@@ -2099,10 +2153,17 @@ function viewDaily(rs){
   h+='</div><div class="prep-sum">合計 <b>'+totalNeed.toLocaleString()+'</b> 個 ／ 配布のある上映 <b>'
     +giveRows+'</b> 回'+(rows.length>giveRows?' ／ 配布しない回 <b>'+(rows.length-giveRows)+'</b> 回':'')
     +'</div></div>';
+  }
 
-  if(stoppedNames.length){
-    h+='<div class="warnbox"><b>本日は1回も配布しません（在庫切れ）</b>：'+esc(stoppedNames.join("　／　"))
+  if(overNames.length){
+    h+='<div class="warnbox"><b>この日以降は配布しません（在庫切れ）</b>：'+esc(overNames.join("　／　"))
       +'<br>お客様に聞かれたら「配布は終了しました」とご案内してください。</div>';
+  }
+  if(todayNames.length){
+    h+='<div class="warnbox"><b>この日は全回とも配布しません（全員分に足りないため）</b>：'
+      +esc(todayNames.join("　／　"))
+      +'<br><b>「配布は終了しました」とは案内しないでください。</b>後日の回で配布があります。'
+      +'お客様には「この回は配布対象外です」とご案内してください。</div>';
   }
   if(mixedNames.length){
     h+='<div class="warnbox"><b>回によって配布の有無が分かれます</b>：'+esc(mixedNames.join("　／　"))
@@ -2122,10 +2183,10 @@ function viewDaily(rs){
     if(!x.live.length) cls.push("no-give");
     prevHour=hour;
     var items=x.live.map(function(it){
-      return esc(it.name)+(it.per>1?'<span class="per">1人'+it.per+'個</span>':"");
+      return esc(label(it))+(it.per>1?'<span class="per">1人'+it.per+'個</span>':"");
     });
     x.dead.forEach(function(it){
-      items.push('<span class="ng">'+esc(it.name)+'：配布なし（満席時 '
+      items.push('<span class="ng">'+esc(label(it))+'：配布なし（満席時 '
         +it.need.toLocaleString()+'個 必要／在庫が足りません）</span>');
     });
     h+='<tr'+(cls.length?' class="'+cls.join(" ")+'"':'')+'>'
@@ -2148,7 +2209,9 @@ function viewDetail(rs){
   h+='<div class="scroll"><table><thead><tr>'
     +'<th>作品</th><th>プレゼント</th><th class="num">在庫</th>'
     +'<th>開始</th><th>終了(指定)</th><th class="num">対象回</th><th class="num">配布回</th>'
-    +'<th class="num">配布見込</th><th class="num">残数</th><th>配布可能最終日</th>'
+    +'<th class="num">配布見込</th><th class="num">残数</th>'
+    +'<th>全回に配れる最終日<br><span style="font-weight:400">（掲示に出る日）</span></th>'
+    +'<th>一部の回を含む<br>最終日</th>'
     +'<th class="num">不足数</th><th class="c">状態</th></tr></thead><tbody>';
   rs.forEach(function(r){
     var g=r.gift;
@@ -2159,7 +2222,10 @@ function viewDetail(rs){
       +'<td>'+(g.end?fmtDate(g.end):'<span class="tag mute">無くなるまで</span>')+'</td>'
       +'<td class="num">'+r.targets+'</td><td class="num">'+r.served+'</td>'
       +'<td class="num">'+r.handed.toLocaleString()+'</td><td class="num">'+r.left.toLocaleString()+'</td>'
-      +'<td><b>'+(r.lastDate?fmtDate(r.lastDate):"-")+'</b>'+(r.lastProjected?' <span class="tag mute">推計</span>':'')+'</td>'
+      +'<td><b>'+(noticeDate(r)?fmtDate(noticeDate(r)):"-")+'</b></td>'
+      +'<td>'+(r.lastDate?fmtDate(r.lastDate):"-")
+      +(r.lastProjected?' <span class="tag mute">推計</span>':'')
+      +(r.endedByHorizon?' <span class="tag mute">推計打切</span>':'')+'</td>'
       +'<td class="num">'+(g.end&&r.shortfall?r.shortfall.toLocaleString():"-")+'</td>'
       +'<td class="c">'+statusTag(r)+'</td></tr>';
   });
@@ -2204,8 +2270,8 @@ function viewDetail(rs){
         +'配布終了日（'+fmtDate(g2.end)+'）まで満席で配り切るには <b>'+r2.needTotal.toLocaleString()+'個</b>必要 → '
         +(r2.shortfall>0
           ? '<b style="color:var(--alert)">'+r2.shortfall.toLocaleString()+'個不足</b>。'
-            +'今の在庫で期間を通すには1回あたり<b>'+r2.perShowLimit.toLocaleString()+'個</b>まで、'
-            +'または入りが<b>'+r2.safeRate+'%</b>以下であることが条件です。'
+            +(r2.perShowLimit>0?'今の在庫で期間を通すには1回あたり<b>'+r2.perShowLimit.toLocaleString()+'個</b>まで。':'')
+            +(r2.safeRate!==null&&r2.safeRate>0?'入りが<b>'+r2.safeRate+'%</b>以下なら期間を通せます。':'現在の在庫では、この期間を通して配ることはできません。')
           : '在庫で足ります（余り '+(g2.qty-r2.needTotal).toLocaleString()+'個）。')
         +'</div>';
     }
@@ -2254,12 +2320,9 @@ var VIEW_INFO={
 };
 function renderResults(){
   var rs=sortedResults(), box=el("results");
-  if(!rs.length){
-    box.innerHTML='<div class="warnbox">計算対象のプレゼントがありません。③で登録してください。</div>';
-    return;
-  }
   var v=state.view||"dash";
-  el("printMeta").textContent=metaLine();
+  /* 見出し・印刷向きの更新は0件のときも行う。早期returnすると前回の状態が残る */
+  el("printMeta").textContent=state.schedule?metaLine():"";
   var head=el("printHead");
   if(head){
     head.textContent = v==="daily"
@@ -2268,6 +2331,7 @@ function renderResults(){
   }
   var hint=el("printHint");
   if(hint) hint.textContent=VIEW_INFO[v].hint;
+  if(!rs.length) return;
   box.innerHTML=
      '<div class="view'+(v==="dash"?" active":"")+'" data-v="dash">'  +(v==="dash"  ?viewDash(rs):"")+'</div>'
     +'<div class="view'+(v==="notice"?" active":"")+'" data-v="notice">'+(v==="notice"?viewNotice(rs):"")+'</div>'
@@ -2277,6 +2341,10 @@ function renderResults(){
     b.setAttribute("aria-selected", b.getAttribute("data-view")===v ? "true":"false");
   });
   document.body.classList.toggle("land", v==="daily"||v==="detail");
+  if(!rs.length){
+    box.innerHTML='<div class="warnbox">計算対象のプレゼントがありません。③で登録してください。</div>';
+    return;
+  }
   var nm=el("noticeMode");
   if(nm) nm.addEventListener("change",function(){ state.noticeMode=this.value; renderResults(); });
   var dd=el("dailyDate");
@@ -2287,7 +2355,10 @@ function renderResults(){
 }
 function shiftDaily(n){
   var d=addDays(state.dailyDate||state.opts.base, n);
-  if(!d||d<state.opts.base||d>state.opts.horizon) return;
+  if(!d) return;
+  /* 範囲外は無反応にせず端で止める（ボタンが壊れているように見えるため） */
+  if(d<state.opts.base) d=state.opts.base;
+  if(d>state.opts.horizon) d=state.opts.horizon;
   state.dailyDate=d;
   renderResults();
 }
