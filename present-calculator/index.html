@@ -234,6 +234,8 @@ table.daily .sc{font-family:var(--num);font-weight:700;text-align:center;white-s
 table.daily .items{font-weight:700}
 table.daily .chk{width:26px;height:26px;border:1.5px solid #444;border-radius:3px;display:inline-block}
 tr.hour-sep td{border-top:2px solid var(--ink-3)}
+tr.no-give td{background:var(--surface-2);color:var(--ink-2)}
+table.daily .ng{color:var(--alert);font-weight:700}
 
 /* ---------- 明細 ---------- */
 .gift-block{border:1px solid var(--rule);border-radius:9px;margin-bottom:14px;break-inside:avoid;
@@ -1055,6 +1057,15 @@ function simulateGift(gift, perfs, opts){
     if(a.min!==b.min) return a.min-b.min;
     return a.screen-b.screen;
   });
+  /* キャパを読み取れなかった回(cap=0)は必要数が0になり、在庫があっても「配布できなかった回」に
+     落ちてしまう。その結果 firstSkip が立ち、掲示の日付が「本日から一部の回のみ」に化ける。
+     判断できない回なので対象から外し、件数だけ持って画面で注意を出す。 */
+  var unknownCap=0;
+  list=list.filter(function(q){
+    if(q.cap>0) return true;
+    unknownCap++;
+    return false;
+  });
   var stock=gift.qty||0, per=gift.per||1, rate=opts.rate;
   var served=0, skipped=0, handed=0, lastDate=null, lastProjected=false, firstSkip=null, stopped=false;
   var lastServedIndex=-1;   /* 最後に配布できた上映回の位置（Excel明細の行数決定に使う） */
@@ -1143,7 +1154,7 @@ function simulateGift(gift, perfs, opts){
     left:stock, lastDate:lastDate, lastProjected:lastProjected, firstSkip:firstSkip,
     daily:trimmed, hiddenDays:hiddenDays, hiddenShows:hiddenShows,
     status:status, from:from, to:to,
-    needTotal:needTotal, shortfall:shortfall, daysLeft:daysLeft,
+    needTotal:needTotal, shortfall:shortfall, daysLeft:daysLeft, unknownCap:unknownCap,
     safeUntil:safeUntil, safeDaysLeft:safeDaysLeft, weekendRisk:weekendRisk,
     avgCap:avgCap, needPerShow:needPerShow, showsLeft:showsLeft,
     avgPerDay:avgPerDay, servedDays:servedDays, perShowLimit:perShowLimit, safeRate:safeRate,
@@ -1898,6 +1909,7 @@ function viewDash(rs){
     if(r.firstSkip&&r.status!=="short") flags.push("品切れ開始："+fmtDate(r.firstSkip.date)+" "+fmtMin(r.firstSkip.min)
       +" SC"+r.firstSkip.screen+"（必要"+r.firstSkip.need.toLocaleString()+"／残"+r.firstSkip.left.toLocaleString()+"）"
       +(r.weekendRisk?" ※金土日にかかります":""));
+    if(r.unknownCap) flags.push("キャパを読み取れない上映が "+r.unknownCap+"回あり、計算から除いています");
     if(r.lastProjected) flags.push("この日付は編成が続く前提の推計です");
     /* 1件だけだと、在庫の注意書きに隠れて品切れ開始点が見えなくなるので2件まで出す */
     if(flags.length){
@@ -2039,20 +2051,30 @@ function viewDaily(rs){
   var plan=buildDailyPlan(day, rs);
   /* 配布できるものが1つもない回は指示表に出さない。
      在庫切れで配らないものは、回ごとに繰り返さず冒頭に1度だけ書く。 */
-  var rows=[], totalNeed=0, byItem={}, itemOrder=[], stopped={};
+  var rows=[], totalNeed=0, byItem={}, itemOrder=[], tally={};
   plan.forEach(function(p){
     var live=p.items.filter(function(it){ return it.ok; });
-    p.items.forEach(function(it){ if(!it.ok) stopped[it.name]=1; });
-    if(!live.length) return;
+    var dead=p.items.filter(function(it){ return !it.ok; });
+    /* 品目ごとに「その日の何回中、何回配れるか」を数える。
+       1回でも配れない回があるだけで「本日は配布しません」と書くと、
+       同じ紙の別の回では配れと書いてあることになり、客への案内が矛盾する。 */
+    p.items.forEach(function(it){
+      if(!tally[it.name]) tally[it.name]={ok:0, ng:0};
+      tally[it.name][it.ok?"ok":"ng"]++;
+    });
+    if(!p.items.length) return;
     var need=0;
     live.forEach(function(it){
       need+=it.need; totalNeed+=it.need;
       if(!byItem[it.name]){ byItem[it.name]={name:it.name, qty:0, shows:0}; itemOrder.push(it.name); }
       byItem[it.name].qty+=it.need; byItem[it.name].shows++;
     });
-    rows.push({p:p, live:live, need:need});
+    /* 配れない回も行を残す。表から消すと「作り忘れ」と読まれ、
+       気を利かせたスタッフが配ってしまう（配布ルール違反の事故になる） */
+    rows.push({p:p, live:live, dead:dead, need:need});
   });
-  var stoppedNames=Object.keys(stopped);
+  var stoppedNames=Object.keys(tally).filter(function(n){ return tally[n].ok===0; });
+  var mixedNames=Object.keys(tally).filter(function(n){ return tally[n].ok>0&&tally[n].ng>0; });
 
   var h='<div class="daily-head noprint">'
     +'<label class="f"><span>対象日</span><input type="date" id="dailyDate" value="'+esc(day)+'"'
@@ -2073,12 +2095,20 @@ function viewDaily(rs){
       +'<div class="pq">'+b.qty.toLocaleString()+'<span>個</span></div>'
       +'<div class="ps">'+b.shows+'回分</div></div>';
   });
+  var giveRows=rows.filter(function(x){return x.live.length;}).length;
   h+='</div><div class="prep-sum">合計 <b>'+totalNeed.toLocaleString()+'</b> 個 ／ 配布のある上映 <b>'
-    +rows.length+'</b> 回</div></div>';
+    +giveRows+'</b> 回'+(rows.length>giveRows?' ／ 配布しない回 <b>'+(rows.length-giveRows)+'</b> 回':'')
+    +'</div></div>';
 
   if(stoppedNames.length){
-    h+='<div class="warnbox"><b>本日は配布しません（在庫切れ）</b>：'+esc(stoppedNames.join("　／　"))
+    h+='<div class="warnbox"><b>本日は1回も配布しません（在庫切れ）</b>：'+esc(stoppedNames.join("　／　"))
       +'<br>お客様に聞かれたら「配布は終了しました」とご案内してください。</div>';
+  }
+  if(mixedNames.length){
+    h+='<div class="warnbox"><b>回によって配布の有無が分かれます</b>：'+esc(mixedNames.join("　／　"))
+      +'<br>下の表で<b>「配布なし」と書かれた回では配らないでください</b>（全員分に足りないため）。'
+      +'お客様には「この回は配布対象外です。上映回によって配布の有無が異なります」とご案内してください。'
+      +'<br><b>「配布は終了しました」とは案内しないでください。</b>この後の回で配布があります。</div>';
   }
 
   h+='<table class="daily"><thead><tr><th style="width:58px">開始</th><th style="width:40px">SC</th>'
@@ -2087,16 +2117,23 @@ function viewDaily(rs){
   var prevHour=-1;
   rows.forEach(function(x){
     var hour=Math.floor(x.p.min/60);
-    var sep=(prevHour>=0&&hour!==prevHour)?' class="hour-sep"':'';
+    var cls=[];
+    if(prevHour>=0&&hour!==prevHour) cls.push("hour-sep");
+    if(!x.live.length) cls.push("no-give");
     prevHour=hour;
     var items=x.live.map(function(it){
       return esc(it.name)+(it.per>1?'<span class="per">1人'+it.per+'個</span>':"");
-    }).join("<br>");
-    h+='<tr'+sep+'><td class="time">'+fmtMin(x.p.min)+'</td><td class="sc">'+x.p.screen+'</td>'
+    });
+    x.dead.forEach(function(it){
+      items.push('<span class="ng">'+esc(it.name)+'：配布なし（満席時 '
+        +it.need.toLocaleString()+'個 必要／在庫が足りません）</span>');
+    });
+    h+='<tr'+(cls.length?' class="'+cls.join(" ")+'"':'')+'>'
+      +'<td class="time">'+fmtMin(x.p.min)+'</td><td class="sc">'+x.p.screen+'</td>'
       +'<td class="num">'+x.p.cap.toLocaleString()+'</td>'
-      +'<td>'+esc(x.p.title)+'</td><td class="items">'+items+'</td>'
-      +'<td class="num">'+x.need.toLocaleString()+'</td>'
-      +'<td class="c"><span class="chk"></span></td></tr>';
+      +'<td>'+esc(x.p.title)+'</td><td class="items">'+items.join("<br>")+'</td>'
+      +'<td class="num">'+(x.need?x.need.toLocaleString():"—")+'</td>'
+      +'<td class="c">'+(x.live.length?'<span class="chk"></span>':'')+'</td></tr>';
   });
   h+='</tbody></table>';
   h+='<div class="note" style="margin-top:12px"><b>その回のお客様全員に配れない場合は、その回は配布しません。</b>'
