@@ -5,88 +5,281 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>入場者プレゼント 配布可能期間 計算ツール</title>
 <style>
+/* =====================================================================
+   デザイントークン
+   劇場のバックヤードに貼る紙と、事務所の画面の両方で成立させるための配色。
+   紙の白（わずかに温かい）＋インクの黒＋深い藍。状態色は限定的に使う。
+   ===================================================================== */
 :root{
-  --bg:#f5f6f8; --panel:#fff; --line:#d8dce3; --line2:#eceef2;
-  --ink:#1b1f27; --muted:#6b7280; --accent:#1f5fbf; --accent-bg:#eaf1fc;
-  --ok:#12734a; --ok-bg:#e6f5ee; --warn:#9a5b00; --warn-bg:#fdf2df; --ng:#a8231f; --ng-bg:#fdeceb;
+  --paper:#FBFAF7; --surface:#FFFFFF; --surface-2:#F4F2ED;
+  --ink:#191A1C; --ink-2:#5A5F68; --ink-3:#8A8E96;
+  --rule:#DCD8CF; --rule-2:#EDEAE3;
+  --accent:#1B3A6B; --accent-2:#2E5EA8; --accent-bg:#EAEFF7;
+  --ok:#1F6F4A;    --ok-bg:#E7F2EB;
+  --warn:#9A5E00;  --warn-bg:#FBF1DC;
+  --alert:#A82820; --alert-bg:#FBEAE8;
+  --dead:#7C8088;  --dead-bg:#EFEEEB;
+  --shadow:0 1px 2px rgba(25,26,28,.06), 0 4px 14px rgba(25,26,28,.05);
+  --jp:"Yu Gothic Medium","游ゴシック Medium","YuGothic","Hiragino Sans",
+       "Hiragino Kaku Gothic ProN","Meiryo",system-ui,sans-serif;
+  --num:"Helvetica Neue",Arial,"Yu Gothic Medium","Hiragino Sans","Meiryo",sans-serif;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",system-ui,sans-serif;font-size:14px;line-height:1.6}
-header.app{background:#12233d;color:#fff;padding:14px 20px}
-header.app h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.02em}
-header.app p{margin:4px 0 0;font-size:12px;opacity:.8}
-main{max-width:1500px;margin:0 auto;padding:18px 20px 80px}
-section.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:18px;overflow:hidden}
-section.card>h2{margin:0;padding:11px 16px;font-size:15px;background:#f0f2f6;border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:10px}
-section.card>h2 .step{background:var(--accent);color:#fff;border-radius:4px;font-size:11px;padding:2px 7px;font-weight:700}
-section.card>h2 .sub{font-weight:400;font-size:12px;color:var(--muted);margin-left:auto}
-.body{padding:14px 16px}
-.row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
-.row.top{align-items:flex-start}
-label.f{display:inline-flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
-label.f>span{font-weight:600}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--jp);
+  font-size:14px;line-height:1.65;font-feature-settings:"palt" 1}
+h1,h2,h3{text-wrap:balance}
+:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+
+/* ---------- ヘッダー ---------- */
+header.app{background:var(--ink);color:#fff;padding:16px 22px;
+  border-bottom:3px solid var(--accent)}
+header.app h1{margin:0;font-size:19px;font-weight:700;letter-spacing:.04em}
+header.app p{margin:5px 0 0;font-size:12px;color:#B9BCC2;letter-spacing:.02em}
+main{max-width:1560px;margin:0 auto;padding:20px 22px 90px}
+
+/* ---------- カード ---------- */
+section.card{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  margin-bottom:18px;overflow:hidden;box-shadow:var(--shadow)}
+section.card>h2{margin:0;padding:12px 18px;font-size:15px;font-weight:700;
+  background:var(--surface-2);border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:11px;letter-spacing:.02em}
+section.card>h2 .step{background:var(--accent);color:#fff;border-radius:3px;font-size:11px;
+  padding:3px 8px;font-weight:700;letter-spacing:.06em;font-family:var(--num)}
+section.card>h2 .sub{font-weight:400;font-size:12px;color:var(--ink-2);margin-left:auto}
+.body{padding:16px 18px}
+
+/* ---------- 部品 ---------- */
+.row{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center}
+label.f{display:inline-flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--ink-2)}
+label.f>span{font-weight:700;letter-spacing:.02em}
 input[type=text],input[type=number],input[type=date],input[type=time],select,textarea{
-  font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink)}
-input[type=number]{text-align:right}
-button{font:inherit;font-size:13px;padding:6px 13px;border:1px solid var(--line);background:#fff;border-radius:5px;cursor:pointer}
-button:hover{background:#f2f5fa}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-button.primary:hover{background:#1a51a3}
-button.mini{padding:2px 7px;font-size:12px}
-button.danger{color:var(--ng);border-color:#e3b7b5}
-.hint{font-size:12px;color:var(--muted);margin:6px 0 0}
-.note{background:#fbfcfe;border:1px dashed var(--line);border-radius:6px;padding:9px 12px;font-size:12px;color:#40485a}
-.drop{border:2px dashed #b9c2d0;border-radius:8px;padding:18px;text-align:center;color:var(--muted);background:#fafbfd}
-.drop.over{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
-table{border-collapse:collapse;width:100%;font-size:12.5px;background:#fff}
-th,td{border:1px solid var(--line);padding:4px 6px;vertical-align:middle}
-th{background:#f2f4f8;font-weight:600;white-space:nowrap;position:sticky;top:0;z-index:1}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--rule);border-radius:6px;
+  background:var(--surface);color:var(--ink)}
+input:focus,select:focus{border-color:var(--accent-2)}
+input[type=number]{text-align:right;font-family:var(--num);font-variant-numeric:tabular-nums}
+button{font:inherit;font-size:13px;padding:7px 14px;border:1px solid var(--rule);
+  background:var(--surface);border-radius:6px;cursor:pointer;color:var(--ink)}
+button:hover{background:var(--surface-2);border-color:var(--ink-3)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+button.primary:hover{background:#15305A}
+button.mini{padding:2px 8px;font-size:12px}
+button.danger{color:var(--alert);border-color:#E2BDB9}
+.hint{font-size:12px;color:var(--ink-2);margin:8px 0 0;line-height:1.7}
+.note{background:var(--surface-2);border:1px solid var(--rule-2);border-radius:8px;
+  padding:11px 14px;font-size:12.5px;color:var(--ink-2)}
+.drop{border:2px dashed #C6C1B6;border-radius:9px;padding:20px;text-align:center;
+  color:var(--ink-2);background:var(--surface-2);transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent-2);background:var(--accent-bg);color:var(--accent)}
+.warnbox{background:var(--warn-bg);border:1px solid #E6CE9A;border-left:4px solid var(--warn);
+  border-radius:6px;padding:10px 14px;font-size:12.5px;margin-bottom:10px}
+.errbox{background:var(--alert-bg);border:1px solid #E4B5B0;border-left:4px solid var(--alert);
+  border-radius:6px;padding:10px 14px;font-size:12.5px;margin-bottom:10px}
+
+/* ---------- 表 ---------- */
+table{border-collapse:collapse;width:100%;font-size:12.5px;background:var(--surface)}
+th,td{border:1px solid var(--rule-2);padding:5px 8px;vertical-align:middle}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap;position:sticky;top:0;z-index:1;
+  color:var(--ink-2);font-size:11.5px;letter-spacing:.03em}
+td.num,th.num{text-align:right;font-family:var(--num);font-variant-numeric:tabular-nums}
 td.c,th.c{text-align:center}
-.scroll{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:6px}
-.tag{display:inline-block;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap}
+tbody tr:nth-child(even) td{background:#FCFBF9}
+.scroll{max-height:440px;overflow:auto;border:1px solid var(--rule);border-radius:8px}
+
+/* ---------- タグ ---------- */
+.tag{display:inline-block;border-radius:3px;padding:2px 7px;font-size:11px;font-weight:700;
+  white-space:nowrap;letter-spacing:.02em}
 .tag.ok{background:var(--ok-bg);color:var(--ok)}
 .tag.warn{background:var(--warn-bg);color:var(--warn)}
-.tag.ng{background:var(--ng-bg);color:var(--ng)}
+.tag.ng{background:var(--alert-bg);color:var(--alert)}
 .tag.info{background:var(--accent-bg);color:var(--accent)}
-.tag.mute{background:#eef0f4;color:var(--muted)}
+.tag.mute{background:var(--dead-bg);color:var(--ink-2)}
+
+/* ---------- 入力表 ---------- */
 .gift-table input[type=text]{width:100%}
-.gift-table td{padding:3px 4px}
-.detail-row td{background:#fafbfd}
-.filters{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-start}
-.titlepick{max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:5px;padding:6px 8px;background:#fff;min-width:330px}
+.gift-table td{padding:3px 5px}
+.detail-row td{background:var(--surface-2)}
+.filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-start}
+.titlepick{max-height:158px;overflow:auto;border:1px solid var(--rule);border-radius:6px;
+  padding:7px 9px;background:var(--surface);min-width:340px}
 .titlepick label{display:block;font-size:12px;white-space:nowrap}
-.result-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+
+/* =====================================================================
+   状態表現。色だけに頼らず、左の帯の「模様」と記号でも区別する。
+   モノクロ印刷でも 4 状態が判別できるようにするため。
+   ===================================================================== */
+/* --pat は細い帯（左のレール・記号）用に強めの模様。
+   --pat-soft は文字を載せる面用。模様で判別できるが可読性を落とさない濃さにする。 */
+.st-ok    { --c:var(--ok);    --cbg:var(--ok-bg);    --pat:none; --pat-soft:none; }
+.st-warn  { --c:var(--warn);  --cbg:var(--warn-bg);
+  --pat:repeating-linear-gradient(45deg,#0000 0 5px,#ffffff80 5px 10px);
+  --pat-soft:repeating-linear-gradient(45deg,#0000 0 7px,#ffffff2e 7px 14px); }
+.st-alert { --c:var(--alert); --cbg:var(--alert-bg);
+  --pat:repeating-linear-gradient(0deg,#0000 0 3px,#ffffff99 3px 6px);
+  --pat-soft:repeating-linear-gradient(0deg,#0000 0 5px,#ffffff30 5px 10px); }
+.st-dead  { --c:var(--dead);  --cbg:var(--dead-bg);
+  --pat:repeating-linear-gradient(90deg,#0000 0 2px,#ffffffb0 2px 4px);
+  --pat-soft:repeating-linear-gradient(90deg,#0000 0 4px,#ffffff30 4px 8px); }
+.mark{display:inline-flex;align-items:center;justify-content:center;width:1.15em;height:1.15em;
+  font-size:.85em;line-height:1;color:var(--c)}
+
+/* ---------- ダッシュボードのカード ---------- */
+.deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.gcard{position:relative;border:1px solid var(--rule);border-radius:10px;background:var(--surface);
+  padding:15px 17px 14px 22px;overflow:hidden;box-shadow:var(--shadow);break-inside:avoid}
+.gcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--rail,9px);
+  background-color:var(--c);background-image:var(--pat)}
+.st-ok{--rail:6px} .st-warn{--rail:12px} .st-alert{--rail:20px} .st-dead{--rail:5px}
+.gcard .eyebrow{font-size:11.5px;color:var(--ink-2);letter-spacing:.03em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcard .name{font-size:15.5px;font-weight:700;line-height:1.4;margin:2px 0 10px}
+.gcard .hero{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.gcard .hero .d{font-family:var(--num);font-size:34px;font-weight:700;line-height:1;
+  letter-spacing:-.02em;color:var(--c);font-variant-numeric:tabular-nums}
+.gcard .hero .u{font-size:14px;font-weight:700;color:var(--c)}
+.gcard .hero .left{margin-left:auto;font-size:12px;font-weight:700;color:var(--c);
+  background:var(--cbg);border-radius:99px;padding:3px 11px;white-space:nowrap}
+.gcard .meter{margin:12px 0 8px;height:9px;border-radius:99px;background:var(--surface-2);
+  overflow:hidden;border:1px solid var(--rule-2)}
+.gcard .meter>i{display:block;height:100%;background-color:var(--c);background-image:var(--pat)}
+.gcard .facts{display:flex;flex-wrap:wrap;gap:3px 16px;font-size:11.5px;color:var(--ink-2)}
+.gcard .facts b{font-family:var(--num);font-variant-numeric:tabular-nums;color:var(--ink);
+  font-size:13px;font-weight:700}
+.gcard .flag{margin-top:9px;font-size:11.5px;padding:6px 9px;border-radius:5px;
+  background:var(--cbg);color:var(--c);font-weight:700}
+.statline{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.statbox{flex:1 1 140px;border:1px solid var(--rule);border-radius:8px;padding:9px 12px;
+  background:var(--surface)}
+.statbox .k{font-size:11px;color:var(--ink-2);letter-spacing:.03em}
+.statbox .v{font-family:var(--num);font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;
+  line-height:1.25}
+
+/* ---------- ビュー切替 ---------- */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--rule);margin:-4px 0 16px;flex-wrap:wrap}
+.tabs button{border:none;background:none;border-bottom:3px solid transparent;border-radius:0;
+  padding:9px 16px;font-size:13.5px;font-weight:700;color:var(--ink-2);margin-bottom:-2px}
+.tabs button:hover{background:var(--surface-2);color:var(--ink)}
+.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.view{display:none}
+.view.active{display:block}
+
+/* ---------- 掲示（スタッフ向け） ---------- */
+.notice{background:#fff;color:#000;border:1px solid var(--rule);border-radius:8px;padding:20px 22px}
+.notice-head{border-bottom:3px solid #000;padding-bottom:10px;margin-bottom:14px;
+  display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.notice-head h2{margin:0;font-size:27px;font-weight:700;letter-spacing:.06em;line-height:1.2}
+.notice-head .sub{font-size:12.5px;color:#333;margin-left:auto;text-align:right;line-height:1.6}
+.nrow{display:grid;grid-template-columns:34px 1fr auto;gap:0 14px;align-items:center;
+  border-bottom:1px solid #C9C6BF;padding:11px 0;break-inside:avoid}
+.nrow .badge{width:30px;height:30px;border-radius:4px;display:flex;align-items:center;
+  justify-content:center;font-size:15px;font-weight:700;color:#fff;
+  background-color:var(--c);background-image:var(--pat)}
+.nrow .who .film{font-size:11.5px;color:#444;letter-spacing:.02em}
+.nrow .who .item{font-size:17px;font-weight:700;line-height:1.35}
+.nrow .when{text-align:right;white-space:nowrap}
+.nrow .when .big{font-family:var(--num);font-size:31px;font-weight:700;line-height:1.05;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.nrow .when .sm{font-size:12px;color:#333;font-weight:700}
+.notice-foot{margin-top:16px;border-top:2px solid #000;padding-top:11px;
+  display:flex;gap:22px;flex-wrap:wrap;font-size:12px;color:#222}
+.notice-foot ul{margin:5px 0 0;padding-left:1.2em}
+.notice-foot li{margin:2px 0}
+.signbox{margin-left:auto;border:1px solid #000;min-width:210px}
+.signbox div{border-bottom:1px solid #000;padding:5px 9px;font-size:11px}
+.signbox div:last-child{border-bottom:none;padding:15px 9px}
+.big-notice{page-break-after:always;padding:30px 30px 24px;border:3px solid #000;
+  margin-bottom:16px;background:#fff;color:#000}
+.big-notice .film{font-size:16px;letter-spacing:.04em;color:#333}
+.big-notice .item{font-size:34px;font-weight:700;line-height:1.25;margin:6px 0 18px}
+.big-notice .until{font-family:var(--num);font-size:76px;font-weight:700;line-height:1;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.big-notice .until small{font-size:30px;letter-spacing:0}
+.big-notice .band{margin:16px 0 0;padding:12px 18px;font-size:20px;font-weight:700;
+  background-color:var(--c);background-image:var(--pat-soft);color:#fff;letter-spacing:.04em}
+.big-notice .bn-body{margin-top:18px;font-size:14.5px;line-height:1.85}
+.big-notice .bn-body>div{padding:6px 0;border-bottom:1px solid #DAD6CE;display:flex;gap:12px}
+.big-notice .bn-body .bl{flex:0 0 100px;font-size:12px;color:#555;letter-spacing:.04em;
+  padding-top:3px}
+.big-notice .bn-foot{margin-top:14px;font-size:11px;color:#555;line-height:1.7}
+.nrow .when .ref{font-size:10.5px;color:#555;font-weight:400}
+.tail{font-size:11.5px;color:var(--warn);font-weight:700;margin-top:3px}
+.dots{display:inline-flex;gap:3px;align-items:center;margin-left:9px;vertical-align:middle}
+.dots i{width:9px;height:9px;border-radius:50%;border:1.5px solid #333;display:inline-block}
+.dots i.on{background:#333} .dots i.off{background:#fff}
+.big-notice .tail{font-size:15px;margin-top:8px}
+.gcard .tail{margin:6px 0 0}
+.ended-list{margin-top:14px;padding:10px 12px;background:#F2F1EE;border:1px solid #D8D4CC;
+  font-size:11.5px;color:#555;line-height:1.9}
+.ended-list .t{font-weight:700;color:#333;margin-bottom:3px;font-size:12px}
+.notice-foot .fine{margin-top:8px;font-size:10.5px;color:#555;line-height:1.7}
+
+/* ---------- 日次の配布指示 ---------- */
+.daily-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.prep{border:2px solid var(--ink);border-radius:8px;padding:12px 14px;margin-bottom:14px;
+  background:var(--surface)}
+.prep-t{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--ink-2);margin-bottom:9px}
+.prep-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px}
+.prep-i{border:1px solid var(--rule);border-radius:6px;padding:8px 11px;background:var(--surface-2)}
+.prep-i .pn{font-size:11.5px;line-height:1.4;height:2.8em;overflow:hidden}
+.prep-i .pq{font-family:var(--num);font-size:25px;font-weight:700;line-height:1.15;
+  font-variant-numeric:tabular-nums}
+.prep-i .pq span{font-size:12px;font-weight:400;margin-left:3px}
+.prep-i .ps{font-size:11px;color:var(--ink-2)}
+.prep-sum{margin-top:10px;padding-top:9px;border-top:1px solid var(--rule);font-size:13px}
+.prep-sum b{font-family:var(--num);font-size:17px;font-variant-numeric:tabular-nums}
+table.daily .per{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;
+  background:var(--accent-bg);color:var(--accent);padding:1px 6px;border-radius:3px}
+table.daily td{padding:6px 8px}
+table.daily .time{font-family:var(--num);font-variant-numeric:tabular-nums;font-weight:700;
+  font-size:14px;white-space:nowrap}
+table.daily .sc{font-family:var(--num);font-weight:700;text-align:center;white-space:nowrap}
+table.daily .items{font-weight:700}
+table.daily .chk{width:26px;height:26px;border:1.5px solid #444;border-radius:3px;display:inline-block}
+tr.hour-sep td{border-top:2px solid var(--ink-3)}
+
+/* ---------- 明細 ---------- */
+.gift-block{border:1px solid var(--rule);border-radius:9px;margin-bottom:14px;break-inside:avoid;
+  background:var(--surface)}
+.gift-block>.h{padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--rule);
+  border-radius:9px 9px 0 0}
+.gift-block>.b{padding:12px 14px}
+.result-head{display:flex;gap:11px;align-items:baseline;flex-wrap:wrap}
 .result-head .big{font-size:19px;font-weight:700;color:var(--accent)}
-.gift-block{border:1px solid var(--line);border-radius:6px;margin-bottom:12px;page-break-inside:avoid}
-.gift-block>.h{padding:8px 12px;background:#f7f9fc;border-bottom:1px solid var(--line)}
-.gift-block>.b{padding:10px 12px}
-.kpi{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;margin:6px 0}
-.kpi b{font-size:14px}
-.warnbox{background:var(--warn-bg);border:1px solid #eccf9a;border-radius:6px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
-.errbox{background:var(--ng-bg);border:1px solid #eabab8;border-radius:6px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
-details.det{margin-top:8px}
-details.det>summary{cursor:pointer;font-size:12px;color:var(--accent)}
+.kpi{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;margin:7px 0}
+.kpi b{font-size:14px;font-family:var(--num);font-variant-numeric:tabular-nums}
+
+/* ---------- ツールバー ---------- */
+.toolbar{position:sticky;bottom:0;background:rgba(251,250,247,.96);backdrop-filter:blur(6px);
+  border-top:1px solid var(--rule);padding:11px 18px;display:flex;gap:10px;align-items:center;
+  flex-wrap:wrap;z-index:5}
 .printhead{display:none}
-.toolbar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;
-  align-items:center;flex-wrap:wrap}
+
+/* =====================================================================
+   印刷。表示中のビューだけを出す。
+   状態は色ではなく帯の模様と記号で伝わるようにしてあるのでモノクロで足りる。
+   ===================================================================== */
 @media print{
-  body{background:#fff;font-size:11px}
-  header.app,.noprint,.toolbar{display:none !important}
+  body{background:#fff;font-size:10.5pt}
+  header.app,.noprint,.toolbar,.tabs{display:none !important}
   main{max-width:none;padding:0}
-  section.card{border:none;margin:0 0 8px}
-  section.card>h2{background:#fff;border-bottom:1px solid #000;padding:4px 0;font-size:13px}
-  .body{padding:4px 0}
+  section.card{border:none;margin:0;box-shadow:none;border-radius:0}
+  section.card>h2{display:none}
+  .body{padding:0}
   .scroll{max-height:none;overflow:visible;border:none}
-  .printhead{display:block;margin-bottom:8px;border-bottom:2px solid #000;padding-bottom:4px}
-  .printhead h1{margin:0;font-size:16px}
-  .printhead .meta{font-size:11px}
   th{position:static}
-  table{font-size:10px}
-  .gift-block{border:1px solid #999}
-  @page{size:A4 landscape;margin:10mm}
+  table{font-size:9pt}
+  .printhead{display:block;margin-bottom:9px;border-bottom:2px solid #000;padding-bottom:5px}
+  .printhead h1{margin:0;font-size:15pt;letter-spacing:.04em}
+  .printhead .meta{font-size:8.5pt;color:#333}
+  .notice{border:none;padding:0}
+  .gcard{box-shadow:none}
+  .deck{grid-template-columns:1fr 1fr;gap:8px}
+  .nrow{padding:9px 0}
+  a{color:inherit;text-decoration:none}
+  @page{size:A4 portrait;margin:12mm}
+  /* その日の配布指示と明細は横向きで刷る（名前付きページ。未対応ブラウザでは縦のまま） */
+  @page yoko{size:A4 landscape;margin:10mm}
+  body.land .view.active{page:yoko}
 }
 </style>
 </head>
@@ -98,7 +291,7 @@ details.det>summary{cursor:pointer;font-size:12px;color:var(--accent)}
 
 <main>
 <div class="printhead">
-  <h1>入場者プレゼント 配布可能期間 一覧</h1>
+  <h1 id="printHead">入場者プレゼント 配布可能期間</h1>
   <div class="meta" id="printMeta"></div>
 </div>
 
@@ -181,13 +374,21 @@ details.det>summary{cursor:pointer;font-size:12px;color:var(--accent)}
 <!-- ⑥ 結果 -->
 <section class="card" id="resultCard" hidden>
   <h2><span class="step">⑥</span>配布可能期間 計算結果</h2>
-  <div class="body" id="results"></div>
+  <div class="body">
+    <div class="tabs noprint" id="viewTabs" role="tablist">
+      <button role="tab" data-view="dash" aria-selected="true">ダッシュボード</button>
+      <button role="tab" data-view="notice" aria-selected="false">スタッフ掲示</button>
+      <button role="tab" data-view="daily" aria-selected="false">その日の配布指示</button>
+      <button role="tab" data-view="detail" aria-selected="false">明細・根拠</button>
+    </div>
+    <div id="results"></div>
+  </div>
 </section>
 
 <div class="toolbar noprint">
-  <button class="primary" onclick="window.print()">印刷 / PDF保存</button>
-  <button id="toExcel">Excelで書き出し（数式入り）</button>
-  <span class="hint">印刷はA4横・余白10mm推奨。Excelは在庫や稼働率を書き換えるとその場で再計算されます（マクロ不要）。</span>
+  <button class="primary" id="doPrint">印刷 / PDF保存</button>
+  <span class="hint" id="printHint"></span>
+  <button id="toExcel" style="margin-left:auto">Excelで書き出し（数式入り）</button>
 </div>
 </main>
 
@@ -828,9 +1029,11 @@ function simulateGift(gift, perfs, opts){
   var served=0, skipped=0, handed=0, lastDate=null, lastProjected=false, firstSkip=null, stopped=false;
   var lastServedIndex=-1;   /* 最後に配布できた上映回の位置（Excel明細の行数決定に使う） */
   var days={}, order=[];
+  var decisions=new Array(list.length);   /* 回ごとに配布できたか。日次の配布指示表で使う */
   for(var k=0;k<list.length;k++){
     var q=list[k];
     var need=Math.ceil(q.cap*rate)*per;
+    decisions[k]={ok:false, need:need};
     if(!days[q.date]){ days[q.date]={date:q.date, shows:0, served:0, seats:0, handed:0, left:stock, projected:q.projected}; order.push(q.date); }
     var day=days[q.date];
     day.shows++; day.seats+=q.cap;
@@ -838,6 +1041,7 @@ function simulateGift(gift, perfs, opts){
     if(need>0&&stock>=need){
       stock-=need; handed+=need; served++; day.served++; day.handed+=need;
       lastDate=q.date; lastProjected=q.projected; lastServedIndex=k;
+      decisions[k].ok=true;
     } else {
       skipped++;
       if(!firstSkip) firstSkip={date:q.date, min:q.min, screen:q.screen, need:need, left:stock, title:q.title};
@@ -858,12 +1062,61 @@ function simulateGift(gift, perfs, opts){
   else if(skipped>0) status="out";
   else if(gift.end) status="period";
   else status="surplus";
+
+  /* ---- 発注・運用判断のための指標 ---- */
+  var needTotal=0;                       /* 対象の回すべてに配るのに必要な総数 */
+  for(var t=0;t<list.length;t++) needTotal+=Math.ceil(list[t].cap*rate)*per;
+  var shortfall=Math.max(0, needTotal-(gift.qty||0));
+  var daysLeft = lastDate ? daysBetween(opts.base, lastDate) : (status==="none"||status==="ended"?null:0);
+  /* 「その回のすべてに配れる」最終日。既定の設定では、大きいスクリーンで配れなくなった後も
+     小さいスクリーンの回では配り続ける。lastDate をそのまま掲示すると、
+     まだ配れるはずの日に大箱の回で品切れる＝客対応の事故になるため、両方を持つ。 */
+  var safeUntil = firstSkip ? addDays(firstSkip.date,-1) : lastDate;
+  if(safeUntil&&safeUntil<opts.base) safeUntil=null;
+  var safeDaysLeft = safeUntil ? daysBetween(opts.base, safeUntil) : null;
+  /* 品切れが金土日にかかるかどうか。週末は客数が多く、機会損失もクレームも大きい */
+  var weekendRisk=false;
+  if(firstSkip){
+    var fd=parseYmd(firstSkip.date);
+    if(fd){ var w=fd.getDay(); weekendRisk=(w===0||w===5||w===6); }
+  }
+  var servedDays=0;
+  for(var u=0;u<daily.length;u++) if(daily[u].served>0) servedDays++;
+  var avgPerDay = servedDays ? Math.round(handed/servedDays) : 0;
+  /* 期間の最後まで配り切るために、1回あたり何個に抑える必要があるか */
+  var perShowLimit = list.length ? Math.floor((gift.qty||0)/list.length) : 0;
+  /* 残数を「あと約◯回分」に換算する。個数だけでは多いのか少ないのか現場が判断できないため */
+  var capSum=0;
+  for(var w=0;w<list.length;w++) capSum+=list[w].cap;
+  var avgCap = list.length ? Math.round(capSum/list.length) : 0;
+  var needPerShow = avgCap ? Math.ceil(avgCap*rate)*per : 0;
+  var showsLeft = needPerShow ? Math.floor(stock/needPerShow) : null;
+  if(showsLeft===0) showsLeft=null;   /* 1回分に満たない残りは「約0回分」と書いても情報がない */
+  /* 何%の入りまでなら期間を賄えるか（満席=100%）。回ごとの必要数は切り上げのため探索で求める */
+  var safeRate=null;
+  if(list.length&&gift.qty&&shortfall===0){
+    safeRate=Math.round(rate*100);      /* 今の想定でも足りているなら、それがそのまま上限 */
+  } else if(list.length&&gift.qty){
+    var lo=0, hi=Math.round(rate*100);
+    for(var it=0;it<8;it++){
+      var mid=Math.floor((lo+hi)/2);
+      if(mid<=lo) break;
+      var sum=0;
+      for(var v=0;v<list.length;v++) sum+=Math.ceil(list[v].cap*mid/100)*per;
+      if(sum<=gift.qty) lo=mid; else hi=mid;
+    }
+    safeRate=lo;
+  }
   return {
     gift:gift, targets:list.length, served:served, skipped:skipped, handed:handed,
-    perfs:list, lastServedIndex:lastServedIndex,
+    perfs:list, decisions:decisions, lastServedIndex:lastServedIndex,
     left:stock, lastDate:lastDate, lastProjected:lastProjected, firstSkip:firstSkip,
     daily:trimmed, hiddenDays:hiddenDays, hiddenShows:hiddenShows,
     status:status, from:from, to:to,
+    needTotal:needTotal, shortfall:shortfall, daysLeft:daysLeft,
+    safeUntil:safeUntil, safeDaysLeft:safeDaysLeft, weekendRisk:weekendRisk,
+    avgCap:avgCap, needPerShow:needPerShow, showsLeft:showsLeft,
+    avgPerDay:avgPerDay, servedDays:servedDays, perShowLimit:perShowLimit, safeRate:safeRate,
     startedBefore: !!(gift.start&&gift.start<opts.base)
   };
 }
@@ -1048,7 +1301,8 @@ var XLSX_MAX_ROWS_PER_GIFT=400;
 var SUMMARY_FIRST_ROW=10;   /* 「配布可能期間」シートで1件目のプレゼントが入る行 */
 function exportExcel(){
   if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
-  var o=state.opts, rs=state.results, i, j;
+  /* 画面と同じ並び（終了が近い順）で書き出す。画面とExcelで行の順序が違うと照合できないため */
+  var o=state.opts, rs=sortedResults(), i, j;
   var SUM="'配布可能期間'", DET="'明細'";
 
   /* --- 明細シート（上映回ごとの逐次計算・数式） --- */
@@ -1181,7 +1435,8 @@ function exportExcel(){
 /* =========================================================================
    8. 画面（UI）
    ========================================================================= */
-var state={ schedule:null, gifts:[], results:null, opts:{} };
+var state={ schedule:null, gifts:[], results:null, opts:{},
+            view:"dash", noticeMode:"list", dailyDate:null };
 var GID=1;
 
 function newGift(init){
@@ -1424,30 +1679,46 @@ function runCalc(){
     results.push(simulateGift(gg,perfs,opts));
   }
   state.results=results;
+  if(!state.dailyDate||state.dailyDate<opts.base||state.dailyDate>opts.horizon){
+    /* 今日が計算期間に入っていればその日、外れていれば起算日を初期表示にする */
+    var today=ymd(new Date());
+    state.dailyDate=(today>=opts.base&&today<=opts.horizon)?today:opts.base;
+  }
   renderResults();
   el("resultCard").hidden=false;
   el("resultCard").scrollIntoView({behavior:"smooth",block:"start"});
   save();
 }
-function statusTag(r){
-  switch(r.status){
-    case "ended": return '<span class="tag mute">配布期間終了済み</span>';
-    case "none": return '<span class="tag ng">対象上映なし</span>';
-    case "short": return '<span class="tag ng">初回から在庫不足</span>';
-    case "out": return '<span class="tag warn">在庫切れ</span>';
-    case "period": return '<span class="tag ok">期間終了まで充足</span>';
-    default: return '<span class="tag ok">期間内は充足</span>';
+/* 指定日の上映回ごとに「何を配るか」を組み立てる（現場の配布指示表用） */
+function buildDailyPlan(dateYmd, results){
+  var byPerf={}, order=[];
+  function keyOf(p){ return p.screen+"|"+p.min+"|"+p.title; }
+  for(var i=0;i<results.length;i++){
+    var r=results[i];
+    for(var k=0;k<r.perfs.length;k++){
+      var p=r.perfs[k];
+      if(p.date!==dateYmd) continue;
+      var key=keyOf(p);
+      if(!byPerf[key]){
+        byPerf[key]={screen:p.screen, min:p.min, title:p.title, cap:p.cap,
+                     projected:p.projected, items:[]};
+        order.push(key);
+      }
+      var d=r.decisions[k];
+      byPerf[key].items.push({
+        name:r.gift.present||r.gift.title, need:d.need, ok:d.ok,
+        per:r.gift.per||1, kind:r.gift.kind
+      });
+    }
   }
+  var rows=order.map(function(k){return byPerf[k];});
+  rows.sort(function(a,b){
+    if(a.min!==b.min) return a.min-b.min;
+    return a.screen-b.screen;
+  });
+  return rows;
 }
-function answerText(r){
-  if(r.status==="ended") return "配布終了日が計算起算日より前です（計算対象外）";
-  if(r.status==="none") return "対象となる上映回が見つかりません（作品名の紐付け・期間をご確認ください）";
-  if(r.status==="short") return "在庫が1回分に満たないため配布できません";
-  var d=fmtDateFull(r.lastDate)+" まで配布可能";
-  if(r.lastProjected) d+="（推計）";
-  if(r.status==="period"||r.status==="surplus") d+="（この期間は在庫が足ります／残 "+r.left.toLocaleString()+"）";
-  return d;
-}
+
 /* 日別明細を週（配布開始日起算の7日区切り）にまとめる */
 function weeklyRows(daily){
   if(!daily.length) return [];
@@ -1467,43 +1738,370 @@ function weeklyRows(daily){
     return c;
   });
 }
-function renderResults(){
-  var rs=state.results||[], o=state.opts, box=el("results");
-  if(!rs.length){ box.innerHTML='<div class="warnbox">計算対象のプレゼントがありません。③で登録してください。</div>'; return; }
-  var meta='起算日 '+fmtDateFull(o.base)+'／稼働率 '+Math.round(o.rate*100)+'%'
-    +'／編成の仮定 '+o.weeks+'週先まで（'+fmtDate(o.horizon)+'）'
-    +'／在庫不足回: '+(o.strict?"以降配布終了":"その回のみ中止")
-    +'／作成 '+fmtDateFull(ymd(new Date()));
-  el("printMeta").textContent=(state.schedule.theater?state.schedule.theater+"　":"")+meta;
-  var h='<div class="note noprint" style="margin-bottom:12px">'+esc(meta)+'</div>';
-  h+='<table><thead><tr>'
-    +'<th>作品</th><th>プレゼント</th><th>種別</th><th class="num">在庫</th><th class="num">1人</th>'
-    +'<th>配布開始</th><th>配布終了(指定)</th><th class="num">対象回数</th><th class="num">配布回数</th>'
-    +'<th class="num">配布見込</th><th class="num">残数</th><th>配布可能最終日</th><th class="c">判定</th></tr></thead><tbody>';
+/* =========================================================================
+   結果の表示。用途の違う4つのビューを作り分ける。
+     dash   … 事務所で状況をつかむ
+     notice … バックヤードに貼る掲示
+     daily  … その日の現場に配る指示表
+     detail … 数字の根拠
+   ========================================================================= */
+var URGENCY_RANK={alert:0, warn:1, ok:2, dead:3};
+
+/* 状態の判定。色だけでなく記号と帯の模様でも区別する（モノクロ印刷対策） */
+function urgencyOf(r){
+  if(r.status==="ended") return {k:"dead", label:"配布期間終了", mark:"×"};
+  if(r.status==="none")  return {k:"dead", label:"要確認",       mark:"?"};
+  if(r.status==="short") return {k:"dead", label:"在庫不足",     mark:"?"};
+  if(r.status==="period") return {k:"ok", label:"期間終了まで足ります", mark:"■"};
+  if(r.status==="surplus") return {k:"ok", label:"当面 終了予定なし", mark:"■"};
+  /* 週替わりは金曜切替。7日=1サイクルを跨げるか、3日=週末を跨げるかが現場の判断軸 */
+  var d=r.daysLeft===null?99:r.daysLeft;
+  if(d<=0) return {k:"alert", label:"本日で終了",   mark:"◎"};
+  if(d<=3) return {k:"alert", label:"まもなく終了", mark:"◎"};
+  if(d<=7) return {k:"warn",  label:"残りわずか",   mark:"▲"};
+  return {k:"ok", label:"配布中", mark:"■"};
+}
+/* 掲示に「◯月◯日まで」と書いてよいか。在庫に余裕があるものの最終日は
+   推計を打ち切った地点にすぎず、終了日ではないので日付を出してはいけない */
+function hasRealEndDate(r){
+  if(!r.lastDate) return false;
+  if(r.status==="surplus") return false;
+  return true;
+}
+/* 掲示に出す日付は「全回に配れる最終日」。これを過ぎると大きいスクリーンの回から配れなくなる */
+function noticeDate(r){ return hasRealEndDate(r) ? r.safeUntil : null; }
+/* 「そのあと小さい回だけ配れる期間」があるかどうか */
+function tailText(r){
+  if(!hasRealEndDate(r)||!r.lastDate) return "";
+  if(!r.safeUntil) return "本日から一部の回のみ（"+fmtDate(r.lastDate)+"まで）";
+  if(r.lastDate<=r.safeUntil) return "";
+  var from=addDays(r.safeUntil,1);
+  return (from===r.lastDate ? fmtDate(from) : fmtDate(from)+"〜"+fmtDate(r.lastDate))
+    +" は席数の少ない回のみ";
+}
+function sortedResults(){
+  var rs=(state.results||[]).slice();
+  rs.sort(function(a,b){
+    var ua=urgencyOf(a), ub=urgencyOf(b);
+    if(ua.k!==ub.k) return URGENCY_RANK[ua.k]-URGENCY_RANK[ub.k];
+    if(a.lastDate&&b.lastDate&&a.lastDate!==b.lastDate) return a.lastDate<b.lastDate?-1:1;
+    if(!!a.lastDate!==!!b.lastDate) return a.lastDate?-1:1;
+    return 0;
+  });
+  return rs;
+}
+function metaLine(){
+  var o=state.opts;
+  return (state.schedule.theater?state.schedule.theater+"　":"")
+    +"起算日 "+fmtDateFull(o.base)+"／稼働率 "+Math.round(o.rate*100)+"%（満席想定）"
+    +"／"+o.weeks+"週先まで推計／作成 "+fmtDateFull(ymd(new Date()));
+}
+function statusTag(r){
+  var u=urgencyOf(r);
+  var cls={ok:"ok",warn:"warn",alert:"ng",dead:"mute"}[u.k];
+  return '<span class="tag '+cls+'">'+u.mark+" "+esc(u.label)+"</span>";
+}
+function answerText(r){
+  if(r.status==="ended") return "配布終了日が計算起算日より前です（計算対象外）";
+  if(r.status==="none")  return "対象となる上映回が見つかりません";
+  if(r.status==="short") return "在庫が1回分に満たないため配布できません";
+  var d=fmtDateFull(r.lastDate)+" まで配布可能";
+  if(r.lastProjected) d+="（推計）";
+  return d;
+}
+
+/* ---------------------------------------------------- ①ダッシュボード */
+function viewDash(rs){
+  var o=state.opts;
+  var soon=0, check=0, stock=0, ship=0;
+  rs.forEach(function(r){
+    var u=urgencyOf(r);
+    if(u.k==="alert"||u.k==="warn") soon++;
+    if(r.status==="none") check++;
+    stock+=r.gift.qty||0; ship+=r.handed;
+  });
+  var h='<div class="statline noprint">'
+    +'<div class="statbox"><div class="k">登録プレゼント</div><div class="v">'+rs.length+'<small style="font-size:12px"> 件</small></div></div>'
+    +'<div class="statbox"><div class="k">1週間以内に終了</div><div class="v" style="color:'+(soon?"var(--alert)":"var(--ink)")+'">'+soon+'<small style="font-size:12px"> 件</small></div></div>'
+    +'<div class="statbox"><div class="k">紐付け要確認</div><div class="v" style="color:'+(check?"var(--warn)":"var(--ink)")+'">'+check+'<small style="font-size:12px"> 件</small></div></div>'
+    +'<div class="statbox"><div class="k">在庫合計</div><div class="v">'+stock.toLocaleString()+'</div></div>'
+    +'<div class="statbox"><div class="k">配布見込 合計</div><div class="v">'+ship.toLocaleString()+'</div></div>'
+    +'</div>';
+  h+='<div class="deck">';
   for(var i=0;i<rs.length;i++){
-    var r=rs[i], g=r.gift;
+    var r=rs[i], g=r.gift, u=urgencyOf(r);
+    var real=hasRealEndDate(r);
+    var nd=noticeDate(r);
+    var pct = g.qty ? Math.max(0,Math.min(100, Math.round(r.left/g.qty*100))) : 0;
+    var d0 = nd?parseYmd(nd):null;
+    h+='<div class="gcard st-'+u.k+'">'
+      +'<div class="eyebrow">'+esc(g.title||"（作品名なし）")+'</div>'
+      +'<div class="name">'+esc(g.present||"（プレゼント名なし）")+'</div>';
+    if(real&&d0){
+      h+='<div class="hero"><span class="d">'+(d0.getMonth()+1)+"/"+d0.getDate()+'</span>'
+        +'<span class="u">('+WD[d0.getDay()]+")まで"+'</span>'
+        +'<span class="left">'+(r.safeDaysLeft<=0?"本日まで":"あと"+r.safeDaysLeft+"日")+'</span></div>';
+      var tt=tailText(r);
+      if(tt) h+='<div class="tail">'+esc(tt)+'</div>';
+    } else if(real&&!d0){
+      h+='<div class="hero"><span class="d" style="font-size:19px">本日から一部の回のみ</span></div>'
+        +'<div class="tail">'+esc(fmtDate(r.lastDate))+'まで、席数の少ない回だけ配布できます</div>';
+    } else {
+      h+='<div class="hero"><span class="d" style="font-size:21px">'+esc(u.label)+'</span>'
+        +(r.status==="surplus"&&r.showsLeft!==null
+          ? '<span class="left">あと約'+r.showsLeft.toLocaleString()+'回分</span>':'')+'</div>';
+    }
+    if(g.qty&&r.status!=="none"&&r.status!=="ended"){
+      h+='<div class="meter"><i style="width:'+pct+'%"></i></div>'
+        +'<div class="facts"><span>残 <b>'+r.left.toLocaleString()+'</b> / '+g.qty.toLocaleString()+'</span>'
+        +(r.showsLeft!==null?'<span>約 <b>'+r.showsLeft.toLocaleString()+'</b>回分</span>':'')
+        +'<span>配布 <b>'+r.served+'</b>回</span></div>';
+    }
+    var flags=[];
+    if(r.status==="none") flags.push("PSの作品と結びついていません。③の⚙で対象作品を選んでください");
+    if(r.status==="short") flags.push("在庫が1回分（"+r.needPerShow.toLocaleString()+"個）に満たないため配布できません");
+    if(r.startedBefore&&r.status!=="ended"&&r.status!=="none")
+      flags.push("配布開始が起算日より前です。在庫欄は起算日時点の残数を入れてください");
+    if(g.end&&r.shortfall>0&&r.status!=="none"&&r.status!=="ended")
+      flags.push("期間"+fmtDate(g.end)+"まで満席で配るには あと "+r.shortfall.toLocaleString()+" 個必要です");
+    if(r.firstSkip) flags.push("品切れ開始："+fmtDate(r.firstSkip.date)+" "+fmtMin(r.firstSkip.min)
+      +" SC"+r.firstSkip.screen+"（必要"+r.firstSkip.need.toLocaleString()+"／残"+r.firstSkip.left.toLocaleString()+"）"
+      +(r.weekendRisk?" ※金土日にかかります":""));
+    if(r.lastProjected) flags.push("この日付は編成が続く前提の推計です");
+    if(flags.length) h+='<div class="flag">'+esc(flags[0])+(flags.length>1?" ほか"+(flags.length-1)+"件":"")+'</div>';
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+/* ---------------------------------------------------- ②スタッフ掲示 */
+function viewNotice(rs){
+  /* 掲示に出すのは「今まさに配っているもの」だけ。
+     対象上映なし・在庫不足はデータ不備であって現場の運用情報ではないので出さない。 */
+  var live=rs.filter(function(r){ return r.status==="out"||r.status==="period"||r.status==="surplus"; });
+  var done=rs.filter(function(r){ return r.status==="ended"; });
+  var hidden=rs.length-live.length-done.length;
+  var mode=state.noticeMode||"list";
+  var base=state.opts.base;
+  var h='<div class="row noprint" style="margin-bottom:12px">'
+    +'<label class="f"><span>掲示の形</span><select id="noticeMode">'
+    +'<option value="list"'+(mode==="list"?" selected":"")+'>一覧（1枚にまとめる／事務所・バックヤード向け）</option>'
+    +'<option value="big"'+(mode==="big"?" selected":"")+'>単票（1件1枚／もぎり・配布ワゴン向け）</option>'
+    +'</select></label>'
+    +'<span class="hint" style="margin:0">A4縦・余白12mm推奨。'+live.length+'件を掲載'
+    +(done.length?'／終了済み'+done.length+'件は末尾に':'')
+    +(hidden?'／要確認'+hidden+'件は掲示から除外（画面で確認してください）':'')+'</span></div>';
+
+  if(!live.length&&!done.length) return h+'<div class="warnbox">掲示できるプレゼントがありません。</div>';
+  /* 「あと◯日」は起算日からの日数。起算日が今日でないまま貼ると日数がずれる */
+  var today=ymd(new Date());
+  if(base!==today){
+    h+='<div class="warnbox noprint"><b>計算起算日が今日ではありません（起算日 '+fmtDate(base)
+      +' ／ 今日 '+fmtDate(today)+'）。</b>掲示の「あと◯日」は起算日からの日数です。'
+      +'貼り出す前に⑤の起算日を今日に合わせて計算し直してください。</div>';
+  }
+
+  /* ---- 単票（1件1枚） ---- */
+  if(mode==="big"){
+    h+='<div class="notice">';
+    live.forEach(function(r){
+      var u=urgencyOf(r), g=r.gift, nd=noticeDate(r), d=nd?parseYmd(nd):null, tt=tailText(r);
+      h+='<div class="big-notice st-'+u.k+'">'
+        +'<div class="film">'+esc(g.title||"")+'</div>'
+        +'<div class="item">'+esc(g.present||"")+'</div>'
+        +'<div class="until">'
+        +(d?(d.getMonth()+1)+"<small>月</small>"+d.getDate()+"<small>日("+WD[d.getDay()]+")まで</small>"
+            :'<span style="font-size:40px">'+(hasRealEndDate(r)?"本日から一部の回のみ":"当面 終了予定なし")+'</span>')
+        +'</div>'
+        +(tt?'<div class="tail">'+esc(tt)+'</div>':'')
+        +'<div class="band">'+u.mark+" "+esc(u.label)
+        +(d&&r.safeDaysLeft!==null?"　"+fmtDate(base)+"現在 あと"+Math.max(0,r.safeDaysLeft)+"日分":"")+'</div>'
+        +'<div class="bn-body">'
+        +'<div><span class="bl">配布ルール</span><b>その回のお客様全員に配れないときは、その回は配布しません。</b>'
+        +'半端に配らず、副支配人に報告してください。</div>'
+        +'<div><span class="bl">対象</span>'+esc(scopeText(r))+'</div>'
+        +'<div><span class="bl">在庫の見込み</span>残 '+r.left.toLocaleString()+' 個'
+        +(r.showsLeft!==null?'（あと約 '+r.showsLeft.toLocaleString()+' 回分）'+dotsHtml(r):'')
+        +'／1回あたり約 '+r.needPerShow.toLocaleString()+' 個</div>'
+        +'</div>'
+        +'<div class="bn-foot">'+esc(metaLine())+'　※満席想定の最短見込みです。'
+        +'入りが少なければこれより長く配布できます。<b>次のPS更新時に貼り替えてください。</b></div>'
+        +'</div>';
+    });
+    return h+'</div>';
+  }
+
+  /* ---- 一覧（1枚にまとめる） ---- */
+  h+='<div class="notice"><div class="notice-head">'
+    +'<h2>入場者プレゼント 配布可能期間</h2>'
+    +'<div class="sub">'+esc(state.schedule.theater||"")+'<br>'
+    +'<b>'+fmtDateFull(base)+' 現在の見込み</b><br>作成 '+fmtDateFull(ymd(new Date()))+'</div></div>';
+  live.forEach(function(r){
+    var u=urgencyOf(r), g=r.gift, nd=noticeDate(r), d=nd?parseYmd(nd):null, tt=tailText(r);
+    h+='<div class="nrow st-'+u.k+'">'
+      +'<div class="badge">'+u.mark+'</div>'
+      +'<div class="who"><div class="film">'+esc(g.title||"")+'</div>'
+      +'<div class="item">'+esc(g.present||"")+'</div>'
+      +'<div class="film">'+esc(u.label)+'　残 '+r.left.toLocaleString()+' 個'
+      +(r.showsLeft!==null?'（約'+r.showsLeft.toLocaleString()+'回分）':'')
+      +'　'+esc(scopeText(r))+dotsHtml(r)+'</div>'
+      +(tt?'<div class="tail">'+esc(tt)+'</div>':'')+'</div>'
+      +'<div class="when">'
+      +(d
+        ? '<div class="big">'+(d.getMonth()+1)+"/"+d.getDate()+'</div>'
+          +'<div class="sm">('+WD[d.getDay()]+') まで</div>'
+          +'<div class="ref">'+fmtDate(base)+'現在 あと'+Math.max(0,r.safeDaysLeft)+'日</div>'
+        : (hasRealEndDate(r)
+            ? '<div class="sm" style="font-size:14px">本日から<br>一部の回のみ</div>'
+            : '<div class="sm" style="font-size:15px">当面<br>終了予定なし</div>'
+              +(r.showsLeft!==null?'<div class="ref">約'+r.showsLeft.toLocaleString()+'回分</div>':'')))
+      +'</div></div>';
+  });
+  if(done.length){
+    h+='<div class="ended-list"><div class="t">配布終了したもの（お客様に聞かれたとき用）</div>';
+    done.forEach(function(r){
+      h+='<div><s>'+esc(r.gift.present||"")+'</s>　'+esc(r.gift.title||"")
+        +(r.gift.end?'　'+fmtDate(r.gift.end)+' で終了':'')+'</div>';
+    });
+    h+='</div>';
+  }
+  h+='<div class="notice-foot"><div><b>配布のきまり</b><ul>'
+    +'<li>その回のお客様<b>全員に配れない場合は、その回は配布しません</b>。半端に配らないでください。</li>'
+    +'<li>残りが少なくなったら、配布前に必ず副支配人へ報告してください。</li>'
+    +'<li>週替わりのものは切替日に注意。前の週のものと混ざらないようにしてください。</li>'
+    +'</ul><div class="fine">'
+    +'※満席想定の最短見込みです。実際の入りによっては表示より長く配布できます。<br>'
+    +'※'+esc(metaLine())+'<br>'
+    +'※<b>この紙は次のPS更新時に貼り替えてください。</b>編成が変わると日付も変わります。</div></div>'
+    +'<div class="signbox"><div>確認者</div><div></div></div></div>';
+  return h+'</div>';
+}
+/* 残りを「1ドット＝1回分」で描く。数えられるので「あと何回配れるか」が3秒で伝わる。
+   14回を超えると数えられず意味がないので出さない */
+function dotsHtml(r){
+  if(r.showsLeft===null||r.showsLeft>14) return "";
+  var out='<span class="dots" title="あと約'+r.showsLeft+'回分">';
+  for(var i=0;i<14;i++) out+='<i class="'+(i<r.showsLeft?"on":"off")+'"></i>';
+  return out+'</span>';
+}
+
+/* 掲示に載せる「対象」の説明文 */
+function scopeText(r){
+  var g=r.gift, parts=[];
+  if(g.screens&&g.screens.length) parts.push("SC"+g.screens.join("・"));
+  if(g.include) parts.push(g.include+"の回のみ");
+  if(g.exclude) parts.push(g.exclude+"を除く");
+  if(g.per>1) parts.push("1人"+g.per+"個");
+  if(!parts.length) parts.push("対象作品の全回");
+  return parts.join(" / ");
+}
+
+/* ---------------------------------------------------- ③その日の配布指示 */
+function viewDaily(rs){
+  var day=state.dailyDate||state.opts.base;
+  var plan=buildDailyPlan(day, rs);
+  /* 配布できるものが1つもない回は指示表に出さない。
+     在庫切れで配らないものは、回ごとに繰り返さず冒頭に1度だけ書く。 */
+  var rows=[], totalNeed=0, byItem={}, itemOrder=[], stopped={};
+  plan.forEach(function(p){
+    var live=p.items.filter(function(it){ return it.ok; });
+    p.items.forEach(function(it){ if(!it.ok) stopped[it.name]=1; });
+    if(!live.length) return;
+    var need=0;
+    live.forEach(function(it){
+      need+=it.need; totalNeed+=it.need;
+      if(!byItem[it.name]){ byItem[it.name]={name:it.name, qty:0, shows:0}; itemOrder.push(it.name); }
+      byItem[it.name].qty+=it.need; byItem[it.name].shows++;
+    });
+    rows.push({p:p, live:live, need:need});
+  });
+  var stoppedNames=Object.keys(stopped);
+
+  var h='<div class="daily-head noprint">'
+    +'<label class="f"><span>対象日</span><input type="date" id="dailyDate" value="'+esc(day)+'"'
+    +' min="'+esc(state.opts.base)+'" max="'+esc(state.opts.horizon)+'"></label>'
+    +'<button class="mini" id="dailyPrev">← 前日</button><button class="mini" id="dailyNext">翌日 →</button>'
+    +'<span class="hint" style="margin:0">A4横・余白10mm推奨。もぎり／配布担当に渡す指示表です</span></div>';
+  h+='<div class="printhead" style="display:block"><h1>'+fmtDateFull(day)+'　入場者プレゼント 配布指示</h1>'
+    +'<div class="meta">'+esc(metaLine())+'</div></div>';
+
+  if(!rows.length){
+    return h+'<div class="warnbox">この日に配布するものはありません。'
+      +(stoppedNames.length?'（在庫切れ：'+esc(stoppedNames.join("、"))+'）':'')+'</div>';
+  }
+
+  /* 朝の準備用。配布物ごとに「今日いくつ要るか」を先に出す */
+  h+='<div class="prep"><div class="prep-t">本日の準備数（満席想定）</div><div class="prep-g">';
+  itemOrder.forEach(function(n){
+    var b=byItem[n];
+    h+='<div class="prep-i"><div class="pn">'+esc(n)+'</div>'
+      +'<div class="pq">'+b.qty.toLocaleString()+'<span>個</span></div>'
+      +'<div class="ps">'+b.shows+'回分</div></div>';
+  });
+  h+='</div><div class="prep-sum">合計 <b>'+totalNeed.toLocaleString()+'</b> 個 ／ 配布のある上映 <b>'
+    +rows.length+'</b> 回</div></div>';
+
+  if(stoppedNames.length){
+    h+='<div class="warnbox"><b>本日は配布しません（在庫切れ）</b>：'+esc(stoppedNames.join("　／　"))
+      +'<br>お客様に聞かれたら「配布は終了しました」とご案内してください。</div>';
+  }
+
+  h+='<table class="daily"><thead><tr><th style="width:58px">開始</th><th style="width:40px">SC</th>'
+    +'<th style="width:52px" class="num">席数</th><th>作品</th><th>配布するもの</th>'
+    +'<th class="num" style="width:66px">必要数</th><th class="c" style="width:50px">確認</th></tr></thead><tbody>';
+  var prevHour=-1;
+  rows.forEach(function(x){
+    var hour=Math.floor(x.p.min/60);
+    var sep=(prevHour>=0&&hour!==prevHour)?' class="hour-sep"':'';
+    prevHour=hour;
+    var items=x.live.map(function(it){
+      return esc(it.name)+(it.per>1?'<span class="per">1人'+it.per+'個</span>':"");
+    }).join("<br>");
+    h+='<tr'+sep+'><td class="time">'+fmtMin(x.p.min)+'</td><td class="sc">'+x.p.screen+'</td>'
+      +'<td class="num">'+x.p.cap.toLocaleString()+'</td>'
+      +'<td>'+esc(x.p.title)+'</td><td class="items">'+items+'</td>'
+      +'<td class="num">'+x.need.toLocaleString()+'</td>'
+      +'<td class="c"><span class="chk"></span></td></tr>';
+  });
+  h+='</tbody></table>';
+  h+='<div class="note" style="margin-top:12px"><b>その回のお客様全員に配れない場合は、その回は配布しません。</b>'
+    +'　必要数は満席想定です。実際の入場者数に合わせて用意してください。'
+    +'　残りが少なくなったら配布前に副支配人へ報告してください。</div>';
+  return h;
+}
+
+/* ---------------------------------------------------- ④明細・根拠 */
+function viewDetail(rs){
+  var h='<div class="note noprint" style="margin-bottom:12px">'+esc(metaLine())+'</div>';
+  h+='<div class="scroll"><table><thead><tr>'
+    +'<th>作品</th><th>プレゼント</th><th class="num">在庫</th>'
+    +'<th>開始</th><th>終了(指定)</th><th class="num">対象回</th><th class="num">配布回</th>'
+    +'<th class="num">配布見込</th><th class="num">残数</th><th>配布可能最終日</th>'
+    +'<th class="num">不足数</th><th class="c">状態</th></tr></thead><tbody>';
+  rs.forEach(function(r){
+    var g=r.gift;
     h+='<tr>'
-      +'<td>'+esc(g.title)+'</td><td>'+esc(g.present)+'</td><td>'+esc(g.kind)+'</td>'
-      +'<td class="num">'+(g.qty||0).toLocaleString()+'</td><td class="num">'+g.per+'</td>'
+      +'<td>'+esc(g.title)+'</td><td>'+esc(g.present)+'</td>'
+      +'<td class="num">'+(g.qty||0).toLocaleString()+'</td>'
       +'<td>'+(g.start?fmtDate(g.start):"-")+'</td>'
       +'<td>'+(g.end?fmtDate(g.end):'<span class="tag mute">無くなるまで</span>')+'</td>'
       +'<td class="num">'+r.targets+'</td><td class="num">'+r.served+'</td>'
       +'<td class="num">'+r.handed.toLocaleString()+'</td><td class="num">'+r.left.toLocaleString()+'</td>'
       +'<td><b>'+(r.lastDate?fmtDate(r.lastDate):"-")+'</b>'+(r.lastProjected?' <span class="tag mute">推計</span>':'')+'</td>'
+      +'<td class="num">'+(g.end&&r.shortfall?r.shortfall.toLocaleString():"-")+'</td>'
       +'<td class="c">'+statusTag(r)+'</td></tr>';
-  }
-  h+='</tbody></table>';
+  });
+  h+='</tbody></table></div>';
 
-  // 同時配布グループ
   var groups={};
   rs.forEach(function(r){ var k=(r.gift.group||"").trim(); if(!k) return; (groups[k]=groups[k]||[]).push(r); });
   var gk=Object.keys(groups);
   if(gk.length){
-    h+='<h3 style="font-size:14px;margin:16px 0 6px">同時配布グループの配布可能期間</h3><table><thead><tr>'
+    h+='<h3 style="font-size:14px;margin:18px 0 7px">同時配布グループ</h3><table><thead><tr>'
       +'<th>グループ</th><th>対象プレゼント</th><th>セットで配布できる最終日</th><th>先に切れるもの</th></tr></thead><tbody>';
     gk.forEach(function(k){
-      var arr=groups[k];
-      var min=null, who=null, impossible=null;
+      var arr=groups[k], min=null, who=null, impossible=null;
       arr.forEach(function(r){
         if(!r.lastDate){ if(!impossible) impossible=r.gift.present; return; }
         if(min===null||r.lastDate<min){ min=r.lastDate; who=r.gift.present; }
@@ -1515,10 +2113,9 @@ function renderResults(){
     h+='</tbody></table>';
   }
 
-  // 個別ブロック
-  h+='<h3 style="font-size:14px;margin:18px 0 8px">プレゼント別の詳細</h3>';
-  for(var j=0;j<rs.length;j++){
-    var r2=rs[j], g2=r2.gift;
+  h+='<h3 style="font-size:14px;margin:20px 0 9px">プレゼント別の根拠</h3>';
+  rs.forEach(function(r2){
+    var g2=r2.gift;
     h+='<div class="gift-block"><div class="h"><div class="result-head">'
       +'<span style="font-weight:700">'+esc(g2.title||"(作品名なし)")+'</span>'
       +'<span>'+esc(g2.present)+'</span>'+statusTag(r2)
@@ -1529,44 +2126,95 @@ function renderResults(){
       +'<span>配布可能 <b>'+r2.served+'</b>回</span>'
       +'<span>配布見込 <b>'+r2.handed.toLocaleString()+'</b></span>'
       +'<span>残数 <b>'+r2.left.toLocaleString()+'</b></span>'
-      +'<span>計算期間 '+fmtDate(r2.from)+' 〜 '+fmtDate(r2.to)+'</span>'
-      +'</div>';
+      +'<span>1日平均 <b>'+r2.avgPerDay.toLocaleString()+'</b></span>'
+      +'<span>計算期間 '+fmtDate(r2.from)+' 〜 '+fmtDate(r2.to)+'</span></div>';
+    if(g2.end&&r2.status!=="none"&&r2.status!=="ended"){
+      h+='<div class="note" style="margin-bottom:9px">'
+        +'配布終了日（'+fmtDate(g2.end)+'）まで満席で配り切るには <b>'+r2.needTotal.toLocaleString()+'個</b>必要 → '
+        +(r2.shortfall>0
+          ? '<b style="color:var(--alert)">'+r2.shortfall.toLocaleString()+'個不足</b>。'
+            +'今の在庫で期間を通すには1回あたり<b>'+r2.perShowLimit.toLocaleString()+'個</b>まで、'
+            +'または入りが<b>'+r2.safeRate+'%</b>以下であることが条件です。'
+          : '在庫で足ります（余り '+(g2.qty-r2.needTotal).toLocaleString()+'個）。')
+        +'</div>';
+    }
     if(r2.firstSkip){
       h+='<div class="warnbox">最初に配布できなくなる回：<b>'+fmtDate(r2.firstSkip.date)+' '+fmtMin(r2.firstSkip.min)
         +' SC'+r2.firstSkip.screen+'</b>（必要 '+r2.firstSkip.need.toLocaleString()+' / 残 '+r2.firstSkip.left.toLocaleString()+'）'
-        +'　※全席分揃わない回は配布しないルールで計算しています'
         +(r2.skipped>1?'　この回を含め <b>'+r2.skipped+'回</b>が配布不可':'')+'</div>';
     }
     if(r2.startedBefore&&r2.status!=="ended"&&r2.status!=="none"){
       h+='<div class="warnbox">配布開始日（'+fmtDate(g2.start)+'）が計算起算日（'+fmtDate(state.opts.base)
-        +'）より前です。<b>起算日時点の残数</b>を在庫欄に入力してください（起算日より前の消化分は計算に含めていません）。</div>';
+        +'）より前です。<b>起算日時点の残数</b>を在庫欄に入力してください。</div>';
     }
     if(r2.status==="none"){
       h+='<div class="errbox">対象上映が0件です。作品名がPSの表記と一致しているか（③の⚙で対象作品を選択）、'
         +'配布期間が読み込んだスケジュール期間と重なっているかをご確認ください。</div>';
     }
-    if(g2.note) h+='<div class="note" style="margin-bottom:8px">備考：'+esc(g2.note)+'</div>';
+    if(g2.note) h+='<div class="note" style="margin-bottom:9px">備考：'+esc(g2.note)+'</div>';
     if(state.opts.detail!=="none"&&r2.daily.length){
       var rowsD = state.opts.detail==="week" ? weeklyRows(r2.daily) : r2.daily;
       h+='<table><thead><tr><th>'+(state.opts.detail==="week"?"週":"日付")+'</th>'
         +'<th class="num">対象回数</th><th class="num">配布回数</th>'
-        +'<th class="num">座席数(満席想定)</th><th class="num">配布見込</th><th class="num">終了時残数</th><th class="c">区分</th></tr></thead><tbody>';
-      for(var d=0;d<rowsD.length;d++){
-        var x=rowsD[d];
+        +'<th class="num">座席数(満席想定)</th><th class="num">配布見込</th><th class="num">終了時残数</th>'
+        +'<th class="c">区分</th></tr></thead><tbody>';
+      rowsD.forEach(function(x){
         h+='<tr><td>'+(x.label||fmtDate(x.date))+'</td><td class="num">'+x.shows+'</td><td class="num">'+x.served+'</td>'
           +'<td class="num">'+x.seats.toLocaleString()+'</td><td class="num">'+x.handed.toLocaleString()+'</td>'
           +'<td class="num">'+x.left.toLocaleString()+'</td>'
           +'<td class="c">'+(x.projected?'<span class="tag mute">推計</span>':'<span class="tag info">PS</span>')+'</td></tr>';
-      }
+      });
       if(r2.hiddenDays>0){
-        h+='<tr><td colspan="7" style="color:var(--muted)">これ以降 '+r2.hiddenDays+'日・'+r2.hiddenShows
+        h+='<tr><td colspan="7" style="color:var(--ink-2)">これ以降 '+r2.hiddenDays+'日・'+r2.hiddenShows
           +'回は在庫不足のため配布できません</td></tr>';
       }
       h+='</tbody></table>';
     }
     h+='</div></div>';
+  });
+  return h;
+}
+
+var VIEW_INFO={
+  dash:  {title:"入場者プレゼント 配布状況一覧", hint:"A4縦・余白12mm推奨"},
+  notice:{title:"入場者プレゼント 配布可能期間", hint:"A4縦・余白12mm推奨。バックヤード掲示用"},
+  daily: {title:"入場者プレゼント 配布指示",     hint:"A4横・余白10mm推奨"},
+  detail:{title:"入場者プレゼント 配布可能期間 明細", hint:"A4横・余白10mm推奨"}
+};
+function renderResults(){
+  var rs=sortedResults(), box=el("results");
+  if(!rs.length){
+    box.innerHTML='<div class="warnbox">計算対象のプレゼントがありません。③で登録してください。</div>';
+    return;
   }
-  box.innerHTML=h;
+  var v=state.view||"dash";
+  el("printMeta").textContent=metaLine();
+  var head=el("printHead");
+  if(head) head.textContent=VIEW_INFO[v].title;
+  var hint=el("printHint");
+  if(hint) hint.textContent=VIEW_INFO[v].hint;
+  box.innerHTML=
+     '<div class="view'+(v==="dash"?" active":"")+'" data-v="dash">'  +(v==="dash"  ?viewDash(rs):"")+'</div>'
+    +'<div class="view'+(v==="notice"?" active":"")+'" data-v="notice">'+(v==="notice"?viewNotice(rs):"")+'</div>'
+    +'<div class="view'+(v==="daily"?" active":"")+'" data-v="daily">' +(v==="daily" ?viewDaily(rs):"")+'</div>'
+    +'<div class="view'+(v==="detail"?" active":"")+'" data-v="detail">'+(v==="detail"?viewDetail(rs):"")+'</div>';
+  document.querySelectorAll("#viewTabs button").forEach(function(b){
+    b.setAttribute("aria-selected", b.getAttribute("data-view")===v ? "true":"false");
+  });
+  document.body.classList.toggle("land", v==="daily"||v==="detail");
+  var nm=el("noticeMode");
+  if(nm) nm.addEventListener("change",function(){ state.noticeMode=this.value; renderResults(); });
+  var dd=el("dailyDate");
+  if(dd) dd.addEventListener("change",function(){ state.dailyDate=this.value; renderResults(); });
+  var dp=el("dailyPrev"), dn=el("dailyNext");
+  if(dp) dp.addEventListener("click",function(){ shiftDaily(-1); });
+  if(dn) dn.addEventListener("click",function(){ shiftDaily(1); });
+}
+function shiftDaily(n){
+  var d=addDays(state.dailyDate||state.opts.base, n);
+  if(!d||d<state.opts.base||d>state.opts.horizon) return;
+  state.dailyDate=d;
+  renderResults();
 }
 
 /* ---- ファイル読み込み ---- */
@@ -1684,6 +2332,13 @@ function initUI(){
   });
   el("calc").addEventListener("click",runCalc);
   el("toExcel").addEventListener("click",exportExcel);
+  el("doPrint").addEventListener("click",function(){ window.print(); });
+  el("viewTabs").addEventListener("click",function(e){
+    var b=e.target.closest("button[data-view]");
+    if(!b) return;
+    state.view=b.getAttribute("data-view");
+    renderResults();
+  });
   ["optBase","optRate","optWeeks","optStrict","optDetail"].forEach(function(id){
     el(id).addEventListener("change",save);
   });
@@ -1716,7 +2371,8 @@ if(typeof globalThis!=="undefined"){
     inflateRaw:inflateRaw, unzip:unzip, readXlsx:readXlsx,
     parseSchedule:parseSchedule, parseScheduleSheet:parseScheduleSheet,
     parseGiftSheet:parseGiftSheet, projectPerfs:projectPerfs,
-    simulateGift:simulateGift, normTitle:normTitle, titleScore:titleScore,
+    simulateGift:simulateGift, buildDailyPlan:buildDailyPlan,
+    normTitle:normTitle, titleScore:titleScore,
     parseDateHeader:parseDateHeader, parseLooseDate:parseLooseDate, parseQty:parseQty
   };
 }
