@@ -18,7 +18,7 @@
   --ok:#1F6F4A;    --ok-bg:#E7F2EB;
   --warn:#9A5E00;  --warn-bg:#FBF1DC;
   --alert:#A82820; --alert-bg:#FBEAE8;
-  --dead:#7C8088;  --dead-bg:#EFEEEB;
+  --dead:#666A72;  --dead-bg:#EFEEEB;
   --shadow:0 1px 2px rgba(25,26,28,.06), 0 4px 14px rgba(25,26,28,.05);
   --jp:"Yu Gothic Medium","游ゴシック Medium","YuGothic","Hiragino Sans",
        "Hiragino Kaku Gothic ProN","Meiryo",system-ui,sans-serif;
@@ -203,9 +203,7 @@ tbody tr:nth-child(even) td{background:#FCFBF9}
 .big-notice .bn-foot{margin-top:14px;font-size:11px;color:#555;line-height:1.7}
 .nrow .when .ref{font-size:10.5px;color:#555;font-weight:400}
 .tail{font-size:11.5px;color:var(--warn);font-weight:700;margin-top:3px}
-.dots{display:inline-flex;gap:3px;align-items:center;margin-left:9px;vertical-align:middle}
-.dots i{width:9px;height:9px;border-radius:50%;border:1.5px solid #333;display:inline-block}
-.dots i.on{background:#333} .dots i.off{background:#fff}
+.dots{margin-left:9px;letter-spacing:.12em;color:#333;font-size:11px}
 .big-notice .tail{font-size:15px;margin-top:8px}
 .gcard .tail{margin:6px 0 0}
 .ended-list{margin-top:14px;padding:10px 12px;background:#F2F1EE;border:1px solid #D8D4CC;
@@ -276,6 +274,34 @@ tr.hour-sep td{border-top:2px solid var(--ink-3)}
   .printhead h1{margin:0;font-size:15pt;letter-spacing:.04em}
   .printhead .meta{font-size:8.5pt;color:#333}
   .notice{border:none;padding:0}
+
+  /* --------------------------------------------------------------
+     印刷では「背景のグラフィック」が既定でオフになる。
+     塗りで状態を表していると全部消え、白抜き文字は白地に白で見えなくなる。
+     そこで印刷時は塗りを捨て、線の太さ・線種・記号・文言だけで状態を伝える。
+     -------------------------------------------------------------- */
+  .nrow .badge{background:#fff !important;background-image:none !important;color:#000;
+    border:2pt solid #000;border-radius:2px;font-size:15px}
+  .st-warn .badge{border-style:double;border-width:4pt}
+  .st-alert .badge{border-width:4pt}
+  .st-dead .badge{border-style:dashed;border-width:1pt}
+  .gcard{border-left:6pt solid #000}
+  .gcard::before{display:none}
+  .st-warn.gcard{border-left-style:double;border-left-width:7pt}
+  .st-alert.gcard{border-left-width:10pt}
+  .st-dead.gcard{border-left-style:dashed;border-left-width:3pt}
+  .gcard .meter{display:none}
+  .big-notice .band{background:#fff !important;background-image:none !important;color:#000;
+    border-top:3pt solid #000;border-bottom:3pt solid #000;padding:10px 0}
+  .st-warn .band{border-top-style:double;border-bottom-style:double;border-width:5pt}
+  .st-alert .band{border-top-width:6pt;border-bottom-width:6pt}
+  .gcard .hero .left{border:1pt solid #000;background:#fff !important;color:#000}
+  .gcard .flag,.notice .tail,.gcard .tail{background:#fff !important;color:#000;
+    border-left:3pt solid #000;padding-left:7px}
+  .warnbox,.errbox,.note{background:#fff !important;border:1pt solid #000}
+  .dots{color:#000}
+  /* 塗りを印刷できる設定の環境ではそのまま色を出す */
+  .nrow .badge,.gcard,.big-notice .band{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .gcard{box-shadow:none}
   .deck{grid-template-columns:1fr 1fr;gap:8px}
   .nrow{padding:9px 0}
@@ -1990,9 +2016,10 @@ function viewNotice(rs){
    14回を超えると数えられず意味がないので出さない */
 function dotsHtml(r){
   if(r.showsLeft===null||r.showsLeft>14) return "";
-  var out='<span class="dots" title="あと約'+r.showsLeft+'回分">';
-  for(var i=0;i<14;i++) out+='<i class="'+(i<r.showsLeft?"on":"off")+'"></i>';
-  return out+'</span>';
+  /* 図形ではなく文字で描く。プリンタの「背景のグラフィック」がオフでも必ず印刷されるため */
+  var out="";
+  for(var i=0;i<14;i++) out+=(i<r.showsLeft?"●":"○");
+  return '<span class="dots" title="あと約'+r.showsLeft+'回分">'+out+'</span>';
 }
 
 /* 掲示に載せる「対象」の説明文 */
@@ -2032,8 +2059,6 @@ function viewDaily(rs){
     +' min="'+esc(state.opts.base)+'" max="'+esc(state.opts.horizon)+'"></label>'
     +'<button class="mini" id="dailyPrev">← 前日</button><button class="mini" id="dailyNext">翌日 →</button>'
     +'<span class="hint" style="margin:0">A4横・余白10mm推奨。もぎり／配布担当に渡す指示表です</span></div>';
-  h+='<div class="printhead" style="display:block"><h1>'+fmtDateFull(day)+'　入場者プレゼント 配布指示</h1>'
-    +'<div class="meta">'+esc(metaLine())+'</div></div>';
 
   if(!rows.length){
     return h+'<div class="warnbox">この日に配布するものはありません。'
@@ -2199,7 +2224,11 @@ function renderResults(){
   var v=state.view||"dash";
   el("printMeta").textContent=metaLine();
   var head=el("printHead");
-  if(head) head.textContent=VIEW_INFO[v].title;
+  if(head){
+    head.textContent = v==="daily"
+      ? fmtDateFull(state.dailyDate||state.opts.base)+"　"+VIEW_INFO[v].title
+      : VIEW_INFO[v].title;
+  }
   var hint=el("printHint");
   if(hint) hint.textContent=VIEW_INFO[v].hint;
   box.innerHTML=
