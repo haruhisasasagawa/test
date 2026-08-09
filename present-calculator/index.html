@@ -1868,7 +1868,8 @@ function viewDash(rs){
       flags.push("配布開始が起算日より前です。在庫欄は起算日時点の残数を入れてください");
     if(g.end&&r.shortfall>0&&r.status!=="none"&&r.status!=="ended")
       flags.push("期間"+fmtDate(g.end)+"まで満席で配るには あと "+r.shortfall.toLocaleString()+" 個必要です");
-    if(r.firstSkip) flags.push("品切れ開始："+fmtDate(r.firstSkip.date)+" "+fmtMin(r.firstSkip.min)
+    /* 1回も配れないものに「品切れ開始」を出しても意味がないので、在庫不足のときは出さない */
+    if(r.firstSkip&&r.status!=="short") flags.push("品切れ開始："+fmtDate(r.firstSkip.date)+" "+fmtMin(r.firstSkip.min)
       +" SC"+r.firstSkip.screen+"（必要"+r.firstSkip.need.toLocaleString()+"／残"+r.firstSkip.left.toLocaleString()+"）"
       +(r.weekendRisk?" ※金土日にかかります":""));
     if(r.lastProjected) flags.push("この日付は編成が続く前提の推計です");
