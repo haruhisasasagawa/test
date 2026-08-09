@@ -41,11 +41,11 @@ main{max-width:1560px;margin:0 auto;padding:20px 22px 90px}
 /* ---------- カード ---------- */
 section.card{background:var(--surface);border:1px solid var(--rule);border-radius:10px;
   margin-bottom:18px;overflow:hidden;box-shadow:var(--shadow)}
-section.card>h2{margin:0;padding:12px 18px;font-size:15px;font-weight:700;
+section.card>h2{margin:0;padding:13px 18px;font-size:17px;font-weight:700;
   background:var(--surface-2);border-bottom:1px solid var(--rule);
   display:flex;align-items:center;gap:11px;letter-spacing:.02em}
-section.card>h2 .step{background:var(--accent);color:#fff;border-radius:3px;font-size:11px;
-  padding:3px 8px;font-weight:700;letter-spacing:.06em;font-family:var(--num)}
+section.card>h2 .step{background:var(--accent);color:#fff;border-radius:4px;font-size:11px;
+  padding:4px 10px;font-weight:700;letter-spacing:.08em;font-family:var(--num);white-space:nowrap}
 section.card>h2 .sub{font-weight:400;font-size:12px;color:var(--ink-2);margin-left:auto}
 .body{padding:16px 18px}
 
@@ -68,6 +68,45 @@ button.danger{color:var(--alert);border-color:#E2BDB9}
 .hint{font-size:12px;color:var(--ink-2);margin:8px 0 0;line-height:1.7}
 .note{background:var(--surface-2);border:1px solid var(--rule-2);border-radius:8px;
   padding:11px 14px;font-size:12.5px;color:var(--ink-2)}
+/* ---------- ファイルの置き場 ---------- */
+.dropgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dropzone{position:relative;display:flex;gap:14px;align-items:flex-start;
+  border:2px dashed #C0BBB0;border-radius:10px;padding:16px 18px 16px 14px;background:var(--surface-2);
+  transition:border-color .15s,background .15s}
+.dropzone.over{border-color:var(--accent-2);background:var(--accent-bg)}
+.dropzone.done{border-style:solid;border-color:var(--ok);background:var(--ok-bg)}
+.dz-no{flex:0 0 30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;
+  font-family:var(--num);font-size:15px;font-weight:700;display:flex;align-items:center;
+  justify-content:center;margin-top:2px}
+.dropzone.done .dz-no{background:var(--ok)}
+.dz-body{flex:1 1 auto;min-width:0}
+.dz-t{font-size:17px;font-weight:700;letter-spacing:.01em;line-height:1.3}
+.dz-s{font-size:11.5px;color:var(--ink-2);margin:3px 0 10px;line-height:1.5}
+.dz-btn{font-size:14px;padding:9px 20px;font-weight:700}
+.dz-drag{font-size:11px;color:var(--ink-3);margin-top:7px}
+.dz-state{position:absolute;top:12px;right:14px;font-size:11px;font-weight:700;
+  color:var(--ink-3);background:var(--surface);border:1px solid var(--rule);
+  border-radius:99px;padding:2px 10px}
+.dropzone.done .dz-state{color:var(--ok);border-color:var(--ok);background:#fff}
+@media(max-width:820px){.dropgrid{grid-template-columns:1fr}}
+
+/* ---------- 折りたたみ ---------- */
+details.fold{border:1px solid var(--rule);border-radius:8px;margin-top:14px;background:var(--surface)}
+details.fold>summary{cursor:pointer;padding:10px 14px;font-size:13px;font-weight:700;
+  color:var(--accent);list-style:none;display:flex;align-items:center;gap:7px}
+details.fold>summary::before{content:"▸";font-size:11px;color:var(--ink-3)}
+details.fold[open]>summary::before{content:"▾"}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>*:not(summary){margin:0 14px 14px}
+details.fold.sub>summary{font-weight:400;color:var(--ink-2);font-size:12px}
+
+/* ---------- 計算バー ---------- */
+.calcbar{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;
+  background:var(--surface-2);border:1px solid var(--rule);border-radius:9px;padding:14px 16px}
+.calcbar label.f>span{font-size:12px;color:var(--ink)}
+.calcbar select,.calcbar input{font-size:14px;padding:7px 9px}
+button.big{font-size:15px;padding:11px 26px;margin-left:auto}
+
 .drop{border:2px dashed #C6C1B6;border-radius:9px;padding:20px;text-align:center;
   color:var(--ink-2);background:var(--surface-2);transition:border-color .15s,background .15s}
 .drop.over{border-color:var(--accent-2);background:var(--accent-bg);color:var(--accent)}
@@ -123,7 +162,55 @@ tbody tr:nth-child(even) td{background:#FCFBF9}
 .mark{display:inline-flex;align-items:center;justify-content:center;width:1.15em;height:1.15em;
   font-size:.85em;line-height:1;color:var(--c)}
 
-/* ---------- ダッシュボードのカード ---------- */
+/* =====================================================================
+   ダッシュボードの一覧。1行1プレゼント。残りは1マス＝1日のゲージで示す。
+   ===================================================================== */
+table.dash{table-layout:fixed}
+table.dash td{padding:7px 8px;vertical-align:middle}
+table.dash tr.catrow td{background:var(--ink);color:#fff;font-weight:700;font-size:12.5px;
+  letter-spacing:.08em;padding:5px 10px;border-color:var(--ink)}
+table.dash tr.catrow td span{font-weight:400;font-size:11px;color:#B9BCC2;letter-spacing:0}
+table.dash td.mark{font-size:17px;font-weight:700;color:var(--c)}
+table.dash td.who .film{font-size:11px;color:var(--ink-2);line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.dash td.who .item{font-size:15px;font-weight:700;line-height:1.35}
+table.dash td.big{font-family:var(--num);font-size:23px;font-weight:700;line-height:1;
+  font-variant-numeric:tabular-nums;color:var(--c)}
+table.dash td.big small{font-size:11px;font-weight:400;margin-left:1px;color:var(--ink-2)}
+table.dash td.big .z,table.dash td.date .z{font-size:12px;font-weight:700;color:var(--c)}
+table.dash td.date{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+table.dash td.flags{font-size:11px;color:var(--warn);line-height:1.45}
+table.dash tr.sub td{font-size:11px;color:var(--warn);font-weight:700;padding-top:0;
+  border-top:none;padding-bottom:8px}
+table.dash tr.sub td:first-child,table.dash tr.sub td:nth-child(2){border-right:none}
+.hp{font-family:var(--num);font-size:13px;letter-spacing:1px;white-space:nowrap;line-height:1}
+.hp i{font-style:normal}
+.hp .on{color:var(--c)}
+.hp .off{color:#CFCBC2}
+.hp-full .on{color:var(--ok)}
+.hp-dead .on,.hp-dead .off{color:#C7C3BA}
+.cat{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:3px;
+  white-space:nowrap;border:1px solid}
+.cat-present{background:#EAEFF7;color:#1B3A6B;border-color:#B7C6DD}
+.cat-sampling{background:#F1EEF7;color:#4A3A78;border-color:#C8BEDD}
+.cat-event{background:#EDF3EE;color:#1F6F4A;border-color:#B7D3C0}
+.listbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.listbar .lb-t{font-size:11px;font-weight:700;color:var(--ink-2);letter-spacing:.04em}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.seg button{border:none;border-radius:0;border-right:1px solid var(--rule);font-size:12px;
+  padding:5px 11px;background:var(--surface);color:var(--ink-2)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--accent);color:#fff;font-weight:700}
+.statbox.hot{border-color:var(--alert)} .statbox.hot .v{color:var(--alert)}
+.statbox.warn{border-color:var(--warn)} .statbox.warn .v{color:var(--warn)}
+.statbox .v small{font-size:11px;font-weight:400;color:var(--ink-2);margin-left:2px}
+.needbox{margin-top:12px;border:2px solid var(--accent);border-radius:8px;padding:11px 15px;
+  background:var(--accent-bg);color:var(--accent);font-size:14px;font-weight:700}
+.gift-table tr.catrow td{background:var(--ink);color:#fff;font-weight:700;font-size:12px;
+  letter-spacing:.08em;padding:4px 10px;border-color:var(--ink)}
+.gift-table tr.catrow td span{font-weight:400;font-size:11px;color:#B9BCC2;letter-spacing:0}
+
+/* ---------- ダッシュボードのカード（掲示の単票などで流用） ---------- */
 .deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
 .gcard{position:relative;border:1px solid var(--rule);border-radius:10px;background:var(--surface);
   padding:15px 17px 14px 22px;overflow:hidden;box-shadow:var(--shadow);break-inside:avoid}
@@ -210,6 +297,15 @@ tbody tr:nth-child(even) td{background:#FCFBF9}
   font-size:11.5px;color:#555;line-height:1.9}
 .ended-list .t{font-weight:700;color:#333;margin-bottom:3px;font-size:12px}
 .notice-foot .fine{margin-top:8px;font-size:10.5px;color:#555;line-height:1.7}
+/* 区分の見出し。掲示でも「入プレが先、サンプリングは次」の順序が読み取れるように。
+   モノクロ印刷でも消えないよう、色ではなく黒帯と罫線で区切る */
+.nsec{margin:16px 0 0;padding:5px 10px;background:#000;color:#fff;
+  font-size:13px;font-weight:700;letter-spacing:.08em;display:flex;
+  align-items:baseline;gap:10px;break-after:avoid;page-break-after:avoid}
+.nsec:first-of-type{margin-top:4px}
+.nsec span{font-weight:400;font-size:10.5px;letter-spacing:.02em;color:#D9D6D0}
+.big-notice .ncat{display:inline-block;border:2px solid #000;padding:2px 10px;
+  font-size:12px;font-weight:700;letter-spacing:.08em;margin-bottom:10px}
 
 /* ---------- 日次の配布指示 ---------- */
 .daily-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
@@ -218,6 +314,8 @@ tbody tr:nth-child(even) td{background:#FCFBF9}
 .prep-t{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--ink-2);margin-bottom:9px}
 .prep-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px}
 .prep-i{border:1px solid var(--rule);border-radius:6px;padding:8px 11px;background:var(--surface-2)}
+.prep-i .pc{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--ink-2);
+  border-bottom:1px solid var(--rule);padding-bottom:3px;margin-bottom:4px}
 .prep-i .pn{font-size:11.5px;line-height:1.4;height:2.8em;overflow:hidden}
 .prep-i .pq{font-family:var(--num);font-size:25px;font-weight:700;line-height:1.15;
   font-variant-numeric:tabular-nums}
@@ -309,6 +407,26 @@ table.daily .ng{color:var(--alert);font-weight:700}
     border-left:3pt solid #000;padding-left:7px}
   .warnbox,.errbox,.note{background:#fff !important;border:1pt solid #000}
   .dots{color:#000}
+  /* 区分の黒帯も塗りなので、そのままだと白地に白文字になって消える。
+     印刷では塗りを捨て、上下の太罫線で「ここから別の区分」と示す。 */
+  .nsec{background:#fff !important;color:#000;border-top:3pt solid #000;
+    border-bottom:1pt solid #000;padding:4px 0;margin-top:14px}
+  .nsec span{color:#333}
+  table.dash tr.catrow td{background:#fff !important;color:#000;
+    border-top:3pt solid #000;border-bottom:1pt solid #000}
+  table.dash tr.catrow td span{color:#333}
+  .big-notice .ncat{border-width:1.5pt}
+  /* 区分バッジ・ゲージも塗りに頼らない。文字と枠線だけで読めるようにする */
+  .cat{background:#fff !important;border:1pt solid #000;color:#000}
+  .hp .on,.hp .off{color:#000}
+  .prep-i .pc{color:#000;border-bottom:1pt solid #000}
+  table.dash td.mark,table.dash td.big,table.dash td.big .z,
+  table.dash td.date .z,table.dash td.flags,table.dash tr.sub td{color:#000}
+  /* 紙では作品名を省略記号で切らない。切ると同名プレゼントの区別がつかなくなる */
+  table.dash td.who .film{white-space:normal;overflow:visible;text-overflow:clip}
+  table.dash td{padding:5px 6px}
+  table.dash td.who .item{font-size:11pt}
+  table.dash td.big{font-size:15pt}
   /* 塗りを印刷できる設定の環境ではそのまま色を出す */
   .nrow .badge,.gcard,.big-notice .band{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .gcard{box-shadow:none}
@@ -334,79 +452,103 @@ table.daily .ng{color:var(--alert);font-weight:700}
   <div class="meta" id="printMeta"></div>
 </div>
 
-<!-- ① スケジュール -->
+<!-- STEP 1 ファイルを置く -->
 <section class="card noprint">
-  <h2><span class="step">①</span>パフォーマンススケジュール読み込み<span class="sub">TOHO PS形式の Excel (.xlsx)</span></h2>
+  <h2><span class="step">STEP 1</span>ファイルを置く<span class="sub">この2つを置けば準備完了です</span></h2>
   <div class="body">
-    <div class="drop" id="dropPs">
-      ここに PS の Excel ファイルをドラッグ＆ドロップ、または
-      <label style="color:var(--accent);cursor:pointer;text-decoration:underline">ファイルを選択
-        <input type="file" id="filePs" accept=".xlsx" hidden>
-      </label>
+    <div class="dropgrid">
+      <div class="dropzone" id="dropPs">
+        <div class="dz-no">1</div>
+        <div class="dz-body">
+          <div class="dz-t">パフォーマンススケジュール</div>
+          <div class="dz-s">上映スケジュールの Excel（.xlsx）。シートは1〜7枚どれでも可</div>
+          <button class="primary dz-btn" type="button" data-for="filePs">ファイルを選ぶ</button>
+          <div class="dz-drag">ここにドラッグ＆ドロップでも入ります</div>
+          <input type="file" id="filePs" accept=".xlsx" hidden>
+        </div>
+        <div class="dz-state" id="statePs">未読込</div>
+      </div>
+      <div class="dropzone" id="dropGift">
+        <div class="dz-no">2</div>
+        <div class="dz-body">
+          <div class="dz-t">入場者プレゼント情報</div>
+          <div class="dz-s">作品名／プレゼント内容／納品数／配布開始日／配布終了日 の表</div>
+          <button class="dz-btn" type="button" data-for="fileGift">ファイルを選ぶ</button>
+          <div class="dz-drag">ここにドラッグ＆ドロップでも入ります（手入力だけでも使えます）</div>
+          <input type="file" id="fileGift" accept=".xlsx" hidden>
+        </div>
+        <div class="dz-state" id="stateGift">未読込</div>
+      </div>
     </div>
     <div id="psSummary"></div>
+    <details id="titleCard" class="fold" hidden>
+      <summary>読み込んだ作品の一覧を見る（上映回数・座席数）</summary>
+      <div class="scroll"><table id="titleTable"></table></div>
+      <p class="hint">「＋プレゼント」を押すと、その作品のプレゼント行を追加します。</p>
+    </details>
   </div>
 </section>
 
-<!-- ② 作品一覧 -->
-<section class="card noprint" id="titleCard" hidden>
-  <h2><span class="step">②</span>作品一覧（スケジュールから読み込み）<span class="sub">回数・座席数は読み込んだ期間の合計</span></h2>
-  <div class="body">
-    <div class="scroll"><table id="titleTable"></table></div>
-    <p class="hint">「＋プレゼント」を押すと、その作品の入場者プレゼント行を追加します。</p>
-  </div>
-</section>
-
-<!-- ③ プレゼント -->
+<!-- STEP 2 中身を確認する -->
 <section class="card noprint">
-  <h2><span class="step">③④</span>入場者プレゼント・納品数の入力<span class="sub">複数プレゼント／週替わり／イベント限定に対応</span></h2>
+  <h2><span class="step">STEP 2</span>プレゼントを確認する
+    <span class="sub" id="giftCount"></span></h2>
   <div class="body">
-    <div class="drop" id="dropGift" style="padding:12px">
-      入場者プレゼント情報の Excel（作品名／プレゼント内容／納品数／配布開始日／配布終了日）をドロップして一括取り込み、または
-      <label style="color:var(--accent);cursor:pointer;text-decoration:underline">ファイルを選択
-        <input type="file" id="fileGift" accept=".xlsx" hidden>
-      </label>
-    </div>
-    <div class="row" style="margin:10px 0">
-      <button id="addGift">＋ 行を追加</button>
-      <button id="clearGift" class="danger">全削除</button>
-      <button id="exportJson">設定を書き出し(JSON)</button>
-      <label style="cursor:pointer"><button onclick="document.getElementById('importJson').click()">設定を読み込み</button>
-        <input type="file" id="importJson" accept=".json" hidden></label>
-      <span class="hint" id="giftCount"></span>
+    <div class="listbar">
+      <span class="lb-t">表示</span>
+      <div class="seg" id="giftFilter"></div>
+      <button class="mini" id="addGift">＋ 行を追加</button>
+      <button class="mini" id="exportJson">設定を書き出し</button>
+      <button class="mini" id="importJsonBtn">設定を読み込み</button>
+      <input type="file" id="importJson" accept=".json" hidden>
+      <button class="mini danger" id="clearGift" style="margin-left:auto">全削除</button>
     </div>
     <div class="scroll" style="max-height:none"><table class="gift-table" id="giftTable"></table></div>
     <p class="hint">
-      在庫は「計算起算日の時点で手元にある数」を入力してください（配布開始日が起算日より前の場合は残数を入力）。<br>
-      「対象」欄の⚙で、対象作品・スクリーン・上映方式キーワード・時刻の絞り込みができます（ライブビューイングやIMAX限定など）。
+      <b>在庫</b>は「計算する日の時点で手元にある数」を入れてください（配布が既に始まっているものは残数）。<br>
+      <b>対象上映</b>の⚙で、対象作品・スクリーン・上映方式（IMAX等）・時刻を絞り込めます。
+      <b>一致</b>が「未一致」のものは、そのままでは計算されません。
     </p>
   </div>
 </section>
 
-<!-- ⑤ 条件 -->
+<!-- STEP 3 計算する -->
 <section class="card noprint">
-  <h2><span class="step">⑤</span>計算条件</h2>
+  <h2><span class="step">STEP 3</span>計算する</h2>
   <div class="body">
-    <div class="row">
-      <label class="f"><span>計算起算日</span><input type="date" id="optBase"></label>
-      <label class="f"><span>想定稼働率(%)</span><input type="number" id="optRate" value="100" min="1" max="100" step="1" style="width:80px"></label>
-      <label class="f"><span>先の編成を仮定する週数</span><input type="number" id="optWeeks" value="26" min="0" max="104" style="width:80px"></label>
-      <label class="f"><span>在庫不足回の扱い</span>
-        <select id="optStrict">
-          <option value="skip">その回のみ配布中止し、以降の小箱の回は配布する（配布ルール準拠）</option>
-          <option value="stop">1回でも配布できない回が出たらそこで配布終了とする</option>
-        </select>
-      </label>
-      <label class="f"><span>明細</span>
-        <select id="optDetail">
-          <option value="week">週別明細を表示する（印刷向き）</option>
-          <option value="day">日別明細を表示する</option>
-          <option value="none">サマリーのみ</option>
-        </select>
-      </label>
-      <button class="primary" id="calc">計算する</button>
+    <div class="calcbar">
+      <label class="f"><span>計算する日（起算日）</span><input type="date" id="optBase"></label>
+      <label class="f"><span>想定の入り</span>
+        <select id="optRate">
+          <option value="100">満席（100%）</option>
+          <option value="90">90%</option><option value="80">80%</option>
+          <option value="70">70%</option><option value="60">60%</option><option value="50">50%</option>
+        </select></label>
+      <label class="f"><span>何週先まで見るか</span>
+        <select id="optWeeks">
+          <option value="4">4週</option><option value="8">8週</option>
+          <option value="13">13週</option><option value="26" selected>26週</option><option value="52">52週</option>
+        </select></label>
+      <button class="primary big" id="calc">この内容で計算する</button>
     </div>
-    <p class="hint">読み込んだ週の編成が同じまま続くと仮定して先の週を推計します（推計部分は「推計」と表示）。</p>
+    <details class="fold sub">
+      <summary>細かい条件</summary>
+      <div class="row" style="padding:10px 2px 2px">
+        <label class="f"><span>在庫が足りない回の扱い</span>
+          <select id="optStrict">
+            <option value="skip">その回だけ配布しない（席数の少ない回では配布を続ける）</option>
+            <option value="stop">1回でも配れなくなったら、そこで配布終了とする</option>
+          </select>
+        </label>
+        <label class="f"><span>明細の細かさ</span>
+          <select id="optDetail">
+            <option value="week">週ごと（印刷向き）</option>
+            <option value="day">日ごと</option>
+            <option value="none">出さない</option>
+          </select>
+        </label>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -425,9 +567,13 @@ table.daily .ng{color:var(--alert);font-weight:700}
 </section>
 
 <div class="toolbar noprint">
-  <button class="primary" id="doPrint">印刷 / PDF保存</button>
-  <span class="hint" id="printHint"></span>
-  <button id="toExcel" style="margin-left:auto">Excelで書き出し（数式入り）</button>
+  <button class="primary big" id="calcSticky">計算する</button>
+  <span class="hint" id="calcHint">ファイルを置いたら押してください</span>
+  <span id="afterCalc" hidden>
+    <button id="doPrint">印刷 / PDF保存</button>
+    <span class="hint" id="printHint"></span>
+  </span>
+  <button id="toExcel" style="margin-left:auto">Excelで書き出し</button>
 </div>
 </main>
 
@@ -1439,7 +1585,7 @@ function exportExcel(){
     if(b.truncated) note.push("在庫を増やす場合は明細行が不足するため再出力が必要");
     if(!b.targets) note.push("対象上映なし（作品名の紐付けを確認）");
     sum.push([
-      N(i+1,5), T(g2.title,5), T(g2.present,5), T(g2.kind,5),
+      N(i+1,5), T(g2.title,5), T(g2.present,5), T(catOf(g2).full,5),
       N(g2.qty||0,7), N(g2.per||1,7),
       g2.start?D(g2.start,3):T("-",5),
       g2.end?D(g2.end,3):T("無くなるまで",5),
@@ -1506,16 +1652,18 @@ function exportExcel(){
    8. 画面（UI）
    ========================================================================= */
 var state={ schedule:null, gifts:[], results:null, opts:{},
-            view:"dash", noticeMode:"list", dailyDate:null };
+            view:"dash", noticeMode:"list", dailyDate:null,
+            dashSort:"cat", dashFilter:"all", giftFilter:"all" };
 var GID=1;
 
 function newGift(init){
   var g={
-    id:GID++, enabled:true, title:"", present:"", kind:"通常（無くなるまで）",
+    id:GID++, enabled:true, title:"", present:"", cat:"present",
     qty:0, per:1, start:"", end:"", links:null, screens:[], include:"", exclude:"",
     timeFrom:"", timeTo:"", note:"", group:"", open:false
   };
   for(var k in (init||{})) g[k]=init[k];
+  g.cat=migrateCat(g);
   return g;
 }
 function autoLinks(titleText){
@@ -1538,7 +1686,15 @@ function el(id){ return document.getElementById(id); }
 /* ---- ①スケジュール ---- */
 function renderScheduleSummary(){
   var s=state.schedule, box=el("psSummary");
-  if(!s){ box.innerHTML=""; return; }
+  if(!s){
+    /* 入力内容はブラウザに残るがスケジュールは残らない。翌朝開くと
+       「プレゼントは入っているのにPSだけ無い」状態になるので、何が足りないかを書く */
+    box.innerHTML = state.gifts.length
+      ? '<div class="needbox">あと1つ、<b>パフォーマンススケジュール</b>を置けば計算できます。'
+        +'プレゼント'+state.gifts.length+'件は前回の入力が残っています。</div>'
+      : '';
+    return;
+  }
   var html='<div class="note" style="margin-top:12px">'
     +'<b>'+esc(s.theater||"劇場")+'</b>　読込期間：<b>'+fmtDateFull(s.start)+' 〜 '+fmtDateFull(s.end)+'</b>'
     +'（'+s.dates.length+'日間）／ 上映回数 <b>'+s.perfs.length.toLocaleString()+'回</b>'
@@ -1595,7 +1751,29 @@ function renderTitles(){
 }
 
 /* ---- ③④プレゼント表 ---- */
-var KINDS=["通常（無くなるまで）","週替わり","イベント・特別上映限定","サンプリング"];
+/* 区分は「品目の種類」だけを表す。配布期間の形（無くなるまで／週替わり）は
+   配布終了日の有無で決まるので、区分には混ぜない。
+   pri は現場の優先順位。入場者プレゼントが第一、次にサンプリング。 */
+var CATS=[
+  {key:"present",  label:"入プレ",      full:"入場者プレゼント",     pri:1},
+  {key:"sampling", label:"サンプリング", full:"サンプリング（協賛品）", pri:2},
+  {key:"event",    label:"LV・イベント", full:"LV・イベント上映限定",  pri:3}
+];
+function catOf(g){
+  var k=(g&&g.cat)||"";
+  for(var i=0;i<CATS.length;i++) if(CATS[i].key===k) return CATS[i];
+  return CATS[0];
+}
+/* 区分キーだけから優先順位を引く（gift オブジェクトを持たない場所で使う） */
+function catPri(key){ return catOf({cat:key}).pri; }
+/* 以前の版で保存した「種別」からの移行。品目の種類だけを取り出す */
+function migrateCat(g){
+  if(g.cat) return g.cat;
+  var k=g.kind||"";
+  if(/サンプリング/.test(k)) return "sampling";
+  if(/イベント|特別上映|LV/i.test(k)) return "event";
+  return "present";
+}
 function matchBadge(g){
   if(!state.schedule) return '<span class="tag mute">-</span>';
   var links=g.links||autoLinks(g.title);
@@ -1605,19 +1783,46 @@ function matchBadge(g){
 }
 function renderGifts(){
   var t=el("giftTable");
+  var filt=state.giftFilter||"all";
+  /* 27件が縦に並ぶと下の「計算する」まで遠いので、区分で絞り込めるようにする */
+  var fb=el("giftFilter");
+  if(fb){
+    fb.innerHTML='<button data-g="all"'+(filt==="all"?' class="on"':'')+'>すべて '+state.gifts.length+'</button>'
+      +CATS.map(function(c){
+        var n=state.gifts.filter(function(x){return catOf(x).key===c.key;}).length;
+        return '<button data-g="'+c.key+'"'+(filt===c.key?' class="on"':'')+'>'+c.full+' '+n+'</button>';
+      }).join("");
+  }
   var h='<thead><tr>'
    +'<th class="c" style="width:34px">対象</th><th style="min-width:190px">作品名</th><th style="min-width:200px">プレゼント名</th>'
-   +'<th style="width:130px">種別</th><th class="num" style="width:90px">在庫/納品数</th><th class="num" style="width:60px">1人</th>'
+   +'<th style="width:160px">区分</th><th class="num" style="width:90px">在庫/納品数</th><th class="num" style="width:60px">1人</th>'
    +'<th style="width:130px">配布開始日</th><th style="width:130px">配布終了日</th><th style="width:80px">グループ</th>'
    +'<th class="c" style="width:120px">対象上映</th><th class="c" style="width:40px"></th></tr></thead><tbody>';
-  for(var i=0;i<state.gifts.length;i++){
-    var g=state.gifts[i];
+  /* 優先順位は上下で示す。入プレが上、次にサンプリング、最後にLV・イベント */
+  var order=state.gifts.map(function(g,i){return {g:g,i:i};});
+  order.sort(function(a,b){
+    var d=catOf(a.g).pri-catOf(b.g).pri;
+    return d!==0?d:a.i-b.i;
+  });
+  var lastCat=null;
+  for(var oi=0;oi<order.length;oi++){
+    var i=order[oi].i, g=order[oi].g;
+    if(filt!=="all"&&catOf(g).key!==filt) continue;   /* 区分で絞り込む */
+    var cc=catOf(g);
+    if(cc.key!==lastCat){
+      lastCat=cc.key;
+      h+='<tr class="catrow"><td colspan="11">'+cc.full
+        +(cc.key==="present"?'　<span>まずここ。配布の第一優先</span>':'')
+        +(cc.key==="sampling"?'　<span>入プレの次に確認</span>':'')+'</td></tr>';
+    }
     var links=g.links||autoLinks(g.title);
     h+='<tr data-i="'+i+'">'
       +'<td class="c"><input type="checkbox" data-f="enabled" '+(g.enabled?"checked":"")+'></td>'
       +'<td><input type="text" data-f="title" value="'+esc(g.title)+'"></td>'
       +'<td><input type="text" data-f="present" value="'+esc(g.present)+'"></td>'
-      +'<td><select data-f="kind">'+KINDS.map(function(k){return '<option'+(k===g.kind?" selected":"")+'>'+k+'</option>';}).join("")+'</select></td>'
+      +'<td><select data-f="cat">'+CATS.map(function(c){
+          return '<option value="'+c.key+'"'+(c.key===g.cat?' selected':'')+'>'+c.full+'</option>';
+        }).join('')+'</select></td>'
       +'<td><input type="number" data-f="qty" value="'+(g.qty||0)+'" style="width:84px"></td>'
       +'<td><input type="number" data-f="per" value="'+(g.per||1)+'" min="1" style="width:52px"></td>'
       +'<td><input type="date" data-f="start" value="'+esc(g.start)+'"></td>'
@@ -1629,7 +1834,15 @@ function renderGifts(){
   }
   h+='</tbody>';
   t.innerHTML=h;
-  el("giftCount").textContent="登録 "+state.gifts.length+" 件（対象 "+state.gifts.filter(function(x){return x.enabled;}).length+" 件）";
+  el("giftCount").textContent="登録 "+state.gifts.length+"件 ／ 計算対象 "
+    +state.gifts.filter(function(x){return x.enabled;}).length+"件";
+  if(fb&&!fb.dataset.bound){
+    fb.dataset.bound="1";
+    fb.addEventListener("click",function(e){
+      var b=e.target.closest("button[data-g]"); if(!b) return;
+      state.giftFilter=b.getAttribute("data-g"); renderGifts();
+    });
+  }
   bindGiftEvents();
 }
 function giftDetailRow(g,i,links){
@@ -1721,7 +1934,7 @@ function bindGiftEvents(){
 /* ---- 計算実行 ---- */
 function readOpts(){
   var base=el("optBase").value||(state.schedule?state.schedule.start:ymd(new Date()));
-  var weeks=Math.max(0,parseInt(el("optWeeks").value,10)||0);
+  var weeks=Math.max(0,parseInt(el("optWeeks").value,10)||26);
   var rate=Math.min(100,Math.max(1,parseInt(el("optRate").value,10)||100))/100;
   return {
     base:base, weeks:weeks, rate:rate,
@@ -1740,7 +1953,7 @@ function runCalc(){
     var g=state.gifts[i];
     if(!g.enabled) continue;
     var gg={
-      id:g.id, title:g.title, present:g.present, kind:g.kind, qty:g.qty, per:g.per||1,
+      id:g.id, title:g.title, present:g.present, cat:g.cat, qty:g.qty, per:g.per||1,
       start:g.start||null, end:g.end||null, group:g.group, note:g.note,
       links:g.links||autoLinks(g.title), titleKey:normTitle(g.title||""),
       screens:g.screens||[], include:g.include, exclude:g.exclude,
@@ -1749,6 +1962,8 @@ function runCalc(){
     results.push(simulateGift(gg,perfs,opts));
   }
   state.results=results;
+  el("afterCalc").hidden=false;
+  el("calcHint").textContent="条件を変えたらもう一度押してください";
   if(!state.dailyDate||state.dailyDate<opts.base||state.dailyDate>opts.horizon){
     /* 今日が計算期間に入っていればその日、外れていれば起算日を初期表示にする */
     var today=ymd(new Date());
@@ -1777,7 +1992,7 @@ function buildDailyPlan(dateYmd, results){
       var d=r.decisions[k];
       byPerf[key].items.push({
         id:r.gift.id, name:r.gift.present||r.gift.title, title:r.gift.title,
-        need:d.need, ok:d.ok, per:r.gift.per||1, kind:r.gift.kind,
+        need:d.need, ok:d.ok, per:r.gift.per||1, cat:r.gift.cat,
         lastDate:r.lastDate, res:r
       });
     }
@@ -1786,6 +2001,11 @@ function buildDailyPlan(dateYmd, results){
   rows.sort(function(a,b){
     if(a.min!==b.min) return a.min-b.min;
     return a.screen-b.screen;
+  });
+  /* 1つの回に複数配る場合の並びも、入プレ→サンプリング→LVの順に固定する。
+     現場は上から順に手に取るので、第一優先のものが先頭に来ていないと事故になる。 */
+  rows.forEach(function(p){
+    p.items.sort(function(a,b){ return catPri(a.cat)-catPri(b.cat); });
   });
   return rows;
 }
@@ -1854,9 +2074,14 @@ function tailText(r){
   return (from===r.lastDate ? fmtDate(from) : fmtDate(from)+"〜"+fmtDate(r.lastDate))
     +" は席数の少ない回のみ";
 }
+/* 全部の出力（掲示・指示表・明細・Excel）で並びを揃える。
+   第一キーは区分の優先順（入プレ→サンプリング→LV）。同じ区分の中は終了が近い順。
+   画面の一覧だけは「終了が近い順」に切り替えられる（dashRows 参照）。 */
 function sortedResults(){
   var rs=(state.results||[]).slice();
   rs.sort(function(a,b){
+    var pa=catOf(a.gift).pri, pb=catOf(b.gift).pri;
+    if(pa!==pb) return pa-pb;
     var ua=urgencyOf(a), ub=urgencyOf(b);
     if(ua.k!==ub.k) return URGENCY_RANK[ua.k]-URGENCY_RANK[ub.k];
     var da=noticeDate(a)||a.lastDate, db=noticeDate(b)||b.lastDate;
@@ -1886,74 +2111,117 @@ function answerText(r){
   return d;
 }
 
-/* ---------------------------------------------------- ①ダッシュボード */
+/* ---------------------------------------------------- ①ダッシュボード（一覧） */
+/* 残量ゲージ。1マス＝1日、14マスで2週間。文字で描くので印刷しても必ず出る。 */
+function hpBar(r){
+  var MAX=14, on, cls;
+  if(r.status==="ended"||r.status==="none"||r.status==="short"){ on=0; cls="dead"; }
+  else if(!hasRealEndDate(r)){ on=MAX; cls="full"; }
+  else on=Math.max(0,Math.min(MAX, r.safeDaysLeft===null?0:r.safeDaysLeft));
+  if(cls===undefined) cls=urgencyOf(r).k;
+  var a="",b="";
+  for(var i=0;i<on;i++) a+="■";
+  for(var j=on;j<MAX;j++) b+="□";
+  return '<span class="hp hp-'+cls+'"><i class="on">'+a+'</i><i class="off">'+b+'</i></span>';
+}
+function catBadge(g){
+  var c=catOf(g);
+  return '<span class="cat cat-'+c.key+'">'+c.label+'</span>';
+}
+/* 一覧の並び。既定は区分の優先順（入プレ→サンプリング→LV）の中で終了が近い順。 */
+function dashRows(rs){
+  var mode=state.dashSort||"cat";
+  var arr=rs.slice();
+  if(mode==="cat") return arr;      /* rs は既に区分優先で並んでいる */
+  arr.sort(function(a,b){
+    var ua=urgencyOf(a), ub=urgencyOf(b);
+    if(ua.k!==ub.k) return URGENCY_RANK[ua.k]-URGENCY_RANK[ub.k];
+    var da=noticeDate(a)||a.lastDate, db=noticeDate(b)||b.lastDate;
+    if(da&&db&&da!==db) return da<db?-1:1;
+    if(!!da!==!!db) return da?-1:1;
+    return 0;
+  });
+  return arr;
+}
 function viewDash(rs){
-  var o=state.opts;
-  var soon=0, check=0, stock=0, ship=0;
+  var filt=state.dashFilter||"all";
+  var soon=0, check=0, stock=0;
   rs.forEach(function(r){
     var u=urgencyOf(r);
     if(u.k==="alert"||u.k==="warn") soon++;
-    if(r.status==="none") check++;
-    stock+=r.gift.qty||0; ship+=r.handed;
+    if(r.status==="none"||r.status==="short") check++;
+    stock+=r.gift.qty||0;
   });
-  var h='<div class="statline noprint">'
-    +'<div class="statbox"><div class="k">登録プレゼント</div><div class="v">'+rs.length+'<small style="font-size:12px"> 件</small></div></div>'
-    +'<div class="statbox"><div class="k">1週間以内に終了</div><div class="v" style="color:'+(soon?"var(--alert)":"var(--ink)")+'">'+soon+'<small style="font-size:12px"> 件</small></div></div>'
-    +'<div class="statbox"><div class="k">紐付け要確認</div><div class="v" style="color:'+(check?"var(--warn)":"var(--ink)")+'">'+check+'<small style="font-size:12px"> 件</small></div></div>'
+  var h='<div class="statline">'
+    +'<div class="statbox"><div class="k">登録</div><div class="v">'+rs.length+'<small>件</small></div></div>'
+    +'<div class="statbox'+(soon?' hot':'')+'"><div class="k">1週間以内に終了</div><div class="v">'+soon+'<small>件</small></div></div>'
+    +'<div class="statbox'+(check?' warn':'')+'"><div class="k">要確認</div><div class="v">'+check+'<small>件</small></div></div>'
     +'<div class="statbox"><div class="k">在庫合計</div><div class="v">'+stock.toLocaleString()+'</div></div>'
-    +'<div class="statbox"><div class="k">配布見込 合計</div><div class="v">'+ship.toLocaleString()+'</div></div>'
     +'</div>';
-  h+='<div class="deck">';
-  for(var i=0;i<rs.length;i++){
-    var r=rs[i], g=r.gift, u=urgencyOf(r);
-    var real=hasRealEndDate(r);
-    var nd=noticeDate(r);
-    var pct = g.qty ? Math.max(0,Math.min(100, Math.round(r.left/g.qty*100))) : 0;
-    var d0 = nd?parseYmd(nd):null;
-    h+='<div class="gcard st-'+u.k+'">'
-      +'<div class="eyebrow">'+esc(g.title||"（作品名なし）")+'</div>'
-      +'<div class="name">'+esc(g.present||"（プレゼント名なし）")+'</div>';
-    if(real&&d0){
-      h+='<div class="hero"><span class="d">'+(d0.getMonth()+1)+"/"+d0.getDate()+'</span>'
-        +'<span class="u">('+WD[d0.getDay()]+")まで"+'</span>'
-        +'<span class="left">'+(r.safeDaysLeft<=0?"この日まで":"あと"+r.safeDaysLeft+"日")+'</span></div>';
-      var tt=tailText(r);
-      if(tt) h+='<div class="tail">'+esc(tt)+'</div>';
-    } else if(real&&!d0){
-      h+='<div class="hero"><span class="d" style="font-size:19px">本日から一部の回のみ</span></div>'
-        +'<div class="tail">'+esc(fmtDate(r.lastDate))+'まで、席数の少ない回だけ配布できます</div>';
-    } else {
-      h+='<div class="hero"><span class="d" style="font-size:21px">'+esc(u.label)+'</span>'
-        +(r.status==="surplus"&&r.showsLeft!==null
-          ? '<span class="left">あと約'+r.showsLeft.toLocaleString()+'回分</span>':'')+'</div>';
-    }
-    if(g.qty&&r.status!=="none"&&r.status!=="ended"){
-      h+='<div class="meter"><i style="width:'+pct+'%"></i></div>'
-        +'<div class="facts"><span>残 <b>'+r.left.toLocaleString()+'</b> / '+g.qty.toLocaleString()+'</span>'
-        +(r.showsLeft!==null?'<span>約 <b>'+r.showsLeft.toLocaleString()+'</b>回分</span>':'')
-        +'<span>配布 <b>'+r.served+'</b>回</span></div>';
+  h+='<div class="listbar noprint">'
+    +'<span class="lb-t">絞り込み</span>'
+    +'<div class="seg" id="dashFilter">'
+    +'<button data-f="all"'+(filt==="all"?' class="on"':'')+'>すべて</button>'
+    +CATS.map(function(c){
+        var n=rs.filter(function(r){return catOf(r.gift).key===c.key;}).length;
+        return '<button data-f="'+c.key+'"'+(filt===c.key?' class="on"':'')+'>'+c.full+' '+n+'</button>';
+      }).join("")
+    +'</div>'
+    +'<span class="lb-t">並び順</span>'
+    +'<div class="seg" id="dashSort">'
+    +'<button data-s="cat"'+((state.dashSort||"cat")==="cat"?' class="on"':'')+'>区分ごと</button>'
+    +'<button data-s="urg"'+(state.dashSort==="urg"?' class="on"':'')+'>終了が近い順</button>'
+    +'</div></div>';
+
+  var rows=dashRows(rs).filter(function(r){ return filt==="all"||catOf(r.gift).key===filt; });
+  if(!rows.length) return h+'<div class="warnbox">該当するプレゼントがありません。</div>';
+
+  h+='<table class="dash"><thead><tr>'
+    +'<th class="c" style="width:34px">状態</th>'
+    +'<th style="width:98px">区分</th>'
+    +'<th>作品 ／ プレゼント</th>'
+    +'<th style="width:150px">残り（1マス＝1日）</th>'
+    +'<th class="num" style="width:72px">あと</th>'
+    +'<th style="width:104px">全回に配れる<br>最終日</th>'
+    +'<th class="num" style="width:74px">在庫</th>'
+    +'<th class="num" style="width:66px">回数分</th>'
+    +'<th style="width:230px">注意</th></tr></thead><tbody>';
+  var lastCat=null, showCat=(state.dashSort||"cat")==="cat"&&filt==="all";
+  rows.forEach(function(r){
+    var g=r.gift, u=urgencyOf(r), c=catOf(g), nd=noticeDate(r);
+    if(showCat&&c.key!==lastCat){
+      lastCat=c.key;
+      h+='<tr class="catrow"><td colspan="9">'+c.full+'　<span>'
+        +(c.key==="present"?"配布の第一優先":c.key==="sampling"?"協賛品。入プレの次に扱う":"該当の上映回のみ")
+        +'</span></td></tr>';
     }
     var flags=[];
-    if(r.status==="none") flags.push("PSの作品と結びついていません。③の⚙で対象作品を選んでください");
-    if(r.status==="short") flags.push("在庫が1回分（"+r.needPerShow.toLocaleString()+"個）に満たないため配布できません");
-    if(r.startedBefore&&r.status!=="ended"&&r.status!=="none")
-      flags.push("配布開始が起算日より前です。在庫欄は起算日時点の残数を入れてください");
+    if(r.status==="none") flags.push("作品が未紐付け");
+    if(r.status==="short") flags.push("在庫が1回分に不足");
+    if(r.startedBefore&&r.status!=="ended"&&r.status!=="none") flags.push("在庫は起算日時点の残数を入力");
     if(g.end&&r.shortfall>0&&r.status!=="none"&&r.status!=="ended")
-      flags.push("期間"+fmtDate(g.end)+"まで満席で配るには あと "+r.shortfall.toLocaleString()+" 個必要です");
-    /* 1回も配れないものに「品切れ開始」を出しても意味がないので、在庫不足のときは出さない */
-    if(r.firstSkip&&r.status!=="short") flags.push("品切れ開始："+fmtDate(r.firstSkip.date)+" "+fmtMin(r.firstSkip.min)
-      +" SC"+r.firstSkip.screen+"（必要"+r.firstSkip.need.toLocaleString()+"／残"+r.firstSkip.left.toLocaleString()+"）"
-      +(r.weekendRisk?" ※金土日にかかります":""));
-    if(r.unknownCap) flags.push("キャパを読み取れない上映が "+r.unknownCap+"回あり、計算から除いています");
-    if(r.lastProjected) flags.push("この日付は編成が続く前提の推計です");
-    /* 1件だけだと、在庫の注意書きに隠れて品切れ開始点が見えなくなるので2件まで出す */
-    if(flags.length){
-      h+='<div class="flag">'+flags.slice(0,2).map(esc).join("<br>")
-        +(flags.length>2?"<br>ほか"+(flags.length-2)+"件":"")+'</div>';
-    }
-    h+='</div>';
-  }
-  h+='</div>';
+      flags.push("期間を通すには あと"+r.shortfall.toLocaleString()+"個");
+    if(r.weekendRisk&&r.firstSkip) flags.push("金土日に品切れ");
+    if(r.unknownCap) flags.push("キャパ不明"+r.unknownCap+"回を除外");
+    h+='<tr class="st-'+u.k+'">'
+      +'<td class="c mark" title="'+esc(u.label)+'">'+u.mark+'</td>'
+      +'<td>'+catBadge(g)+'</td>'
+      +'<td class="who"><div class="film">'+esc(g.title||"（作品名なし）")+'</div>'
+      +'<div class="item">'+esc(g.present||"（プレゼント名なし）")+'</div></td>'
+      +'<td>'+hpBar(r)+'</td>'
+      +'<td class="num big">'+(hasRealEndDate(r)&&r.safeDaysLeft!==null
+          ? (r.safeDaysLeft<=0?'<span class="z">0</span>':r.safeDaysLeft)+'<small>日</small>'
+          : '<span class="z">—</span>')+'</td>'
+      +'<td class="date">'+(nd?fmtDate(nd):'<span class="z">'+esc(u.label)+'</span>')+'</td>'
+      +'<td class="num">'+(g.qty||0).toLocaleString()+'</td>'
+      +'<td class="num">'+(r.showsLeft!==null?r.showsLeft:"—")+'</td>'
+      +'<td class="flags">'+(flags.length?esc(flags.join("／")):"")+'</td></tr>';
+    var tt=tailText(r);
+    if(tt) h+='<tr class="sub st-'+u.k+'"><td></td><td></td><td colspan="7">'+esc(tt)+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  h+='<div class="hint">「残り」は全回に配れる最終日までの日数を1マス＝1日で表しています。'
+    +'14マス（2週間）で満タン、期限のないものは満タン表示です。</div>';
   return h;
 }
 
@@ -1962,6 +2230,9 @@ function viewNotice(rs){
   /* 掲示に出すのは「今まさに配っているもの」だけ。
      対象上映なし・在庫不足はデータ不備であって現場の運用情報ではないので出さない。 */
   var live=rs.filter(function(r){ return r.status==="out"||r.status==="period"||r.status==="surplus"; });
+  /* 現場が見る順に並べる。入場者プレゼントが第一優先、次にサンプリング、最後にLV・イベント。
+     同じ区分の中は rs（終了が近い順）の並びをそのまま保つ。 */
+  live.sort(function(a,b){ return catOf(a.gift).pri-catOf(b.gift).pri; });
   var done=rs.filter(function(r){ return r.status==="ended"; });
   var hidden=rs.length-live.length-done.length;
   var mode=state.noticeMode||"list";
@@ -1995,6 +2266,7 @@ function viewNotice(rs){
     live.forEach(function(r){
       var u=urgencyOf(r), g=r.gift, nd=noticeDate(r), d=nd?parseYmd(nd):null, tt=tailText(r);
       h+='<div class="big-notice st-'+u.k+'">'
+        +'<div class="ncat">'+esc(catOf(g).full)+'</div>'
         +'<div class="film">'+esc(g.title||"")+'</div>'
         +'<div class="item">'+esc(g.present||"")+'</div>'
         +'<div class="until">'
@@ -2024,8 +2296,18 @@ function viewNotice(rs){
     +'<h2>入場者プレゼント 配布可能期間</h2>'
     +'<div class="sub">'+esc(state.schedule.theater||"")+'<br>'
     +'<b>'+fmtDateFull(base)+' 現在の見込み</b><br>作成 '+fmtDateFull(ymd(new Date()))+'</div></div>';
+  var nlast=null;
   live.forEach(function(r){
     var u=urgencyOf(r), g=r.gift, nd=noticeDate(r), d=nd?parseYmd(nd):null, tt=tailText(r);
+    var nc=catOf(g);
+    /* 区分の見出しを挟む。紙でも「まず入プレ、次にサンプリング」の順序が一目で分かるように */
+    if(nc.key!==nlast){
+      nlast=nc.key;
+      h+='<div class="nsec"><b>'+nc.full+'</b><span>'
+        +(nc.key==="present"?"お客様全員に配る第一優先"
+          :nc.key==="sampling"?"協賛品。入場者プレゼントの次に配る"
+          :"該当のイベント上映回のみ")+'</span></div>';
+    }
     h+='<div class="nrow st-'+u.k+'">'
       +'<div class="badge">'+u.mark+'</div>'
       +'<div class="who"><div class="film">'+esc(g.title||"")+'</div>'
@@ -2108,7 +2390,7 @@ function viewDaily(rs){
     var need=0;
     live.forEach(function(it){
       need+=it.need; totalNeed+=it.need;
-      if(!byItem[it.id]){ byItem[it.id]={name:label(it), qty:0, shows:0}; itemOrder.push(it.id); }
+      if(!byItem[it.id]){ byItem[it.id]={name:label(it), qty:0, shows:0, cat:it.cat}; itemOrder.push(it.id); }
       byItem[it.id].qty+=it.need; byItem[it.id].shows++;
     });
     /* 配れない回も行を残す。表から消すと「作り忘れ」と読まれ、
@@ -2134,8 +2416,10 @@ function viewDaily(rs){
     +'<span class="hint" style="margin:0">A4横・余白10mm推奨。もぎり／配布担当に渡す指示表です</span></div>';
 
   if(!rows.length){
+    /* 以前ここで存在しない変数を参照していて、この分岐に入ると画面が真っ白になった */
+    var noneNames=overNames.concat(todayNames);
     return h+'<div class="warnbox">この日に配布するものはありません。'
-      +(stoppedNames.length?'（在庫切れ：'+esc(stoppedNames.join("、"))+'）':'')+'</div>';
+      +(noneNames.length?'（在庫切れ／全員分に不足：'+esc(noneNames.join("、"))+'）':'')+'</div>';
   }
 
   /* 朝の準備用。配布物ごとに「今日いくつ要るか」を先に出す */
@@ -2143,9 +2427,12 @@ function viewDaily(rs){
     h+='<div class="warnbox"><b>この日に配布するものはありません。</b></div>';
   } else {
   h+='<div class="prep"><div class="prep-t">この日の準備数（満席想定）</div><div class="prep-g">';
+  /* 入プレ→サンプリング→LVの順。左上が第一優先になる */
+  itemOrder.sort(function(a,b){ return catPri(byItem[a].cat)-catPri(byItem[b].cat); });
   itemOrder.forEach(function(n){
     var b=byItem[n];
-    h+='<div class="prep-i"><div class="pn">'+esc(n)+'</div>'
+    h+='<div class="prep-i"><div class="pc">'+esc(catOf({cat:b.cat}).full)+'</div>'
+      +'<div class="pn">'+esc(b.name)+'</div>'
       +'<div class="pq">'+b.qty.toLocaleString()+'<span>個</span></div>'
       +'<div class="ps">'+b.shows+'回分</div></div>';
   });
@@ -2207,7 +2494,7 @@ function viewDaily(rs){
 function viewDetail(rs){
   var h='<div class="note noprint" style="margin-bottom:12px">'+esc(metaLine())+'</div>';
   h+='<div class="scroll"><table><thead><tr>'
-    +'<th>作品</th><th>プレゼント</th><th class="num">在庫</th>'
+    +'<th style="width:88px">区分</th><th>作品</th><th>プレゼント</th><th class="num">在庫</th>'
     +'<th>開始</th><th>終了(指定)</th><th class="num">対象回</th><th class="num">配布回</th>'
     +'<th class="num">配布見込</th><th class="num">残数</th>'
     +'<th>全回に配れる最終日<br><span style="font-weight:400">（掲示に出る日）</span></th>'
@@ -2216,6 +2503,7 @@ function viewDetail(rs){
   rs.forEach(function(r){
     var g=r.gift;
     h+='<tr>'
+      +'<td>'+catBadge(g)+'</td>'
       +'<td>'+esc(g.title)+'</td><td>'+esc(g.present)+'</td>'
       +'<td class="num">'+(g.qty||0).toLocaleString()+'</td>'
       +'<td>'+(g.start?fmtDate(g.start):"-")+'</td>'
@@ -2313,7 +2601,7 @@ function viewDetail(rs){
 }
 
 var VIEW_INFO={
-  dash:  {title:"入場者プレゼント 配布状況一覧", hint:"A4縦・余白12mm推奨"},
+  dash:  {title:"入場者プレゼント 配布状況一覧", hint:"A4横・余白10mm推奨"},
   notice:{title:"入場者プレゼント 配布可能期間", hint:"A4縦・余白12mm推奨。バックヤード掲示用"},
   daily: {title:"入場者プレゼント 配布指示",     hint:"A4横・余白10mm推奨"},
   detail:{title:"入場者プレゼント 配布可能期間 明細", hint:"A4横・余白10mm推奨"}
@@ -2340,11 +2628,22 @@ function renderResults(){
   document.querySelectorAll("#viewTabs button").forEach(function(b){
     b.setAttribute("aria-selected", b.getAttribute("data-view")===v ? "true":"false");
   });
-  document.body.classList.toggle("land", v==="daily"||v==="detail");
+  /* 一覧は列が多い。縦で刷ると1行が数十行に折り返して読めなくなるので横向きにする */
+  document.body.classList.toggle("land", v==="dash"||v==="daily"||v==="detail");
   if(!rs.length){
     box.innerHTML='<div class="warnbox">計算対象のプレゼントがありません。③で登録してください。</div>';
     return;
   }
+  var df=el("dashFilter");
+  if(df) df.addEventListener("click",function(e){
+    var b=e.target.closest("button[data-f]"); if(!b) return;
+    state.dashFilter=b.getAttribute("data-f"); renderResults();
+  });
+  var ds=el("dashSort");
+  if(ds) ds.addEventListener("click",function(e){
+    var b=e.target.closest("button[data-s]"); if(!b) return;
+    state.dashSort=b.getAttribute("data-s"); renderResults();
+  });
   var nm=el("noticeMode");
   if(nm) nm.addEventListener("change",function(){ state.noticeMode=this.value; renderResults(); });
   var dd=el("dailyDate");
@@ -2370,6 +2669,11 @@ function readFile(file, cb){
   fr.onerror=function(){ cb(new Error("ファイルを読み込めませんでした")); };
   fr.readAsArrayBuffer(file);
 }
+function markLoaded(zoneId, stateId, text){
+  var z=el(zoneId), t=el(stateId);
+  if(z) z.classList.add("done");
+  if(t) t.textContent=text;
+}
 function loadPsFile(file){
   readFile(file,function(err,buf){
     if(err){ alert(err.message); return; }
@@ -2380,6 +2684,7 @@ function loadPsFile(file){
       state.schedule=sc;
       if(!el("optBase").value) el("optBase").value=sc.start;
       state.opts.base=el("optBase").value;
+      markLoaded("dropPs","statePs","読込済 "+sc.perfs.length.toLocaleString()+"回");
       renderScheduleSummary(); renderTitles(); renderGifts(); save();
     }catch(e){ alert("読み込みエラー: "+e.message); }
   });
@@ -2400,10 +2705,9 @@ function loadGiftFile(file){
         var qty=x.qty||0;
         var extraNote=[];
         for(var e=0;e<x.extras.length;e++){ qty+=x.extras[e].qty; extraNote.push(x.extras[e].text); }
-        var kind="通常（無くなるまで）";
-        if(/サンプリング/.test(x.section)) kind="サンプリング";
-        else if(/LV|特別上映|イベント/i.test(x.section)) kind="イベント・特別上映限定";
-        else if(x.end&&!x.openEnded) kind="週替わり";
+        var cat="present";
+        if(/サンプリング/.test(x.section)) cat="sampling";
+        else if(/LV|特別上映|イベント/i.test(x.section)) cat="event";
         var note=[];
         if(x.note) note.push(x.note);
         if(x.bundle) note.push("一束"+x.bundle);
@@ -2411,19 +2715,25 @@ function loadGiftFile(file){
         if(x.tbd) note.push("配布終了日は調整中");
         if(x.qtyText&&!x.qty) note.push("納品数: "+x.qtyText);
         state.gifts.push(newGift({
-          title:x.title, present:x.present, kind:kind, qty:qty,
+          title:x.title, present:x.present, cat:cat, qty:qty,
           start:x.start||"", end:(x.openEnded||x.tbd)?"":(x.end||""),
           note:note.join(" / ")
         }));
         added++;
       }
+      markLoaded("dropGift","stateGift","読込済 "+added+"件");
       renderGifts(); save();
-      alert(added+"件の入場者プレゼントを取り込みました。作品名の紐付け（⚙）と在庫・日付をご確認ください。");
     }catch(e){ alert("読み込みエラー: "+e.message); }
   });
 }
 function setupDrop(dropId, inputId, handler){
   var d=el(dropId), inp=el(inputId);
+  var btn=d.querySelector('.dz-btn');
+  if(btn) btn.addEventListener("click",function(e){ e.stopPropagation(); inp.click(); });
+  d.addEventListener("click",function(e){
+    if(e.target.closest("input,button")) return;
+    inp.click();          /* 枠のどこを押してもファイル選択が開くようにする */
+  });
   ["dragenter","dragover"].forEach(function(ev){
     d.addEventListener(ev,function(e){ e.preventDefault(); d.classList.add("over"); });
   });
@@ -2477,6 +2787,7 @@ function initUI(){
     if(confirm("登録中の入場者プレゼントをすべて削除します。よろしいですか？")){ state.gifts=[]; renderGifts(); save(); }
   });
   el("calc").addEventListener("click",runCalc);
+  el("calcSticky").addEventListener("click",runCalc);
   el("toExcel").addEventListener("click",exportExcel);
   el("doPrint").addEventListener("click",function(){ window.print(); });
   el("viewTabs").addEventListener("click",function(e){
@@ -2488,6 +2799,7 @@ function initUI(){
   ["optBase","optRate","optWeeks","optStrict","optDetail"].forEach(function(id){
     el(id).addEventListener("change",save);
   });
+  el("importJsonBtn").addEventListener("click",function(){ el("importJson").click(); });
   el("exportJson").addEventListener("click",function(){
     var blob=new Blob([JSON.stringify({gifts:state.gifts},null,2)],{type:"application/json"});
     var a=document.createElement("a");

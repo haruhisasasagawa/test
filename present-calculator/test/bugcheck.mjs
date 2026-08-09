@@ -65,6 +65,29 @@ let ng=0; const ok=(c,m)=>{ console.log((c?'  OK  ':'  NG  ')+m); if(!c) ng++; }
   const ids=plan.flatMap(p=>p.items.map(i=>i.id));
   ok(ids.includes(1)&&ids.includes(2), `E: 同名でもIDで区別 ids=[${ids}]`);
 }
+// N: 1回に複数配るとき、入プレがサンプリングより先に並ぶ
+{
+  const perfs=[mk('2026-08-10',1,100,600,'作品A')];
+  const g=(id,cat,name)=>({id,cat,title:'作品A',present:name,qty:100000,per:1,start:'2026-08-10',
+    end:null,links:null,titleKey:P.normTitle('作品A'),screens:[],include:'',exclude:'',timeFrom:'',timeTo:''});
+  const opt={base:'2026-08-10',rate:1,strict:false,horizon:'2026-08-20'};
+  /* わざとサンプリング→LV→入プレの順で渡す */
+  const rs=[P.simulateGift(g(1,'sampling','チラシ'),perfs,opt),
+            P.simulateGift(g(2,'event','LV特典'),perfs,opt),
+            P.simulateGift(g(3,'present','クリアファイル'),perfs,opt)];
+  const cats=P.buildDailyPlan('2026-08-10',rs)[0].items.map(i=>i.cat);
+  ok(cats.join()==='present,sampling,event', `N: 1回の配布順 = ${cats.join(' → ')}`);
+}
+// O: 準備数の一覧にIDではなくプレゼント名が出る（掲示・指示表の致命的な表示崩れ）
+{
+  const perfs=[mk('2026-08-10',1,100,600,'作品A')];
+  const r=P.simulateGift({id:77,cat:'present',title:'作品A',present:'クリアファイル',qty:1000,per:1,
+    start:'2026-08-10',end:null,links:null,titleKey:P.normTitle('作品A'),
+    screens:[],include:'',exclude:'',timeFrom:'',timeTo:''},perfs,
+    {base:'2026-08-10',rate:1,strict:false,horizon:'2026-08-20'});
+  const it=P.buildDailyPlan('2026-08-10',[r])[0].items[0];
+  ok(it.name==='クリアファイル'&&it.id===77, `O: 準備数の表示名=${it.name}（id=${it.id}）`);
+}
 // M: 重複した上映回を二重に数えない
 {
   const psPath=process.argv[2];
