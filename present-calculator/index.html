@@ -206,6 +206,20 @@ table.dash tr.sub td:first-child,table.dash tr.sub td:nth-child(2){border-right:
 .statbox .v small{font-size:11px;font-weight:400;color:var(--ink-2);margin-left:2px}
 .needbox{margin-top:12px;border:2px solid var(--accent);border-radius:8px;padding:11px 15px;
   background:var(--accent-bg);color:var(--accent);font-size:14px;font-weight:700}
+/* 起算日より前から配っているものの棚卸し促し */
+.countbox{border:2px solid var(--warn);border-radius:8px;background:var(--warn-bg);
+  padding:11px 14px;margin-bottom:12px}
+.countbox .cb-t{font-size:15px;font-weight:700;color:var(--warn)}
+.countbox .cb-t span{font-weight:400;font-size:13px}
+.countbox .cb-b{font-size:12px;color:var(--ink-2);line-height:1.7;margin-top:4px}
+.countbox .cb-a{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.countbox .cb-a .hint{margin:0}
+.gift-table input.needcount{border-color:var(--warn);background:var(--warn-bg)}
+.gift-table .cntchk{display:flex;align-items:center;gap:3px;font-size:10px;
+  color:var(--warn);margin-top:2px;white-space:nowrap}
+.gift-table .cntchk.done{color:var(--ok)}
+.gift-table .cntchk input{margin:0}
+.uncounted{color:var(--warn)}
 .gift-table tr.catrow td{background:var(--ink);color:#fff;font-weight:700;font-size:12px;
   letter-spacing:.08em;padding:4px 10px;border-color:var(--ink)}
 .gift-table tr.catrow td span{font-weight:400;font-size:11px;color:#B9BCC2;letter-spacing:0}
@@ -494,6 +508,7 @@ table.daily .ng{color:var(--alert);font-weight:700}
   <h2><span class="step">STEP 2</span>プレゼントを確認する
     <span class="sub" id="giftCount"></span></h2>
   <div class="body">
+    <div id="countBanner"></div>
     <div class="listbar">
       <span class="lb-t">表示</span>
       <div class="seg" id="giftFilter"></div>
@@ -1327,7 +1342,12 @@ function simulateGift(gift, perfs, opts){
     safeUntil:safeUntil, safeDaysLeft:safeDaysLeft, weekendRisk:weekendRisk,
     avgCap:avgCap, needPerShow:needPerShow, showsLeft:showsLeft,
     avgPerDay:avgPerDay, servedDays:servedDays, perShowLimit:perShowLimit, safeRate:safeRate,
-    startedBefore: !!(gift.start&&gift.start<opts.base)
+    /* 起算日より前に配布が始まっているものは、起算日までの消化分を計算していない。
+       在庫欄が納品数のままだと実際より多い在庫で回るので、表示より早く品切れる。
+       PSは今週分しか無く過去の上映回が存在しないため、逆算はそもそもできない。
+       だから「棚卸しして残数を入れたか」を人に確認してもらうしかない。 */
+    startedBefore: !!(gift.start&&gift.start<opts.base),
+    needsCount: !!(gift.start&&gift.start<opts.base&&!gift.counted)
   };
 }
 
@@ -1581,7 +1601,7 @@ function exportExcel(){
     var rng=function(col){ return DET+"!$"+col+"$"+b.first+":$"+col+"$"+b.last; };
     var note=[];
     if(g2.note) note.push(g2.note);
-    if(r2.startedBefore) note.push("配布開始が起算日より前。在庫は起算日時点の残数を入力");
+    if(r2.needsCount) note.push("残数未確認。配布開始が起算日より前で、起算日までに配った分を差し引いていません");
     if(b.truncated) note.push("在庫を増やす場合は明細行が不足するため再出力が必要");
     if(!b.targets) note.push("対象上映なし（作品名の紐付けを確認）");
     sum.push([
@@ -1781,9 +1801,34 @@ function matchBadge(g){
   if(!n) return '<span class="tag ng">未一致</span>';
   return '<span class="tag '+(g.links?"ok":"info")+'">'+n+'作品'+(g.links?"":"(自動)")+'</span>';
 }
+/* 起算日より前から配っているものの棚卸しを促す。
+   このツールは起算日より前の上映回を持っていないので、消化分を逆算できない。
+   在庫欄が納品数のままだと結果が甘くなり、掲示した日付より早く品切れる。 */
+function renderCountBanner(){
+  var box=el("countBanner"); if(!box) return;
+  var base=state.opts.base;
+  var need=state.gifts.filter(function(g){
+    return g.enabled&&g.start&&g.start<base&&!g.counted;
+  });
+  if(!need.length){ box.innerHTML=""; return; }
+  box.innerHTML='<div class="countbox"><div class="cb-t">'
+    +'<b>'+need.length+'件</b>は配布開始が計算起算日（'+fmtDate(base)+'）より前です。'
+    +'<span>在庫欄を実際の残数に直してください。</span></div>'
+    +'<div class="cb-b">このツールは<b>起算日より前に配った分を差し引いていません</b>。'
+    +'先週までのパフォーマンススケジュールが無いため、消化分を計算する手段がありません。'
+    +'納品数のままだと<b>表示される最終日は実際より後ろにずれます</b>。</div>'
+    +'<div class="cb-a"><button class="mini" id="countAll">'+need.length+'件すべて「残数を確認済み」にする</button>'
+    +'<span class="hint">在庫欄を直してから押してください</span></div></div>';
+  var b=el("countAll");
+  if(b) b.addEventListener("click",function(){
+    need.forEach(function(g){ g.counted=true; });
+    save(); renderGifts();
+  });
+}
 function renderGifts(){
   var t=el("giftTable");
   var filt=state.giftFilter||"all";
+  renderCountBanner();
   /* 27件が縦に並ぶと下の「計算する」まで遠いので、区分で絞り込めるようにする */
   var fb=el("giftFilter");
   if(fb){
@@ -1816,17 +1861,27 @@ function renderGifts(){
         +(cc.key==="sampling"?'　<span>入プレの次に確認</span>':'')+'</td></tr>';
     }
     var links=g.links||autoLinks(g.title);
-    h+='<tr data-i="'+i+'">'
+    /* 配布開始が起算日より前なら、起算日までの消化分は計算に入っていない。
+       在庫欄が納品数のままだと結果が甘くなるので、棚卸し済みかを人に確かめてもらう */
+    var startedBefore=!!(g.start&&g.start<state.opts.base);
+    var needCount=startedBefore&&!g.counted;
+    h+='<tr data-i="'+i+'"'+(needCount?' class="needcount-row"':'')+'>'
       +'<td class="c"><input type="checkbox" data-f="enabled" '+(g.enabled?"checked":"")+'></td>'
       +'<td><input type="text" data-f="title" value="'+esc(g.title)+'"></td>'
       +'<td><input type="text" data-f="present" value="'+esc(g.present)+'"></td>'
       +'<td><select data-f="cat">'+CATS.map(function(c){
           return '<option value="'+c.key+'"'+(c.key===g.cat?' selected':'')+'>'+c.full+'</option>';
         }).join('')+'</select></td>'
-      +'<td><input type="number" data-f="qty" value="'+(g.qty||0)+'" style="width:84px"></td>'
+      +'<td><input type="number" data-f="qty" value="'+(g.qty||0)+'" style="width:84px"'
+      +(needCount?' class="needcount"':'')+'>'
+      +(startedBefore
+        ? '<label class="cntchk'+(g.counted?' done':'')+'">'
+          +'<input type="checkbox" data-f="counted" '+(g.counted?"checked":"")+'>'
+          +(g.counted?'残数 確認済':'納品数のまま')+'</label>'
+        : '')+'</td>'
       +'<td><input type="number" data-f="per" value="'+(g.per||1)+'" min="1" style="width:52px"></td>'
       +'<td><input type="date" data-f="start" value="'+esc(g.start)+'"></td>'
-      +'<td><input type="date" data-f="end" value="'+esc(g.end)+'"><div style="font-size:10px;color:var(--muted)">空欄=無くなるまで</div></td>'
+      +'<td><input type="date" data-f="end" value="'+esc(g.end)+'"><div style="font-size:10px;color:var(--ink-2)">空欄=無くなるまで</div></td>'
       +'<td><input type="text" data-f="group" value="'+esc(g.group)+'" style="width:70px" placeholder="同時配布"></td>'
       +'<td class="c"><span data-badge="'+i+'">'+matchBadge(g)+'</span> <button class="mini" data-toggle="'+i+'">⚙</button></td>'
       +'<td class="c"><button class="mini danger" data-del="'+i+'">×</button></td></tr>';
@@ -1888,6 +1943,7 @@ function bindGiftEvents(){
     inp.addEventListener("change",function(){
       var g=state.gifts[i], f=this.getAttribute("data-f");
       if(f==="enabled") g.enabled=this.checked;
+      else if(f==="counted") g.counted=this.checked;
       else if(f==="qty"||f==="per") g[f]=Math.max(f==="per"?1:0, parseInt(this.value,10)||0);
       else if(f==="screensText") g.screens=toHalf(this.value).split(/[^\d]+/).filter(Boolean).map(Number);
       else if(f==="timeFromText") g.timeFrom=(this.value.trim()===""?"":(parseTimeToMin(this.value)===null?"":parseTimeToMin(this.value)));
@@ -1954,6 +2010,7 @@ function runCalc(){
     if(!g.enabled) continue;
     var gg={
       id:g.id, title:g.title, present:g.present, cat:g.cat, qty:g.qty, per:g.per||1,
+      counted:!!g.counted,
       start:g.start||null, end:g.end||null, group:g.group, note:g.note,
       links:g.links||autoLinks(g.title), titleKey:normTitle(g.title||""),
       screens:g.screens||[], include:g.include, exclude:g.exclude,
@@ -2198,7 +2255,8 @@ function viewDash(rs){
     var flags=[];
     if(r.status==="none") flags.push("作品が未紐付け");
     if(r.status==="short") flags.push("在庫が1回分に不足");
-    if(r.startedBefore&&r.status!=="ended"&&r.status!=="none") flags.push("在庫は起算日時点の残数を入力");
+    if(r.needsCount&&r.status!=="ended"&&r.status!=="none")
+      flags.push("残数未確認（起算日前の配布分を引いていません）");
     if(g.end&&r.shortfall>0&&r.status!=="none"&&r.status!=="ended")
       flags.push("期間を通すには あと"+r.shortfall.toLocaleString()+"個");
     if(r.weekendRisk&&r.firstSkip) flags.push("金土日に品切れ");
@@ -2244,6 +2302,18 @@ function viewNotice(rs){
     +'</select></label>'
     +'<span class="hint" style="margin:0">A4縦・余白12mm推奨。'+live.length+'件を掲載'
     +(done.length?'／終了済み'+done.length+'件は末尾に':'')+'</span></div>';
+  /* 起算日より前から配っているものは、起算日までの消化を計算していない。
+     在庫欄が納品数のままなら、この紙の日付は実際より後ろにずれている。
+     掲示を見る人にも分かる位置に出す（noprint にしない）。 */
+  var uncounted=live.filter(function(r){ return r.needsCount; });
+  if(uncounted.length){
+    h+='<div class="warnbox"><b>この掲示のうち '+uncounted.length+' 件は、在庫の残数が未確認です。</b>'
+      +'配布開始が計算起算日より前のもので、<b>起算日までに配った分は差し引いていません</b>'
+      +'（先週までの上映回のデータが無いため計算できません）。'
+      +'在庫欄に納品数が入ったままだと、<b>ここに書かれた日付より早く品切れます。</b>'
+      +'実際の残数を数えて②の在庫欄に入れ、「残数を確認済み」にチェックしてから貼り出してください。'
+      +'<br>該当：'+esc(uncounted.map(function(r){return r.gift.present||r.gift.title;}).join("　／　"))+'</div>';
+  }
   /* 掲示から抜けている件数は、紙を見た人にも分かる位置に出す（noprint にしない） */
   if(hidden){
     h+='<div class="warnbox"><b>この掲示に載っていないプレゼントが '+hidden+' 件あります。</b>'
@@ -2280,9 +2350,12 @@ function viewNotice(rs){
         +'<div><span class="bl">配布ルール</span><b>その回のお客様全員に配れないときは、その回は配布しません。</b>'
         +'半端に配らず、副支配人に報告してください。</div>'
         +'<div><span class="bl">対象</span>'+esc(scopeText(r))+'</div>'
-        +'<div><span class="bl">在庫の見込み</span>残 '+r.left.toLocaleString()+' 個'
+        /* 「残」は起算日時点の手持ち。r.left（配布し終えた後の残り）を出すと、
+           同じ行の「約◯回分」と時点が食い違い、紙の上で数字が噛み合わなくなる */
+        +'<div><span class="bl">在庫（'+fmtDate(base)+'現在）</span>'+(g.qty||0).toLocaleString()+' 個'
         +(r.showsLeft!==null?'（あと約 '+r.showsLeft.toLocaleString()+' 回分）'+dotsHtml(r):'')
-        +'／1回あたり約 '+r.needPerShow.toLocaleString()+' 個</div>'
+        +'／1回あたり約 '+r.needPerShow.toLocaleString()+' 個'
+        +(r.needsCount?'　<b>※残数は未確認（納品数のまま）</b>':'')+'</div>'
         +'</div>'
         +'<div class="bn-foot">'+esc(metaLine())+'　※満席想定の最短見込みです。'
         +'入りが少なければこれより長く配布できます。<b>次のPS更新時に貼り替えてください。</b></div>'
@@ -2312,9 +2385,10 @@ function viewNotice(rs){
       +'<div class="badge">'+u.mark+'</div>'
       +'<div class="who"><div class="film">'+esc(g.title||"")+'</div>'
       +'<div class="item">'+esc(g.present||"")+'</div>'
-      +'<div class="film">'+esc(u.label)+'　残 '+r.left.toLocaleString()+' 個'
+      +'<div class="film">'+esc(u.label)+'　在庫 '+(g.qty||0).toLocaleString()+' 個'
       +(r.showsLeft!==null?'（約'+r.showsLeft.toLocaleString()+'回分）':'')
-      +'　'+esc(scopeText(r))+dotsHtml(r)+'</div>'
+      +'　'+esc(scopeText(r))+dotsHtml(r)
+      +(r.needsCount?'　<b class="uncounted">※残数未確認</b>':'')+'</div>'
       +(tt?'<div class="tail">'+esc(tt)+'</div>':'')+'</div>'
       +'<div class="when">'
       +(d

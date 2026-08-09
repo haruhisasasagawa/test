@@ -88,6 +88,31 @@ let ng=0; const ok=(c,m)=>{ console.log((c?'  OK  ':'  NG  ')+m); if(!c) ng++; }
   const it=P.buildDailyPlan('2026-08-10',[r])[0].items[0];
   ok(it.name==='クリアファイル'&&it.id===77, `O: 準備数の表示名=${it.name}（id=${it.id}）`);
 }
+// P: 起算日より前から配っているものを「残数未確認」として立てる
+{
+  const perfs=[]; for(let d=0;d<10;d++) perfs.push(mk('2026-08-'+String(10+d).padStart(2,'0'),1,100,600));
+  const base={title:'T',present:'X',qty:1000,per:1,end:null,links:null,titleKey:K,
+    screens:[],include:'',exclude:'',timeFrom:'',timeTo:''};
+  const o={base:'2026-08-10',rate:1,strict:false,horizon:'2026-08-25'};
+  const before=P.simulateGift({...base,start:'2026-07-20'},perfs,o);          // 起算日より前に開始
+  const counted=P.simulateGift({...base,start:'2026-07-20',counted:true},perfs,o);
+  const after=P.simulateGift({...base,start:'2026-08-10'},perfs,o);           // 起算日に開始
+  ok(before.needsCount===true && counted.needsCount===false && after.needsCount===false,
+    `P: 残数未確認フラグ 未確認=${before.needsCount} 確認済=${counted.needsCount} 起算日開始=${after.needsCount}`);
+  /* 起算日より前の上映回は数に入れない（PSにその期間のデータが無いので逆算できない） */
+  ok(before.perfs.every(p=>p.date>='2026-08-10'), 'P: 起算日より前の上映回は対象に入れない');
+}
+// Q: 掲示に出す在庫と「約◯回分」の時点が揃っている
+{
+  const perfs=[]; for(let d=0;d<10;d++) perfs.push(mk('2026-08-'+String(10+d).padStart(2,'0'),1,100,600));
+  const r=P.simulateGift({title:'T',present:'X',qty:1000,per:1,start:'2026-08-10',end:null,
+    links:null,titleKey:K,screens:[],include:'',exclude:'',timeFrom:'',timeTo:''},
+    perfs,{base:'2026-08-10',rate:1,strict:false,horizon:'2026-08-25'});
+  /* left は「配り終えた後の残り」。掲示にはこれではなく gift.qty を出す。
+     混ぜると「残0個（約10回分）」のような噛み合わない表示になる。 */
+  ok(r.left!==r.gift.qty && r.showsLeft===Math.floor(r.gift.qty/r.needPerShow),
+    `Q: left=${r.left}(終了時) / qty=${r.gift.qty}(起算日) / 約${r.showsLeft}回分は qty 基準`);
+}
 // M: 重複した上映回を二重に数えない
 {
   const psPath=process.argv[2];
