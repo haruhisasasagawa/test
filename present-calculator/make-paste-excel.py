@@ -19,7 +19,7 @@ import os
 DAYS = int(os.environ.get("PC_DAYS", 42))      # 計算する日数（6週）
 KMAX = int(os.environ.get("PC_KMAX", 45))      # PS 1シートあたりに読み取る上映行の最大数
 PSROWS = int(os.environ.get("PC_PSROWS", 250)) # PS 1シートあたりに読み取る行数
-GIFTS = int(os.environ.get("PC_GIFTS", 12))    # 登録できる入場者プレゼントの数
+GIFTS = int(os.environ.get("PC_GIFTS", 20))    # 登録できる入場者プレゼントの数
 PSHEETS = int(os.environ.get("PC_PSHEETS", 7)) # 貼り付けられる PS のシート数（1週間=最大7）
 GROWS = int(os.environ.get("PC_GROWS", 150))   # 入場者プレゼント情報から読み取る行数
 KEYLEN = int(os.environ.get("PC_KEYLEN", 8))   # 作品名から自動生成するキーワードの文字数
@@ -64,10 +64,20 @@ MATCH_NOISE = ["　", " ", "・", "･", "：", ":", "／", "/", "＆", "&", "�
 
 
 def strip_noise(ref):
-    """突き合わせ用に、空白と記号を取り除いた文字列を作る数式。"""
+    """突き合わせ用に、空白と記号を取り除き、全角数字を半角にそろえる数式。
+    （PSは「トイ・ストーリー５」、プレゼント情報は「トイ・ストーリー5」のように数字の全角半角が食い違う）"""
     expr = ref
     for ch in MATCH_NOISE:
         expr = f'SUBSTITUTE({expr},"{ch}","")'
+    # 実データには改行しない空白(NBSP)やタブが紛れている。見た目は空白でも別の文字なので個別に落とす。
+    # NBSP は CHAR(160) ではなく文字そのものを書く（環境によって CHAR(160) が別の文字になるため）
+    for ch in ("\u00a0", "\t"):
+        expr = f'SUBSTITUTE({expr},"{ch}","")'
+    for code in (10, 13):
+        expr = f'SUBSTITUTE({expr},CHAR({code}),"")'
+    for a, b in [("０", "0"), ("１", "1"), ("２", "2"), ("３", "3"), ("４", "4"),
+                 ("５", "5"), ("６", "6"), ("７", "7"), ("８", "8"), ("９", "9")]:
+        expr = f'SUBSTITUTE({expr},"{a}","{b}")'
     return expr
 
 
@@ -440,10 +450,13 @@ def build(path):
         # 配布終了日が先に来るプレゼント（週替わりなど）を在庫切れと誤判定する。
         style(res.cell(row=r, column=10, value=(
             f'=IF(プレゼント!$B${gr}="","",'
+            # 期間が理由で0件のものを「キーワードを確認」と出すと誤解を招くので先に切り分ける
+            f'IF(AND(プレゼント!$H${gr}<>"",プレゼント!$H${gr}<設定!$B$2),"配布期間が計算起算日より前に終了しています",'
+            f'IF(AND(プレゼント!$G${gr}<>"",プレゼント!$G${gr}>設定!$B$2+{DAYS - 1}),"配布開始が計算期間より先です",'
             f'IF(E{r}=0,"対象上映なし（キーワードを確認）",'
             f'IF(F{r}=0,"在庫不足で1回も配布できません",'
             f'IF(F{r}>=E{r},"対象の回すべてに配布できます（残 "&TEXT(H{r},"#,##0")&"）",'
-            f'"この日で在庫切れ（配れない回 "&TEXT(E{r}-F{r},"#,##0")&"回）"))))')))
+            f'"この日で在庫切れ（配れない回 "&TEXT(E{r}-F{r},"#,##0")&"回）"))))))')))
     res.freeze_panes = "A4"
 
     wb.save(path)
