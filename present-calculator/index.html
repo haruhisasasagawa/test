@@ -268,6 +268,10 @@ tr.hour-sep td{border-top:2px solid var(--ink-3)}
   .scroll{max-height:none;overflow:visible;border:none}
   th{position:static}
   table{font-size:9pt}
+  /* 複数ページに渡るときも見出しを毎ページ出し、行が途中で切れないようにする */
+  thead{display:table-header-group}
+  tr,.nrow,.gcard,.gift-block,.prep-i{break-inside:avoid;page-break-inside:avoid}
+  tbody tr:nth-child(even) td{background:#F7F6F3}
   .printhead{display:block;margin-bottom:9px;border-bottom:2px solid #000;padding-bottom:5px}
   .printhead h1{margin:0;font-size:15pt;letter-spacing:.04em}
   .printhead .meta{font-size:8.5pt;color:#333}
@@ -1868,7 +1872,11 @@ function viewDash(rs){
       +" SC"+r.firstSkip.screen+"（必要"+r.firstSkip.need.toLocaleString()+"／残"+r.firstSkip.left.toLocaleString()+"）"
       +(r.weekendRisk?" ※金土日にかかります":""));
     if(r.lastProjected) flags.push("この日付は編成が続く前提の推計です");
-    if(flags.length) h+='<div class="flag">'+esc(flags[0])+(flags.length>1?" ほか"+(flags.length-1)+"件":"")+'</div>';
+    /* 1件だけだと、在庫の注意書きに隠れて品切れ開始点が見えなくなるので2件まで出す */
+    if(flags.length){
+      h+='<div class="flag">'+flags.slice(0,2).map(esc).join("<br>")
+        +(flags.length>2?"<br>ほか"+(flags.length-2)+"件":"")+'</div>';
+    }
     h+='</div>';
   }
   h+='</div>';
