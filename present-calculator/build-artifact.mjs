@@ -31,23 +31,49 @@ const downloadPanel = `
         このページと同じツールがブラウザで開きます。ネット接続は不要で、読み込んだExcelは端末の外に出ません。
       </span>
     </div>
+    <div class="hint" id="dlMsg" style="margin-top:6px"></div>
   </div>
 </section>`;
 
+/* 保存は必ず window.claude.downloads.save() を通す。
+   このページは claude.ai の枠内で開かれるので、<a download> や blob URL では
+   ファイルが降りてこない（クリックしても何も起きない）。 */
 const dlScript = `
 <script>
 (function(){
   var B64="${b64}";
-  var btn=document.getElementById("dlBtn");
+  var btn=document.getElementById("dlBtn"), msg=document.getElementById("dlMsg");
   if(!btn) return;
-  btn.addEventListener("click",function(){
+  function say(t){ if(msg) msg.textContent=t; }
+  var dl=(window.claude&&window.claude.downloads)||null;
+  if(!dl){
+    btn.disabled=true;
+    say("この画面では保存できません。チャットに添付した index.html をお使いください。");
+    return;
+  }
+  function bytes(){
     var bin=atob(B64), buf=new Uint8Array(bin.length);
     for(var i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
-    var url=URL.createObjectURL(new Blob([buf],{type:"text/html;charset=utf-8"}));
-    var a=document.createElement("a");
-    a.href=url; a.download="present-calculator.html";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+    return buf;
+  }
+  btn.addEventListener("click",function(){
+    btn.disabled=true; say("保存の確認が出ます。「保存」を選んでください。");
+    dl.save({filename:"present-calculator.html", data:bytes()}).then(function(){
+      say("保存しました。ダブルクリックで開けます。");
+    }).catch(function(e){
+      var c=(e&&e.code)||"unavailable";
+      if(c==="extension_not_enabled"||c==="rejected_extension"){
+        /* .html を保存できない環境では .txt で渡し、拡張子を直してもらう */
+        return dl.save({filename:"present-calculator.html.txt", data:bytes()}).then(function(){
+          say("保存しました。ファイル名の末尾「.txt」を消して present-calculator.html にすると開けます。");
+        });
+      }
+      if(c==="declined") say("保存を取り消しました。もう一度押せばやり直せます。");
+      else if(c==="rate_limited") say("少し待ってからもう一度押してください。");
+      else say("保存できませんでした（"+c+"）。チャットに添付した index.html をお使いください。");
+    }).catch(function(){
+      say("保存できませんでした。チャットに添付した index.html をお使いください。");
+    }).then(function(){ btn.disabled=false; });
   });
 })();
 <\/script>`;

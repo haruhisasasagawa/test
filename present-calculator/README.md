@@ -244,6 +244,13 @@ node build-artifact.mjs
 Web に置くと、ページ上の「HTMLファイルをダウンロード」ボタンから
 `present-calculator.html`（`index.html` と完全に同一のファイル）を保存できます。
 
+**保存は `window.claude.downloads.save()` を通します。** claude.ai の画面の中で開いている
+ページは `<a download>` や blob URL ではファイルを渡せず、押しても何も起きないためです。
+ツール本体の「Excelで書き出し」「設定を書き出し」も同じ `saveFile()` を通しており、
+単体 HTML として開いたときは従来どおりリンクで保存します。
+なお `.xlsx` はこの仕組みで保存できる拡張子に入っていないため、
+**Excel の書き出しは保存した HTML を開いてから行ってください**（画面上でその旨を案内します）。
+
 ## 貼り付け式 Excel（HTMLツールを使わない版）
 
 ```

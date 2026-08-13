@@ -1842,9 +1842,37 @@ function exportExcel(){
     {name:"上映回", rows:perf, widths:[11,5,5,8,32,7], freeze:4},
     {name:"前提・注意", rows:memo, widths:[110]}
   ]);
-  var url=URL.createObjectURL(new Blob([wbData],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  saveFile("present-distribution-"+ymd(new Date())+".xlsx",
+    new Blob([wbData],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),
+    function(code){
+      if(code==="rejected_extension"||code==="extension_not_enabled"){
+        alert("この画面ではExcelを保存できません。\n"
+          +"上の「HTMLファイルをダウンロード」でツールを保存し、\n"
+          +"保存したファイルを開いてから書き出してください。");
+      } else {
+        alert("Excelを保存できませんでした（"+code+"）。");
+      }
+    });
+}
+/* ファイルの保存。claude.ai の画面の中で開いているときは <a download> が効かず、
+   押しても何も起きない。用意されている保存の仕組みがあればそちらを使い、
+   単体HTMLとして開いたときは今までどおりリンクで落とす。 */
+function saveFile(filename, data, onFail){
+  var dl=(window.claude&&window.claude.downloads)||null;
+  if(dl){
+    dl.save({filename:filename, data:data})["catch"](function(e){
+      var c=(e&&e.code)||"unavailable";
+      if(c==="declined") return;                 /* 取り消しは黙って戻る */
+      if(onFail) onFail(c);
+      else alert("保存できませんでした（"+c+"）。");
+    });
+    return;
+  }
+  var blob=(typeof Blob!=="undefined"&&data instanceof Blob)?data
+          :new Blob([data],{type:"application/octet-stream"});
+  var url=URL.createObjectURL(blob);
   var a=document.createElement("a");
-  a.href=url; a.download="present-distribution-"+ymd(new Date())+".xlsx";
+  a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ URL.revokeObjectURL(url); },1000);
 }
@@ -3115,11 +3143,8 @@ function initUI(){
   });
   el("importJsonBtn").addEventListener("click",function(){ el("importJson").click(); });
   el("exportJson").addEventListener("click",function(){
-    var blob=new Blob([JSON.stringify({gifts:state.gifts},null,2)],{type:"application/json"});
-    var a=document.createElement("a");
-    a.href=URL.createObjectURL(blob);
-    a.download="present-settings-"+ymd(new Date())+".json";
-    a.click(); URL.revokeObjectURL(a.href);
+    saveFile("present-settings-"+ymd(new Date())+".json",
+      JSON.stringify({gifts:state.gifts},null,2));
   });
   el("importJson").addEventListener("change",function(){
     var f=this.files[0]; if(!f) return;
