@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>入場者プレゼント 配布可能期間 計算ツール</title>
 <style>
 /* =====================================================================
@@ -420,9 +420,15 @@ button .ic:only-child{margin-right:0}
   body{font-size:15px}
   /* ---- アプリの外枠。上にバー、下にタブ、あいだが1画面 ---- */
   header.app{display:none}
-  main{padding:calc(52px + env(safe-area-inset-top)) 12px calc(74px + env(safe-area-inset-bottom))}
+  /* 上下のバーの高さは実測して変数に入れる。env の値やSafariのバーで
+     ずれても、本文の余白が必ず追随するようにする（syncViewport 参照） */
+  main{padding:var(--ab-h,calc(52px + env(safe-area-inset-top)))
+       calc(12px + env(safe-area-inset-right))
+       calc(var(--tb-h,calc(57px + env(safe-area-inset-bottom))) + 18px)
+       calc(12px + env(safe-area-inset-left))}
   .appbar{display:flex;align-items:center;gap:10px;position:fixed;top:0;left:0;right:0;z-index:20;
-    height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 6px 0 14px;
+    height:calc(52px + env(safe-area-inset-top));
+    padding:env(safe-area-inset-top) calc(6px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));
     background:var(--ink);color:#fff;box-shadow:0 1px 0 rgba(0,0,0,.12)}
   .appbar .ab-t{min-width:0;flex:1 1 auto;line-height:1.2}
   .appbar .ab-t b{display:block;font-size:16px;font-weight:700;letter-spacing:.02em;
@@ -447,7 +453,8 @@ button .ic:only-child{margin-right:0}
   /* 下タブに、いま何枚目かを示す小さな目印を出す */
   .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;
     background:rgba(255,255,255,.97);backdrop-filter:blur(8px);
-    border-top:1px solid var(--rule);padding-bottom:env(safe-area-inset-bottom)}
+    border-top:1px solid var(--rule);
+    padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
   .tabbar button{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;
     justify-content:center;gap:1px;border:none;background:none;border-radius:0;
     padding:7px 2px 6px;min-height:56px;color:var(--ink-2);position:relative}
@@ -457,6 +464,8 @@ button .ic:only-child{margin-right:0}
   .tabbar button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;
     height:2.5px;background:var(--accent);border-radius:0 0 3px 3px}
   .tabbar button.off{opacity:.34}
+  body.kb .tabbar{display:none}          /* 文字を打っているあいだは邪魔なので隠す */
+  body.kb main{padding-bottom:24px}
   .tabbar .dot{display:none;position:absolute;top:8px;right:50%;margin-right:-16px;
     width:7px;height:7px;border-radius:50%;background:var(--alert)}
   .tabbar .dot.on{display:block}
@@ -475,7 +484,9 @@ button .ic:only-child{margin-right:0}
   .sheet-bg{display:block;position:fixed;inset:0;background:rgba(20,20,22,.45);z-index:30}
   .sheet{display:block;position:fixed;left:0;right:0;bottom:0;z-index:31;
     background:var(--surface);border-radius:16px 16px 0 0;
-    padding:8px 12px calc(12px + env(safe-area-inset-bottom));
+    padding:8px calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom))
+            calc(12px + env(safe-area-inset-left));
+    max-height:min(80dvh,80vh);overflow-y:auto;
     box-shadow:0 -8px 30px rgba(0,0,0,.18);
     transform:translateY(100%);transition:transform .18s ease-out}
   .sheet.open{transform:translateY(0)}
@@ -498,7 +509,7 @@ button .ic:only-child{margin-right:0}
   /* ---- 引っぱって計算し直す ---- */
   html,body{overscroll-behavior-y:contain}   /* ブラウザ側の引っぱり更新を止める */
   .pull{display:flex;align-items:center;gap:6px;position:fixed;
-    top:calc(46px + env(safe-area-inset-top));left:50%;z-index:19;
+    top:calc(var(--ab-h,52px) - 6px);left:50%;z-index:19;
     transform:translate(-50%,0);opacity:0;pointer-events:none;
     background:var(--surface);border:1px solid var(--rule);border-radius:99px;
     padding:6px 14px;font-size:12px;font-weight:700;color:var(--ink-2);
@@ -508,7 +519,7 @@ button .ic:only-child{margin-right:0}
 
   /* ---- 使い方の一言（初回だけ） ---- */
   .toast{display:flex;align-items:center;gap:8px;position:fixed;left:12px;right:12px;
-    bottom:calc(74px + env(safe-area-inset-bottom));z-index:25;
+    bottom:calc(var(--tb-h,74px) + 12px);z-index:25;
     background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;font-size:13px;
     box-shadow:0 6px 20px rgba(0,0,0,.22);
     transform:translateY(14px);opacity:0;transition:opacity .22s,transform .22s}
@@ -3481,6 +3492,7 @@ function renderResults(){
   var dt=box.querySelector("table.dash");
   if(dt) dt.addEventListener("click",function(e){
     if(!window.matchMedia||!window.matchMedia("(max-width:820px)").matches) return;
+    if(justSwiped()) return;              /* なぞり終わりのタップで開かない */
     var tr=e.target.closest("tr[data-r]"); if(!tr) return;
     var k=tr.getAttribute("data-r");
     state.dashOpen=state.dashOpen||{};
@@ -3712,6 +3724,37 @@ function decorateIcons(){
     var e=el(x[0]); if(e&&!e.querySelector("svg")) e.insertAdjacentHTML("afterbegin",icon(x[1]));
   });
 }
+/* 上下のバーの実測値を本文の余白に反映する。
+   iOSはSafariのバーの出入りで見える高さが変わり、position:fixed の下タブが
+   隠れることがある。見えている範囲（visualViewport）に合わせて持ち上げる。 */
+function syncViewport(){
+  var tb=el("tabbar"), ab=el("appbar"), root=document.documentElement;
+  if(!tb||!ab) return;
+  if(!isPhone()){
+    tb.style.transform=""; document.body.classList.remove("kb");
+    root.style.removeProperty("--ab-h"); root.style.removeProperty("--tb-h");
+    return;
+  }
+  var vv=window.visualViewport;
+  if(vv){
+    var gap=Math.max(0, Math.round(window.innerHeight-(vv.height+vv.offsetTop)));
+    var kb=gap>140;                       /* これだけ縮むのはキーボード */
+    document.body.classList.toggle("kb", kb);
+    tb.style.transform = kb ? "" : (gap>1 ? "translateY("+(-gap)+"px)" : "");
+  }
+  root.style.setProperty("--ab-h", Math.round(ab.getBoundingClientRect().height)+"px");
+  root.style.setProperty("--tb-h", Math.round(tb.getBoundingClientRect().height)+"px");
+}
+function watchViewport(){
+  syncViewport();
+  window.addEventListener("resize",syncViewport);
+  window.addEventListener("orientationchange",function(){ setTimeout(syncViewport,250); });
+  if(window.visualViewport){
+    window.visualViewport.addEventListener("resize",syncViewport);
+    window.visualViewport.addEventListener("scroll",syncViewport);
+  }
+}
+
 /* ---- 指の操作 ----
    左右になぞって画面を移る。下タブを狙わなくても行き来できるようにする。
    横に流せる表（明細など）や入力欄の上から始まったなぞりは拾わない。 */
@@ -3737,7 +3780,8 @@ function slideTo(i,dir){
 function setupSwipe(){
   var m=document.querySelector("main");
   if(!m) return;
-  var sx=0, sy=0, dx=0, on=false, decided=false, pid=null;
+  var sx=0, sy=0, st=0, dx=0, lx=0, lt=0, vx=0;
+  var on=false, decided=false, taken=false, pid=null;
   function blocked(node){
     for(var e=node; e&&e!==m; e=e.parentElement){
       if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return true;
@@ -3748,43 +3792,66 @@ function setupSwipe(){
     }
     return false;
   }
-  function reset(anim){
-    m.style.transition=anim?"transform .16s ease-out":"";
+  function release(){
+    if(taken){ try{ m.releasePointerCapture(pid); }catch(e){} }
+    on=false; decided=false; taken=false;
+  }
+  function snap(){
+    m.style.transition="transform .16s ease-out";
     m.style.transform="";
-    if(anim) setTimeout(function(){ m.style.transition=""; },180);
+    setTimeout(function(){ m.style.transition=""; },180);
   }
   m.addEventListener("pointerdown",function(e){
     if(!isPhone()||e.pointerType==="mouse") return;
     if(blocked(e.target)) return;
-    on=true; decided=false; pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0;
-  });
+    /* 画面のいちばん左はiOSの「戻る」に取られる。半端に動かさないよう見送る */
+    if(e.clientX<18) return;
+    on=true; decided=false; taken=false; pid=e.pointerId;
+    sx=lx=e.clientX; sy=e.clientY; st=lt=(e.timeStamp||0); dx=0; vx=0;
+  },{passive:true});
   m.addEventListener("pointermove",function(e){
     if(!on||e.pointerId!==pid) return;
     var ax=e.clientX-sx, ay=e.clientY-sy;
     if(!decided){
-      if(Math.abs(ax)<10&&Math.abs(ay)<10) return;
+      if(Math.abs(ax)<8&&Math.abs(ay)<8) return;
       decided=true;
-      if(Math.abs(ax)<=Math.abs(ay)*1.3){ on=false; return; }  /* 縦のスクロールを邪魔しない */
+      if(Math.abs(ax)<=Math.abs(ay)*1.15){ on=false; return; }  /* 縦のスクロールは邪魔しない */
+      /* ここから先は指を追い続ける。バーの上に指が乗っても取りこぼさない */
+      try{ m.setPointerCapture(pid); taken=true; }catch(err){}
+      m.style.transition="";
     }
+    var dt=(e.timeStamp||0)-lt;
+    if(dt>0) vx=(e.clientX-lx)/dt;          /* px/ms */
+    lx=e.clientX; lt=e.timeStamp||0;
     dx=ax;
     var i=screenIndex();
-    /* 行き止まりでは引っぱりを弱くして、これ以上ないことを指に返す */
     if((dx>0&&!canSwipeTo(i-1))||(dx<0&&!canSwipeTo(i+1))) dx*=0.22;
     m.style.transform="translateX("+(dx*0.34).toFixed(1)+"px)";
-  });
-  function end(e){
+    if(e.cancelable) e.preventDefault();
+  },{passive:false});
+  function finish(e,cancelled){
     if(!on||(e&&e.pointerId!==pid)) return;
-    on=false;
-    var i=screenIndex(), moved=false;
-    if(dx<=-56) moved=slideTo(i+1,-1);
-    else if(dx>=56) moved=slideTo(i-1,1);
-    reset(!moved);
-    if(moved){ m.style.transform=""; m.style.transition=""; }
+    var d=dx, v=vx, wasDecided=decided;
+    release();
     dx=0;
+    if(cancelled||!wasDecided){ snap(); return; }
+    /* 速く払ったときは短くても決める。ゆっくりなら距離で決める */
+    var go = Math.abs(d)>=45 || (Math.abs(d)>=22 && Math.abs(v)>0.45);
+    var i=screenIndex(), moved=false;
+    if(go&&d<0) moved=slideTo(i+1,-1);
+    else if(go&&d>0) moved=slideTo(i-1,1);
+    if(moved){
+      m.style.transition=""; m.style.transform="";
+      /* なぞりの直後の click で行が開かないようにする */
+      swipedAt=Date.now();
+    } else snap();
   }
-  m.addEventListener("pointerup",end);
-  m.addEventListener("pointercancel",end);
+  m.addEventListener("pointerup",function(e){ finish(e,false); });
+  m.addEventListener("pointercancel",function(e){ finish(e,true); });
+  m.addEventListener("lostpointercapture",function(e){ if(on) finish(e,true); });
 }
+var swipedAt=0;
+function justSwiped(){ return Date.now()-swipedAt<400; }
 /* 一覧の先頭で下に引っぱると計算し直す。
    条件を変えたあとに「計算する」を探しに行かなくて済むようにする。 */
 function setupPull(){
@@ -3793,28 +3860,31 @@ function setupPull(){
   ind.className="pull noprint"; ind.innerHTML='<span></span>';
   document.body.appendChild(ind);
   var sy=0, dy=0, on=false, pid=null, ready=false;
+  function hide(){ ind.style.transform=""; ind.classList.remove("show","ready"); }
   m.addEventListener("pointerdown",function(e){
     if(!isPhone()||e.pointerType==="mouse") return;
     if(state.screen==="data"||!(state.results&&state.results.length)) return;
     if(window.scrollY>0) return;
     if(e.target.closest("input,textarea,select")) return;
     on=true; pid=e.pointerId; sy=e.clientY; dy=0; ready=false;
-  });
+  },{passive:true});
   m.addEventListener("pointermove",function(e){
     if(!on||e.pointerId!==pid) return;
+    var ax=Math.abs(e.clientX-0);
     dy=e.clientY-sy;
-    if(dy<=0||window.scrollY>0){ ind.classList.remove("show","ready"); return; }
-    if(Math.abs(e.clientX-0)>=0&&dy<6) return;
+    if(dy<=6||window.scrollY>0){ hide(); ready=false; return; }
+    /* 横に払っているときは画面移動が優先。引っぱりは出さない */
+    if(Math.abs(e.clientX-(window.__pullSx||e.clientX))>Math.abs(dy)) return;
     var d=Math.min(dy*0.5,72);
     ind.classList.add("show");
     ind.style.transform="translate(-50%,"+d+"px)";
     ready=dy>=90;
     ind.classList.toggle("ready",ready);
     ind.querySelector("span").textContent=ready?"離すと計算し直します":"引っぱって計算し直す";
-  });
+  },{passive:true});
   function end(){
     if(!on) return;
-    on=false; ind.style.transform=""; ind.classList.remove("show","ready");
+    on=false; hide();
     if(ready){ runCalc(); setScreen(state.screen); }
     ready=false; dy=0;
   }
@@ -3865,7 +3935,7 @@ function setupShell(){
   el("abAction").addEventListener("click",openSheet);
   el("sheetBg").addEventListener("click",closeSheet);
   el("sheetClose").addEventListener("click",closeSheet);
-  setupSwipe(); setupSheetDrag(); setupPull(); showSwipeHint();
+  setupSwipe(); setupSheetDrag(); setupPull(); watchViewport(); showSwipeHint();
   /* アプリバーの見出しを押すと先頭に戻る */
   el("abTitle").addEventListener("click",function(){ window.scrollTo({top:0,behavior:"smooth"}); });
   setScreen(state.screen||"data");
