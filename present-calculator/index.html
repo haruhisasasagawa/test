@@ -25,6 +25,7 @@
   --num:"Helvetica Neue",Arial,"Yu Gothic Medium","Hiragino Sans","Meiryo",sans-serif;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}   /* display を上書きするCSSより hidden を優先する */
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--jp);
   font-size:14px;line-height:1.65;font-feature-settings:"palt" 1}
@@ -84,6 +85,7 @@ button.danger{color:var(--alert);border-color:#E2BDB9}
 .dz-s{font-size:11.5px;color:var(--ink-2);margin:3px 0 10px;line-height:1.5}
 .dz-btn{font-size:14px;padding:9px 20px;font-weight:700}
 .dz-drag{font-size:11px;color:var(--ink-3);margin-top:7px}
+.dz-state .ic{width:14px;height:14px;margin-right:3px}
 .dz-state{position:absolute;top:12px;right:14px;font-size:11px;font-weight:700;
   color:var(--ink-3);background:var(--surface);border:1px solid var(--rule);
   border-radius:99px;padding:2px 10px}
@@ -399,6 +401,14 @@ table.daily .ng{color:var(--alert);font-weight:700}
 .toolbar .sm{display:none}      /* 短いラベルはスマホでだけ出す */
 .printhead{display:none}
 
+/* ---------- アイコン ---------- */
+.ic{width:22px;height:22px;flex:0 0 auto;display:inline-block;vertical-align:-4px}
+button .ic{margin-right:6px}
+button .ic:only-child{margin-right:0}
+
+/* ---------- スマホのアプリ外枠（画面が広いときは出さない） ---------- */
+.appbar,.tabbar,.sheet,.sheet-bg{display:none}
+
 /* =====================================================================
    スマホ（〜700px）
    現場はカウンター裏でスマホを見る。列の多い表はそのままでは読めないので、
@@ -407,10 +417,67 @@ table.daily .ng{color:var(--alert);font-weight:700}
    ===================================================================== */
 @media screen and (max-width:820px){
   body{font-size:15px}
-  main{padding:12px 12px 96px}
-  header.app{padding:12px 14px}
-  header.app h1{font-size:16px;letter-spacing:.01em}
-  header.app p{font-size:11.5px;margin-top:3px}
+  /* ---- アプリの外枠。上にバー、下にタブ、あいだが1画面 ---- */
+  header.app{display:none}
+  main{padding:calc(52px + env(safe-area-inset-top)) 12px calc(74px + env(safe-area-inset-bottom))}
+  .appbar{display:flex;align-items:center;gap:10px;position:fixed;top:0;left:0;right:0;z-index:20;
+    height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 6px 0 14px;
+    background:var(--ink);color:#fff;box-shadow:0 1px 0 rgba(0,0,0,.12)}
+  .appbar .ab-t{min-width:0;flex:1 1 auto;line-height:1.2}
+  .appbar .ab-t b{display:block;font-size:16px;font-weight:700;letter-spacing:.02em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .appbar .ab-t span{display:block;font-size:10.5px;color:#AEB2B9;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .appbar .ab-act{width:44px;height:44px;min-height:44px;padding:0;border:none;background:none;
+    color:#fff;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .appbar .ab-act:hover{background:rgba(255,255,255,.12)}
+
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;
+    background:rgba(255,255,255,.97);backdrop-filter:blur(8px);
+    border-top:1px solid var(--rule);padding-bottom:env(safe-area-inset-bottom)}
+  .tabbar button{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:1px;border:none;background:none;border-radius:0;
+    padding:7px 2px 6px;min-height:56px;color:var(--ink-2);position:relative}
+  .tabbar button .ic{width:23px;height:23px;margin:0}
+  .tabbar button span{font-size:10.5px;font-weight:700;letter-spacing:.02em}
+  .tabbar button[aria-selected="true"]{color:var(--accent)}
+  .tabbar button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;
+    height:2.5px;background:var(--accent);border-radius:0 0 3px 3px}
+  .tabbar button.off{opacity:.34}
+  .tabbar .dot{display:none;position:absolute;top:8px;right:50%;margin-right:-16px;
+    width:7px;height:7px;border-radius:50%;background:var(--alert)}
+  .tabbar .dot.on{display:block}
+
+  /* 画面の出し分け。1画面=1つの用途 */
+  body[data-screen="data"] #resultCard{display:none}
+  body:not([data-screen="data"]) section.card.noprint{display:none}
+  body:not([data-screen="data"]) #resultCard{display:block;border:none;background:none;
+    box-shadow:none;margin:0;overflow:visible}
+  body:not([data-screen="data"]) #resultCard>h2{display:none}
+  body:not([data-screen="data"]) #resultCard>.body{padding:0}
+  #viewTabs{display:none}          /* 行き来は下タブに一本化する */
+  .toolbar{display:none}           /* できることはアプリバーのボタンにまとめる */
+
+  /* ---- 下から出るシート ---- */
+  .sheet-bg{display:block;position:fixed;inset:0;background:rgba(20,20,22,.45);z-index:30}
+  .sheet{display:block;position:fixed;left:0;right:0;bottom:0;z-index:31;
+    background:var(--surface);border-radius:16px 16px 0 0;
+    padding:8px 12px calc(12px + env(safe-area-inset-bottom));
+    box-shadow:0 -8px 30px rgba(0,0,0,.18);
+    transform:translateY(100%);transition:transform .18s ease-out}
+  .sheet.open{transform:translateY(0)}
+  .sh-grip{width:38px;height:4px;border-radius:2px;background:var(--rule);margin:2px auto 10px}
+  .sh-list button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+    border:none;background:none;padding:12px 8px;border-radius:10px;min-height:58px}
+  .sh-list button+button{border-top:1px solid var(--rule-2)}
+  .sh-list button:active{background:var(--surface-2)}
+  .sh-list .ic{width:24px;height:24px;color:var(--accent);margin:0}
+  .sh-list span{display:block;min-width:0}
+  .sh-list b{display:block;font-size:15px;font-weight:700;line-height:1.3}
+  .sh-list i{display:block;font-style:normal;font-size:11.5px;color:var(--ink-2);line-height:1.4}
+  .sh-close{width:100%;margin-top:8px;font-weight:700}
+
+  main{padding-left:12px;padding-right:12px}
 
   section.card{border-radius:8px;margin-bottom:12px}
   section.card>h2{padding:11px 13px;font-size:16px;flex-wrap:wrap;gap:8px}
@@ -445,9 +512,6 @@ table.daily .ng{color:var(--alert);font-weight:700}
 
   /* ---- STEP 2 プレゼント表 → 1件1カード ---- */
   .listbar{gap:8px}
-  .seg{width:100%}
-  .seg button{flex:1 1 0;min-height:44px;font-size:12.5px;padding:6px 4px}
-  .seg .lg{display:none} .seg .sm{display:inline}
   .gift-table,.gift-table tbody,.gift-table tr,.gift-table td{display:block;width:auto}
   .gift-table thead{display:none}
   .gift-table tr[data-i]{border:1px solid var(--rule);border-radius:8px;
@@ -496,9 +560,16 @@ table.daily .ng{color:var(--alert);font-weight:700}
   .statline-sm b{font-family:var(--num);font-size:16px;font-weight:700;color:var(--ink);
     font-variant-numeric:tabular-nums}
   .statline-sm .hot b{color:var(--alert)} .statline-sm .warn b{color:var(--warn)}
-  .listbar{margin-bottom:8px;gap:6px}
+  /* 絞り込みと並び順は横1列に。縦の場所を一覧に回す */
+  .listbar{margin-bottom:8px;gap:6px;flex-wrap:nowrap;overflow-x:auto;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+  .listbar::-webkit-scrollbar{display:none}
   .listbar .lb-t{display:none}      /* 「絞り込み」「並び順」は見れば分かる */
-  .seg+.seg{margin-top:2px}
+  .seg{width:auto;flex:0 0 auto;border-radius:99px}
+  .seg button{flex:0 0 auto;min-height:38px;font-size:12.5px;padding:6px 13px;white-space:nowrap}
+  /* 並び順は横に流しても隠れないよう右端に貼り付ける */
+  .listbar #dashSort{position:sticky;right:0;box-shadow:-10px 0 10px -4px var(--surface)}
+  .seg .lg{display:none} .seg .sm{display:inline}
 
   /* ---- ダッシュボード：1件2行の詰まった一覧 ----
      スマホは一度に多く見えることが正義。カードの余白と枠を捨て、
@@ -740,6 +811,12 @@ table.daily .ng{color:var(--alert);font-weight:700}
   <p>パフォーマンススケジュール（キャパ入り）と納品数から、満席想定でいつまで配布できるかを算出します。</p>
 </header>
 
+<!-- スマホ用のアプリバー。画面名と、その画面でできることをまとめたボタン -->
+<div class="appbar noprint" id="appbar">
+  <div class="ab-t"><b id="abTitle">配布可能期間</b><span id="abSub"></span></div>
+  <button class="ab-act" id="abAction" aria-label="この画面でできること"></button>
+</div>
+
 <main>
 <div class="printhead">
   <h1 id="printHead">入場者プレゼント 配布可能期間</h1>
@@ -756,7 +833,7 @@ table.daily .ng{color:var(--alert);font-weight:700}
         <div class="dz-body">
           <div class="dz-t">パフォーマンススケジュール</div>
           <div class="dz-s">上映スケジュールの Excel（.xlsx）。シートは1〜7枚どれでも可</div>
-          <button class="primary dz-btn" type="button" data-for="filePs">ファイルを選ぶ</button>
+          <button class="primary dz-btn" type="button" id="filePsBtn" data-for="filePs">ファイルを選ぶ</button>
           <div class="dz-drag">ここにドラッグ＆ドロップでも入ります</div>
           <input type="file" id="filePs" accept=".xlsx" hidden>
         </div>
@@ -768,7 +845,7 @@ table.daily .ng{color:var(--alert);font-weight:700}
           <div class="dz-t">入場者プレゼント情報</div>
           <div class="dz-s">作品名／プレゼント内容／納品数／配布開始日／配布終了日 の表。
             Excelファイルでも、画面の表をコピーして貼り付けでも読み込めます</div>
-          <button class="dz-btn" type="button" data-for="fileGift">ファイルを選ぶ</button>
+          <button class="dz-btn" type="button" id="fileGiftBtn" data-for="fileGift">ファイルを選ぶ</button>
           <div class="dz-drag">ここにドラッグ＆ドロップでも入ります（手入力だけでも使えます）</div>
           <button class="dz-btn2" type="button" id="pasteOpen">またはコピーした表を貼り付ける</button>
           <input type="file" id="fileGift" accept=".xlsx" hidden>
@@ -890,6 +967,17 @@ table.daily .ng{color:var(--alert);font-weight:700}
 <!-- スマホで読む用の一覧。印刷（PDF保存）のときだけ出す -->
 <div id="phoneSheet"></div>
 </main>
+
+<!-- スマホ用の下タブ。画面の行き来はここだけで完結させる -->
+<nav class="tabbar noprint" id="tabbar" role="tablist"></nav>
+
+<!-- できることの一覧（下から出るシート） -->
+<div class="sheet-bg noprint" id="sheetBg" hidden></div>
+<div class="sheet noprint" id="sheet" hidden role="dialog" aria-label="この画面でできること">
+  <div class="sh-grip"></div>
+  <div class="sh-list" id="sheetList"></div>
+  <button class="sh-close" id="sheetClose">閉じる</button>
+</div>
 
 <script>
 "use strict";
@@ -2143,6 +2231,47 @@ function saveFile(filename, data, onFail){
 }
 
 /* =========================================================================
+   7-b. アイコン
+   外部ファイルは使えないので、線画をそのまま埋める。色は文字色に追従させる。
+   ========================================================================= */
+var ICONS={
+  list:  '<path d="M4 7h10M4 12h10M4 17h10"/><circle cx="19" cy="7" r="1.4"/><circle cx="19" cy="12" r="1.4"/><circle cx="19" cy="17" r="1.4"/>',
+  board: '<rect x="3.5" y="4.5" width="17" height="13" rx="1.5"/><path d="M12 17.5V21M8 21h8M7.5 8.5h9M7.5 12h5"/>',
+  today: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><circle cx="12" cy="14.5" r="1.6"/>',
+  table: '<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 4.5v15"/>',
+  data:  '<path d="M12 15.5V4M12 4 8 8M12 4l4 4"/><path d="M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14"/>',
+  more:  '<circle cx="12" cy="5.5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="18.5" r="1.6"/>',
+  print: '<path d="M7 9V3.5h10V9"/><rect x="3.5" y="9" width="17" height="7.5" rx="1.5"/><rect x="7" y="14" width="10" height="6.5"/>',
+  phone: '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 5.5h3"/><path d="M12 17.5v.01"/>',
+  sheet: '<rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M3.5 9h17M3.5 15h17M9.5 3.5v17"/>',
+  calc:  '<rect x="4.5" y="2.5" width="15" height="19" rx="2"/><path d="M8 6.5h8M8 11h2M11.5 11h1M15 11h1M8 14.5h2M11.5 14.5h1M15 14.5h1M8 18h2M11.5 18h1M15 18h1"/>',
+  file:  '<path d="M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5z"/><path d="M13.5 3.5V8.5h5"/>',
+  paste: '<rect x="7.5" y="4.5" width="12" height="16" rx="1.5"/><path d="M10.5 4.5V3.5h6v1"/><path d="M4.5 8.5v10A1.5 1.5 0 0 0 6 20h1.5"/><path d="M10.5 10h6M10.5 13.5h6M10.5 17h3"/>',
+  gear:  '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3"/>',
+  trash: '<path d="M4.5 6.5h15M9.5 6.5V4h5v2.5M6.5 6.5l1 13.5h9l1-13.5M10 10v7M14 10v7"/>',
+  plus:  '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="M4.5 12.5 9.5 17.5 19.5 6.5"/>',
+  warn:  '<path d="M12 3.5 21.5 20h-19z"/><path d="M12 9.5v5M12 17.2v.01"/>',
+  back:  '<path d="M15 5l-7 7 7 7"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  refresh:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.5 3.5v5h-5"/>'
+};
+function icon(name,cls){
+  var d=ICONS[name]; if(!d) return "";
+  return '<svg class="ic'+(cls?" "+cls:"")+'" viewBox="0 0 24 24" aria-hidden="true" '
+    +'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
+    +'stroke-linejoin="round">'+d+'</svg>';
+}
+/* スマホの画面構成。1画面=1つの用途。行き来は下タブだけで完結させる */
+var SCREENS=[
+  {key:"dash",   icon:"list",  label:"一覧",  title:"配布可能期間",   view:"dash"},
+  {key:"notice", icon:"board", label:"掲示",  title:"スタッフ掲示",   view:"notice"},
+  {key:"daily",  icon:"today", label:"今日",  title:"その日の配布",   view:"daily"},
+  {key:"detail", icon:"table", label:"明細",  title:"明細・根拠",     view:"detail"},
+  {key:"data",   icon:"data",  label:"データ", title:"ファイルと設定", view:null}
+];
+
+/* =========================================================================
    8. 画面（UI）
    ========================================================================= */
 var state={ schedule:null, gifts:[], results:null, opts:{},
@@ -2361,8 +2490,9 @@ function renderGifts(){
       +'<td data-l="配布終了日"><input type="date" data-f="end" value="'+esc(g.end)+'"><div class="sub-note">空欄=無くなるまで</div></td>'
       +'<td data-l="グループ"><input type="text" data-f="group" value="'+esc(g.group)+'" style="width:70px" placeholder="同時配布"></td>'
       +'<td class="c" data-l="対象上映"><span data-badge="'+i+'">'+matchBadge(g)+'</span> '
-      +'<button class="mini" data-toggle="'+i+'">⚙ 対象を選ぶ</button></td>'
-      +'<td class="c cell-del"><button class="mini danger" data-del="'+i+'">× 削除</button></td></tr>';
+      +'<button class="mini" data-toggle="'+i+'">'+icon("gear")+'対象を選ぶ</button></td>'
+      +'<td class="c cell-del"><button class="mini danger" data-del="'+i+'">'
+      +icon("trash")+'削除</button></td></tr>';
     if(g.open) h+=giftDetailRow(g,i,links);
   }
   h+='</tbody>';
@@ -2500,6 +2630,7 @@ function runCalc(){
   }
   state.results=results;
   el("afterCalc").hidden=false;
+  if(typeof updateTabState==="function") updateTabState();
   el("calcHint").textContent="条件を変えたらもう一度押してください";
   if(!state.dailyDate||state.dailyDate<opts.base||state.dailyDate>opts.horizon){
     /* 今日が計算期間に入っていればその日、外れていれば起算日を初期表示にする */
@@ -2713,8 +2844,10 @@ function viewDash(rs){
     +'</div>'
     +'<span class="lb-t">並び順</span>'
     +'<div class="seg" id="dashSort">'
-    +'<button data-s="cat"'+((state.dashSort||"cat")==="cat"?' class="on"':'')+'>区分ごと</button>'
-    +'<button data-s="urg"'+(state.dashSort==="urg"?' class="on"':'')+'>終了が近い順</button>'
+    +'<button data-s="cat"'+((state.dashSort||"cat")==="cat"?' class="on"':'')
+      +'><b class="lg">区分ごと</b><b class="sm">区分順</b></button>'
+    +'<button data-s="urg"'+(state.dashSort==="urg"?' class="on"':'')
+      +'><b class="lg">終了が近い順</b><b class="sm">終了順</b></button>'
     +'</div></div>';
 
   var rows=dashRows(rs).filter(function(r){ return filt==="all"||catOf(r.gift).key===filt; });
@@ -3331,7 +3464,7 @@ function readFile(file, cb){
 function markLoaded(zoneId, stateId, text){
   var z=el(zoneId), t=el(stateId);
   if(z) z.classList.add("done");
-  if(t) t.textContent=text;
+  if(t) t.innerHTML=icon("check")+esc(text);
 }
 function loadPsFile(file){
   readFile(file,function(err,buf){
@@ -3441,6 +3574,93 @@ function setupPaste(){
     area.value=""; el("pastePreview").innerHTML=""; el("pasteHint").textContent="";
   });
 }
+/* ---- スマホのアプリ外枠（下タブ・アプリバー・シート） ---- */
+function isPhone(){ return window.matchMedia&&window.matchMedia("(max-width:820px)").matches; }
+function renderTabbar(){
+  var n=el("tabbar"); if(!n||n.dataset.built) return;
+  n.dataset.built="1";
+  n.innerHTML=SCREENS.map(function(sc){
+    return '<button data-screen="'+sc.key+'" role="tab">'+icon(sc.icon)
+      +'<span>'+sc.label+'</span><i class="dot"></i></button>';
+  }).join("");
+  n.addEventListener("click",function(e){
+    var b=e.target.closest("button[data-screen]"); if(!b) return;
+    setScreen(b.getAttribute("data-screen"));
+    window.scrollTo(0,0);
+  });
+}
+function setScreen(key){
+  var sc=null;
+  for(var i=0;i<SCREENS.length;i++) if(SCREENS[i].key===key) sc=SCREENS[i];
+  if(!sc) sc=SCREENS[0];
+  state.screen=sc.key;
+  if(sc.view&&state.view!==sc.view){ state.view=sc.view; renderResults(); }
+  document.body.setAttribute("data-screen",sc.key);
+  var t=el("abTitle"); if(t) t.textContent=sc.title;
+  var sub=el("abSub");
+  if(sub) sub.textContent=(sc.key==="data"||!state.schedule)?"" :
+    (state.schedule.theater||"")+(state.opts.base?"　"+fmtDate(state.opts.base)+"現在":"");
+  var tb=el("tabbar");
+  if(tb) tb.querySelectorAll("button[data-screen]").forEach(function(b){
+    b.setAttribute("aria-selected", b.getAttribute("data-screen")===sc.key?"true":"false");
+  });
+  updateTabState();
+  save();
+}
+/* 計算が終わるまで結果の画面には行けない。行けないタブは薄くして印を消す */
+function updateTabState(){
+  var tb=el("tabbar"); if(!tb) return;
+  var ready=!!(state.results&&state.results.length);
+  tb.querySelectorAll("button[data-screen]").forEach(function(b){
+    var k=b.getAttribute("data-screen");
+    b.classList.toggle("off", k!=="data"&&!ready);
+  });
+  var need=el("tabbar").querySelector('button[data-screen="data"] .dot');
+  if(need) need.classList.toggle("on", !ready);
+}
+/* この画面でできることを下から出す。ボタンを常時並べないぶん一覧が長く見える */
+function openSheet(){
+  var list=[];
+  if(state.results&&state.results.length){
+    list.push({i:"phone", t:"スマホ用PDF（一覧）", s:"90×160mm。スマホでそのまま読めます", f:printPhoneSheet});
+    list.push({i:"print", t:"印刷 / PDF保存",      s:VIEW_INFO[state.view||"dash"].hint, f:function(){window.print();}});
+    list.push({i:"sheet", t:"Excelで書き出し",     s:"数式入り。在庫を書き換えると再計算されます", f:exportExcel});
+    list.push({i:"refresh", t:"計算をやり直す",     s:"条件を変えたときに押してください", f:function(){ runCalc(); setScreen(state.screen); }});
+  } else {
+    list.push({i:"calc", t:"計算する", s:"ファイルを置いてから押してください", f:function(){ runCalc(); if(state.results&&state.results.length) setScreen("dash"); }});
+  }
+  el("sheetList").innerHTML=list.map(function(x,i){
+    return '<button data-k="'+i+'">'+icon(x.i)+'<span><b>'+esc(x.t)+'</b><i>'+esc(x.s)+'</i></span></button>';
+  }).join("");
+  el("sheetList").onclick=function(e){
+    var b=e.target.closest("button[data-k]"); if(!b) return;
+    closeSheet(); list[+b.getAttribute("data-k")].f();
+  };
+  el("sheet").hidden=false; el("sheetBg").hidden=false;
+  requestAnimationFrame(function(){ el("sheet").classList.add("open"); });
+}
+function closeSheet(){
+  el("sheet").classList.remove("open");
+  el("sheet").hidden=true; el("sheetBg").hidden=true;
+}
+/* 静的なボタンにアイコンを足す。HTMLに直接SVGを書くと読みづらいのでここでまとめる */
+function decorateIcons(){
+  [["filePsBtn","file"],["fileGiftBtn","file"],["pasteOpen","paste"],["pasteRun","check"],
+   ["calc","calc"],["addGift","plus"],["exportJson","data"],["importJsonBtn","data"],
+   ["clearGift","trash"],["doPrint","print"],["phonePdf","phone"],["toExcel","sheet"],
+   ["calcSticky","calc"]].forEach(function(x){
+    var e=el(x[0]); if(e&&!e.querySelector("svg")) e.insertAdjacentHTML("afterbegin",icon(x[1]));
+  });
+}
+function setupShell(){
+  renderTabbar();
+  decorateIcons();
+  el("abAction").innerHTML=icon("more");
+  el("abAction").addEventListener("click",openSheet);
+  el("sheetBg").addEventListener("click",closeSheet);
+  el("sheetClose").addEventListener("click",closeSheet);
+  setScreen(state.screen||"data");
+}
 function setupDrop(dropId, inputId, handler){
   var d=el(dropId), inp=el(inputId);
   var btn=d.querySelector('.dz-btn');
@@ -3495,6 +3715,7 @@ function initUI(){
   setupDrop("dropPs","filePs",loadPsFile);
   setupDrop("dropGift","fileGift",loadGiftFile);
   setupPaste();
+  setupShell();
   el("addGift").addEventListener("click",function(){
     state.gifts.push(newGift({start:el("optBase").value||""}));
     renderGifts(); save();
