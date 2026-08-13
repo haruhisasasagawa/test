@@ -232,6 +232,8 @@ table.dash tr.sub td:first-child,table.dash tr.sub td:nth-child(2){border-right:
 .statbox.hot{border-color:var(--alert)} .statbox.hot .v{color:var(--alert)}
 .statbox.warn{border-color:var(--warn)} .statbox.warn .v{color:var(--warn)}
 .statbox .v small{font-size:11px;font-weight:400;color:var(--ink-2);margin-left:2px}
+.statline-sm{display:none}
+table.dash td.m-when,table.dash th.m-head{display:none}   /* スマホ専用の列 */
 #phoneSheet{display:none}
 .needbox{margin-top:12px;border:2px solid var(--accent);border-radius:8px;padding:11px 15px;
   background:var(--accent-bg);color:var(--accent);font-size:14px;font-weight:700}
@@ -449,14 +451,17 @@ table.daily .ng{color:var(--alert);font-weight:700}
   .gift-table,.gift-table tbody,.gift-table tr,.gift-table td{display:block;width:auto}
   .gift-table thead{display:none}
   .gift-table tr[data-i]{border:1px solid var(--rule);border-radius:8px;
-    padding:10px 12px 12px;margin-bottom:10px;background:var(--surface);position:relative}
+    padding:8px 11px 10px;margin-bottom:8px;background:var(--surface);position:relative}
   .gift-table tr.needcount-row{border-color:var(--warn);border-width:2px}
   .gift-table tr.catrow{border-radius:6px;margin:14px 0 8px}
   .gift-table tr.catrow td{display:block;padding:6px 11px;font-size:13px}
   .gift-table tbody tr:nth-child(even) td{background:transparent}
-  .gift-table td{border:none;padding:7px 0 0}
-  .gift-table td::before{content:attr(data-l);display:block;font-size:11px;font-weight:700;
-    color:var(--ink-2);letter-spacing:.03em;margin-bottom:3px}
+  .gift-table td{border:none;padding:6px 0 0}
+  .gift-table td::before{content:attr(data-l);display:block;font-size:10.5px;font-weight:700;
+    color:var(--ink-2);letter-spacing:.03em;margin-bottom:2px}
+  /* 対象上映と削除は同じ行に置いて1行ぶん詰める */
+  .gift-table td[data-l="対象上映"]{display:inline-block;width:auto}
+  .gift-table td.cell-del{display:inline-block;width:auto;float:right;padding-top:22px}
   .gift-table td.c{text-align:left}        /* 表のときの中央寄せはカードでは不要 */
   .gift-table td.cell-on{padding:0 0 4px}
   .gift-table td.cell-on::before{content:none}
@@ -484,60 +489,81 @@ table.daily .ng{color:var(--alert);font-weight:700}
     scrollbar-width:none;margin-bottom:12px}
   .tabs::-webkit-scrollbar{display:none}
   .tabs button{white-space:nowrap;padding:11px 13px;font-size:13px;min-height:46px}
-  .statline{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-  .statbox{padding:7px 10px}
-  .statbox .v{font-size:19px}
-  .listbar .lb-t{width:100%;margin-bottom:-4px}
+  .statline{display:none}
+  .statline-sm{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    font-size:12px;color:var(--ink-2);margin:0 0 10px;padding-bottom:8px;
+    border-bottom:1px solid var(--rule-2)}
+  .statline-sm b{font-family:var(--num);font-size:16px;font-weight:700;color:var(--ink);
+    font-variant-numeric:tabular-nums}
+  .statline-sm .hot b{color:var(--alert)} .statline-sm .warn b{color:var(--warn)}
+  .listbar{margin-bottom:8px;gap:6px}
+  .listbar .lb-t{display:none}      /* 「絞り込み」「並び順」は見れば分かる */
+  .seg+.seg{margin-top:2px}
 
-  /* ダッシュボード → 1件1カード */
+  /* ---- ダッシュボード：1件2行の詰まった一覧 ----
+     スマホは一度に多く見えることが正義。カードの余白と枠を捨て、
+     罫線1本で区切る。左の色帯で緊急度、右に日付を縦に揃える。
+     在庫・回数分・注意・ゲージは押したときだけ開く。 */
   table.dash,table.dash tbody,table.dash tr,table.dash td{display:block;width:auto}
   table.dash thead{display:none}
-  table.dash{table-layout:auto}
-  /* カードの中は並べ替える。日付が主役、次に数値、注意は最後 */
-  table.dash tr{display:flex;flex-wrap:wrap;align-items:flex-start;
-    border:1px solid var(--rule);border-left:6px solid var(--c,var(--rule));
-    border-radius:8px;padding:9px 12px 11px;margin-bottom:9px;background:var(--surface)}
-  table.dash td.cell-cat{order:1}
-  table.dash td.mark{order:2;margin-left:auto}
-  table.dash td.who{order:3;width:100%}
-  table.dash td[data-l="残り"]{order:4;width:100%}
-  table.dash td.date{order:5;width:100%}
-  table.dash td.big{order:6}
-  table.dash td[data-l="在庫"]{order:7}
-  table.dash td[data-l="回数分"]{order:8}
-  table.dash td[data-l="注意"]{order:9;width:100%}
-  table.dash td.date.nodate{display:none}
+  table.dash{table-layout:auto;border-top:1px solid var(--rule-2)}
+  table.dash tr{display:grid;grid-template-columns:1fr auto;column-gap:12px;
+    align-items:start;border:none;border-bottom:1px solid var(--rule-2);
+    border-left:3px solid var(--c,transparent);padding:9px 2px 9px 9px;
+    background:var(--surface);cursor:pointer;-webkit-tap-highlight-color:transparent}
   table.dash tbody tr:nth-child(even) td{background:transparent}
-  table.dash tr.catrow{border:none;border-radius:6px;padding:0;margin:14px 0 8px}
-  table.dash tr.catrow td{display:block;padding:6px 11px;font-size:13px}
-  table.dash tr.sub{border-left-width:6px;margin-top:-7px;padding-top:6px}
-  table.dash tr.sub td:first-child,table.dash tr.sub td:nth-child(2){display:none}
-  table.dash td{border:none;padding:0}
-  table.dash td.mark{font-size:20px;width:auto;line-height:1.4}
-  table.dash td.mark::before{content:attr(data-l);font-size:11px;font-weight:700;
-    display:inline;margin-right:4px;color:var(--c)}
-  table.dash td.cell-cat{margin-bottom:4px}
-  table.dash td.who{margin-bottom:6px}
-  table.dash td.who .film{white-space:normal;font-size:11.5px}
-  table.dash td.who .item{font-size:16px}
-  /* 現場が知りたいのは「いつまで」。日付を1行使って主役にする */
-  table.dash td[data-l="残り"]{margin-bottom:6px}
-  table.dash td.date{display:block;font-size:21px;line-height:1.2;margin-top:2px}
-  table.dash td.date::before{content:"全回に配れる最終日";display:block;font-size:10.5px;
-    font-weight:700;color:var(--ink-2);letter-spacing:.02em}
-  table.dash td.date .z{font-size:16px}
-  table.dash td.big,table.dash td[data-l="在庫"],table.dash td[data-l="回数分"]{
-    display:inline-block;margin-top:8px;margin-right:16px;text-align:left;font-size:15px;
-    vertical-align:top}
-  table.dash td.big{font-size:19px}
-  table.dash td.big::before,
-  table.dash td[data-l="在庫"]::before,table.dash td[data-l="回数分"]::before{
-    content:attr(data-l);display:block;font-size:10.5px;font-weight:700;color:var(--ink-2)}
-  table.dash td[data-l="注意"]{margin-top:8px}
-  table.dash td[data-l="注意"]::before{content:attr(data-l);display:block;font-size:10.5px;
-    font-weight:700;color:var(--ink-2)}
-  table.dash td[data-l="注意"]:empty{display:none}
-  table.dash td.flags{font-size:12px}
+  table.dash tr.catrow{display:block;border:none;padding:0;margin:14px 0 0;background:none;
+    cursor:default;position:sticky;top:0;z-index:2}
+  table.dash tr.catrow td{display:block;padding:5px 10px;font-size:12px}
+  table.dash td{border:none;padding:0;min-width:0}
+
+  /* 左：プレゼント名（太字）／作品名（小） 右：日付／あと◯日 */
+  table.dash td.who{display:contents}
+  table.dash td.who .item{grid-column:1;grid-row:1;font-size:14.5px;line-height:1.35;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table.dash td.who .film{grid-column:1;grid-row:2;font-size:11px;line-height:1.4;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
+  table.dash td.m-when{display:block;grid-column:2;grid-row:1/span 2;
+    text-align:right;white-space:nowrap}
+  table.dash td.m-when b{display:block;font-family:var(--num);font-size:17px;font-weight:700;
+    line-height:1.2;font-variant-numeric:tabular-nums;color:var(--c)}
+  table.dash td.m-when i{font-style:normal;font-size:11px;color:var(--ink-2);letter-spacing:.02em}
+  table.dash td.m-when u{text-decoration:none;display:inline-block;margin-left:5px;
+    width:13px;height:13px;line-height:13px;text-align:center;border-radius:50%;
+    background:var(--warn);color:#fff;font-size:9.5px;font-weight:700;vertical-align:middle}
+  /* 配布が終わったものは1行に畳んで沈める。確認するのは「今配っているもの」 */
+  table.dash tr.ended{padding-top:6px;padding-bottom:6px;opacity:.62}
+  table.dash tr.ended .film{display:none}
+  table.dash tr.ended .item{grid-row:1;font-size:13px;font-weight:400}
+  table.dash tr.ended td.m-when{grid-row:1}
+  table.dash tr.ended td.m-when b{font-size:11.5px}
+  /* 状態がラベル（日付なし）のときは数字より小さく置く */
+  table.dash tr.st-dead td.m-when b{font-size:12.5px;font-family:var(--jp);letter-spacing:0}
+  table.dash tr.st-ok td.m-when b{color:var(--ink)}
+
+  /* 畳んでいるときは出さないもの */
+  table.dash td.mark,table.dash td.cell-cat,table.dash td.big,table.dash td.date,
+  table.dash td[data-l="残り"],table.dash td[data-l="在庫"],
+  table.dash td[data-l="回数分"],table.dash td[data-l="注意"]{display:none}
+  table.dash tr.sub{display:none}
+
+  /* 押して開いたとき */
+  table.dash tr.open{background:var(--surface-2)}
+  table.dash tr.open td[data-l="残り"],table.dash tr.open td[data-l="在庫"],
+  table.dash tr.open td[data-l="回数分"],table.dash tr.open td[data-l="注意"]{
+    display:block;grid-column:1/span 2;margin-top:7px;font-size:13px}
+  table.dash tr.open td[data-l="残り"]{margin-top:8px}
+  table.dash tr.open td[data-l="在庫"],table.dash tr.open td[data-l="回数分"]{
+    display:inline-block;grid-column:auto;text-align:left;margin-right:18px}
+  table.dash tr.open td[data-l="在庫"]::before,table.dash tr.open td[data-l="回数分"]::before,
+  table.dash tr.open td[data-l="注意"]::before{content:attr(data-l);display:block;
+    font-size:10px;font-weight:700;color:var(--ink-2);letter-spacing:.03em}
+  table.dash tr.open td[data-l="注意"]:empty{display:none}
+  table.dash tr.open td.flags{font-size:12px;line-height:1.5}
+  table.dash tr.sub.open{display:block;border-left:3px solid var(--c,transparent);
+    border-bottom:1px solid var(--rule-2);padding:0 9px 9px;background:var(--surface-2)}
+  table.dash tr.sub.open td{display:block;font-size:12px}
+  table.dash tr.sub.open td:empty{display:none}
 
   /* 掲示・指示表・明細は紙のかたち。スマホでは縦に積む／横に送る */
   .notice{padding:14px}
@@ -2668,7 +2694,12 @@ function viewDash(rs){
     +'<div class="statbox'+(soon?' hot':'')+'"><div class="k">1週間以内に終了</div><div class="v">'+soon+'<small>件</small></div></div>'
     +'<div class="statbox'+(check?' warn':'')+'"><div class="k">要確認</div><div class="v">'+check+'<small>件</small></div></div>'
     +'<div class="statbox"><div class="k">在庫合計</div><div class="v">'+stock.toLocaleString()+'</div></div>'
-    +'</div>';
+    +'</div>'
+    /* スマホでは4つの箱に画面を使えない。1行に畳んで、その分だけ一覧を長く見せる */
+    +'<div class="statline-sm"><b>'+rs.length+'</b>件'
+    +'<span class="'+(soon?'hot':'')+'">1週間以内 <b>'+soon+'</b></span>'
+    +'<span class="'+(check?'warn':'')+'">要確認 <b>'+check+'</b></span>'
+    +'<span>在庫 <b>'+stock.toLocaleString()+'</b></span></div>';
   h+='<div class="listbar noprint">'
     +'<span class="lb-t">絞り込み</span>'
     +'<div class="seg" id="dashFilter">'
@@ -2698,13 +2729,14 @@ function viewDash(rs){
     +'<th style="width:104px">全回に配れる<br>最終日</th>'
     +'<th class="num" style="width:74px">在庫</th>'
     +'<th class="num" style="width:66px">回数分</th>'
-    +'<th style="width:230px">注意</th></tr></thead><tbody>';
+    +'<th style="width:230px">注意</th>'
+    +'<th class="m-head">まとめ</th></tr></thead><tbody>';
   var lastCat=null, showCat=(state.dashSort||"cat")==="cat"&&filt==="all";
   rows.forEach(function(r){
     var g=r.gift, u=urgencyOf(r), c=catOf(g), nd=noticeDate(r);
     if(showCat&&c.key!==lastCat){
       lastCat=c.key;
-      h+='<tr class="catrow"><td colspan="9">'+c.full+'　<span>'
+      h+='<tr class="catrow"><td colspan="10">'+c.full+'　<span>'
         +(c.key==="present"?"配布の第一優先":c.key==="sampling"?"協賛品。入プレの次に扱う":"該当の上映回のみ")
         +'</span></td></tr>';
     }
@@ -2717,7 +2749,9 @@ function viewDash(rs){
       flags.push("期間を通すには あと"+r.shortfall.toLocaleString()+"個");
     if(r.weekendRisk&&r.firstSkip) flags.push("金土日に品切れ");
     if(r.unknownCap) flags.push("キャパ不明"+r.unknownCap+"回を除外");
-    h+='<tr class="st-'+u.k+'">'
+    /* スマホでは畳んで並べ、タップで中身を開く。開いた行を覚えておく */
+    var key=g.id, isOpen=!!(state.dashOpen&&state.dashOpen[key]);
+    h+='<tr class="st-'+u.k+(r.status==="ended"?" ended":"")+(isOpen?' open':'')+'" data-r="'+key+'">'
       +'<td class="c mark" title="'+esc(u.label)+'" data-l="'+esc(u.label)+'">'+u.mark+'</td>'
       +'<td class="cell-cat">'+catBadge(g)+'</td>'
       +'<td class="who"><div class="film">'+esc(g.title||"（作品名なし）")+'</div>'
@@ -2731,9 +2765,14 @@ function viewDash(rs){
       +(nd?fmtDate(nd):'<span class="z">'+esc(u.label)+'</span>')+'</td>'
       +'<td class="num" data-l="在庫">'+(g.qty||0).toLocaleString()+'</td>'
       +'<td class="num" data-l="回数分">'+(r.showsLeft!==null?r.showsLeft:"—")+'</td>'
-      +'<td class="flags" data-l="注意">'+(flags.length?esc(flags.join("／")):"")+'</td></tr>';
+      +'<td class="flags" data-l="注意">'+(flags.length?esc(flags.join("／")):"")+'</td>'
+      /* スマホ用。1件2行に畳んだときの右側。日付が答え、その下に残り日数 */
+      +'<td class="m-when"><b>'+esc(nd?fmtDate(nd):u.label)+'</b>'
+      +(nd&&r.safeDaysLeft!==null?'<i>あと'+Math.max(0,r.safeDaysLeft)+'日</i>':'')
+      +(flags.length?'<u>!</u>':'')+'</td></tr>';
     var tt=tailText(r);
-    if(tt) h+='<tr class="sub st-'+u.k+'"><td></td><td></td><td colspan="7">'+esc(tt)+'</td></tr>';
+    if(tt) h+='<tr class="sub st-'+u.k+(isOpen?' open':'')+'" data-r="'+key+'"><td></td><td></td><td colspan="8">'
+      +esc(tt)+'</td></tr>';
   });
   h+='</tbody></table>';
   h+='<div class="hint">「残り」は全回に配れる最終日までの日数を1マス＝1日で表しています。'
@@ -3251,6 +3290,18 @@ function renderResults(){
   if(ds) ds.addEventListener("click",function(e){
     var b=e.target.closest("button[data-s]"); if(!b) return;
     state.dashSort=b.getAttribute("data-s"); renderResults();
+  });
+  /* スマホでは1件2行に畳んでいる。行を押すと在庫・回数分・注意を開く */
+  var dt=box.querySelector("table.dash");
+  if(dt) dt.addEventListener("click",function(e){
+    if(!window.matchMedia||!window.matchMedia("(max-width:820px)").matches) return;
+    var tr=e.target.closest("tr[data-r]"); if(!tr) return;
+    var k=tr.getAttribute("data-r");
+    state.dashOpen=state.dashOpen||{};
+    state.dashOpen[k]=!state.dashOpen[k];
+    dt.querySelectorAll('tr[data-r="'+k+'"]').forEach(function(x){
+      x.classList.toggle("open", !!state.dashOpen[k]);
+    });
   });
   var nm=el("noticeMode");
   if(nm) nm.addEventListener("change",function(){ state.noticeMode=this.value; renderResults(); });
