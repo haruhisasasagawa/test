@@ -88,7 +88,26 @@ button.danger{color:var(--alert);border-color:#E2BDB9}
   color:var(--ink-3);background:var(--surface);border:1px solid var(--rule);
   border-radius:99px;padding:2px 10px}
 .dropzone.done .dz-state{color:var(--ok);border-color:var(--ok);background:#fff}
+.dz-btn2{font-size:12px;padding:5px 12px;margin-top:8px}
 @media(max-width:820px){.dropgrid{grid-template-columns:1fr}}
+
+/* ---------- 表の貼り付け ---------- */
+.pastebox{margin-top:14px;border:2px solid var(--accent);border-radius:10px;
+  background:var(--accent-bg);padding:13px 15px}
+.pastebox .pb-t{font-size:15px;font-weight:700;color:var(--accent)}
+.pastebox .pb-s{font-size:11.5px;color:var(--ink-2);line-height:1.6;margin:3px 0 8px}
+.pastebox textarea{width:100%;font-family:var(--jp);font-size:12px;line-height:1.5;
+  border:1px solid var(--rule);border-radius:6px;padding:8px 10px;background:var(--surface);
+  color:var(--ink);resize:vertical}
+.pastebox .pb-a{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px}
+.pastebox .pb-a .hint{margin:0}
+.pastebox .pv{margin-top:10px;background:var(--surface);border:1px solid var(--rule);
+  border-radius:6px;padding:9px 11px;font-size:12px;max-height:230px;overflow:auto}
+.pastebox .pv b{font-size:13px}
+.pastebox .pv table{margin-top:6px}
+.pastebox .pv td,.pastebox .pv th{padding:3px 6px;font-size:11px}
+.pastebox .pv td:nth-child(1),.pastebox .pv td:nth-last-child(-n+3){white-space:nowrap}
+.pastebox .pv .miss{color:var(--warn);font-weight:700}
 
 /* ---------- 折りたたみ ---------- */
 details.fold{border:1px solid var(--rule);border-radius:8px;margin-top:14px;background:var(--surface)}
@@ -486,13 +505,28 @@ table.daily .ng{color:var(--alert);font-weight:700}
         <div class="dz-no">2</div>
         <div class="dz-body">
           <div class="dz-t">入場者プレゼント情報</div>
-          <div class="dz-s">作品名／プレゼント内容／納品数／配布開始日／配布終了日 の表</div>
+          <div class="dz-s">作品名／プレゼント内容／納品数／配布開始日／配布終了日 の表。
+            Excelファイルでも、画面の表をコピーして貼り付けでも読み込めます</div>
           <button class="dz-btn" type="button" data-for="fileGift">ファイルを選ぶ</button>
           <div class="dz-drag">ここにドラッグ＆ドロップでも入ります（手入力だけでも使えます）</div>
+          <button class="dz-btn2" type="button" id="pasteOpen">またはコピーした表を貼り付ける</button>
           <input type="file" id="fileGift" accept=".xlsx" hidden>
         </div>
         <div class="dz-state" id="stateGift">未読込</div>
       </div>
+    </div>
+    <div class="pastebox" id="pasteBox" hidden>
+      <div class="pb-t">表をそのまま貼り付ける</div>
+      <div class="pb-s">Excel・メール・社内サイトの表をマウスで範囲選択してコピーし、下の枠に貼り付けてください
+        （Ctrl+V）。見出し行や「管理方法」「保管場所」などの列が混ざったままで構いません。</div>
+      <textarea id="pasteArea" rows="7" spellcheck="false"
+        placeholder="作品名　プレゼント内容　納品数　配布開始日　配布終了日 … の表をそのまま貼り付け"></textarea>
+      <div class="pb-a">
+        <button class="primary" type="button" id="pasteRun">貼り付けた内容を読み込む</button>
+        <button class="mini" type="button" id="pasteClear">消す</button>
+        <span class="hint" id="pasteHint">貼り付けると自動で下に読み取り結果が出ます</span>
+      </div>
+      <div id="pastePreview"></div>
     </div>
     <div id="psSummary"></div>
     <details id="titleCard" class="fold" hidden>
@@ -1188,6 +1222,153 @@ function parseGiftSheet(sheet, refYmd){
     });
   }
   return out;
+}
+
+/* =========================================================================
+   5-b. 表をそのまま貼り付けて読み込む
+
+   Excelや社内サイトの表をコピーすると、セルの中の改行と行の区切りが
+   どちらもただの改行になってしまい、列の対応が失われる。
+   （「作品名」セルが2行に折り返していると、次の行の作品名と区別がつかない）
+   そこで列を当てにせず、「数量らしい」「日付らしい」語を手がかりに
+   1件ずつ組み立てる。取りこぼしは②の表で直せる前提の割り切り。
+   ========================================================================= */
+/* 見出しの語。改行入りのセル（例「納品数／（一束の数）」）が1語に畳まれて
+   届くことがあるので、先頭から既知の語を剥がしていって何も残らなければ見出しとみなす */
+var GIFT_HEAD_RE=/^(作品名|作品|プレゼント内容|プレゼント名|プレゼント|配布物|納品数|数量|一束の数|束の数|配布開始日|配布始日|開始日|配布日|配布終了日|終了日|管理方法|管理場所|保管場所|納品有無|納品|有無|備考|廃棄有無|廃棄|残数|区分|No|NO|№|番号)/;
+function isGiftHeadToken(s){
+  var t=toHalf(s).replace(/[\s()（）【】]/g,"");
+  if(!t) return false;
+  for(var g=0;t&&g<16;g++){
+    var m=GIFT_HEAD_RE.exec(t);
+    if(!m) return false;
+    t=t.slice(m[0].length);
+  }
+  return t==="";
+}
+/* 「済」「保管」など、管理欄に入る一言。作品名にもプレゼント名にもならない */
+function isGiftStatusToken(s){
+  return /^(済|未|有|無|有り|無し|なし|あり|保管|廃棄|返却|継続|-|―|ー|・|○|◯|×|△|要確認)$/.test(s.replace(/\s/g,""));
+}
+function isQtyToken(s){
+  var t=toHalf(s).replace(/\s/g,"");
+  return /^[\d,]+[(（][\d,]+[)）]$/.test(t) || /^[\d,]+$/.test(t);
+}
+function isDateToken(s){
+  var t=toHalf(s).replace(/\s/g,"");
+  return /^\d{1,2}[\/月]\d{1,2}日?([(（].?[)）])?$/.test(t)
+      || /^\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}日?([(（].?[)）])?$/.test(t);
+}
+function isOpenEndToken(s){
+  return /^(無くなるまで|なくなるまで|無く成るまで|無くなり次第|調整中|未定|確認中)$/.test(s.replace(/\s/g,""));
+}
+/* 備考らしい語。次の作品名と区別するために使う。
+   ここを緩くすると作品名まで備考に吸い込むので、形がはっきりしたものだけ拾う */
+function isGiftNoteToken(s){
+  if(/https?:\/\//.test(s)) return true;      /* URL */
+  if(/^【[^】]*】$/.test(s)) return true;      /* 【残数報告フォーム】のような小見出し */
+  if(/^[①-⑳㈠-㈩※＊*＞>･→➡]/.test(s)) return true;  /* 箇条書き */
+  if(/[。｡]\s*$/.test(s)) return true;         /* 文で終わる説明 */
+  return false;
+}
+/* Excelから直接コピーすると、改行を含むセルは "…" で囲まれて渡ってくる。
+   その中の改行を空白に畳んでおけば、1セルが1語のまま残って精度が上がる。
+   ただの文中の引用符（例：手書き"災愛"メッセージ）を壊さないよう、
+   タブ直後か行頭から始まる引用符があり、かつ数が偶数のときだけ処理する。 */
+function unwrapQuotedCells(text){
+  if(!/(^|\t|\n|\r)"/.test(text)) return text;
+  if((text.match(/"/g)||[]).length%2!==0) return text;
+  var out="", q=false;
+  for(var i=0;i<text.length;i++){
+    var c=text.charAt(i);
+    if(c==='"'){
+      if(q&&text.charAt(i+1)==='"'){ out+='"'; i++; continue; }   /* "" はエスケープ */
+      q=!q; continue;
+    }
+    if(q&&(c==="\n"||c==="\r"||c==="\t")){ out+=" "; continue; }
+    out+=c;
+  }
+  return out;
+}
+function parseGiftText(text, refYmd){
+  if(!text) return [];
+  text=unwrapQuotedCells(String(text));
+  /* 改行とタブのどちらが列区切りかは当てにならないので、両方で切って空白は捨てる */
+  var toks=String(text).split(/[\r\n\t]+/).map(function(s){
+    return s.replace(/[ 　]/g," ").trim();
+  }).filter(function(s){ return s!==""; });
+
+  var out=[], section="", pending=[], qtyTok=null, cur=null;
+  function addNotes(list){
+    if(!list.length) return;
+    var prev=out[out.length-1];
+    if(prev) prev.note=(prev.note?prev.note+" ":"")+list.join(" ");
+  }
+  /* pending の先頭に並ぶ「備考らしい語」は直前の1件のもの。残りが作品名＋プレゼント名 */
+  function splitPending(){
+    var notes=[], names=[];
+    for(var i=0;i<pending.length;i++){
+      if(!names.length&&isGiftNoteToken(pending[i])) notes.push(pending[i]);
+      else names.push(pending[i]);
+    }
+    addNotes(notes);
+    return names;
+  }
+  function emit(startTok){
+    var names=splitPending();
+    pending=[];
+    if(!names.length&&qtyTok===null){ qtyTok=null; cur=null; return; }
+    var present="", title="";
+    if(names.length===1){ title=names[0]; }
+    else if(names.length>1){ present=names[names.length-1]; title=names.slice(0,-1).join(" "); }
+    var q=parseQty(qtyTok);
+    cur={
+      section:section, title:title, present:present,
+      qtyText:qtyTok||"", qty:q.qty, bundle:q.bundle, extras:[],
+      startText:startTok||"", endText:"",
+      start:startTok?parseLooseDate(startTok,refYmd):null, end:null,
+      openEnded:false, tbd:false, note:"", endSeen:false
+    };
+    out.push(cur);
+    qtyTok=null;
+  }
+  for(var i=0;i<toks.length;i++){
+    var t=toks[i];
+    if(isGiftHeadToken(t)||isGiftStatusToken(t)) continue;
+    /* 区分の見出し。ここから下の行の区分が変わる */
+    if(/^(LV|ＬＶ)/i.test(t)&&/上映/.test(t)&&t.length<=20){
+      addNotes(pending); pending=[]; qtyTok=null; cur=null; section="LV特別上映"; continue;
+    }
+    if(/^サンプリング$/.test(t)){
+      addNotes(pending); pending=[]; qtyTok=null; cur=null; section="サンプリング"; continue;
+    }
+    if(isOpenEndToken(t)){
+      if(cur&&!cur.endSeen){
+        cur.endText=t; cur.endSeen=true;
+        cur.openEnded=/無く|なくなる/.test(t); cur.tbd=/調整中|未定|確認中/.test(t);
+        continue;
+      }
+      pending.push(t); continue;
+    }
+    if(isDateToken(t)){
+      if(cur&&!cur.endSeen&&cur.start){          /* 開始日の次に来た日付＝配布終了日 */
+        cur.endText=t; cur.end=parseLooseDate(t,refYmd); cur.endSeen=true; continue;
+      }
+      emit(t); continue;                          /* それ以外は次の1件の配布開始日 */
+    }
+    if(isQtyToken(t)){
+      if(qtyTok!==null) emit("");                 /* 数量が続く＝前の件は開始日なしで確定 */
+      cur=null; qtyTok=t; continue;
+    }
+    /* ここまでに当てはまらない語＝作品名・プレゼント名・備考のいずれか */
+    if(qtyTok!==null) emit("");                   /* 数量の後に文字＝開始日が空欄の1件 */
+    cur=null;
+    pending.push(t);
+  }
+  if(qtyTok!==null) emit("");
+  addNotes(pending);
+  for(var k=0;k<out.length;k++) delete out[k].endSeen;
+  return out.filter(function(x){ return x.title||x.present; });
 }
 
 /* =========================================================================
@@ -2765,6 +2946,33 @@ function loadPsFile(file){
     }catch(e){ alert("読み込みエラー: "+e.message); }
   });
 }
+/* 読み取った表の行を、②の入力表に足す。Excel読み込みと貼り付けで共通 */
+function addGiftRows(rows){
+  var added=0;
+  for(var r=0;r<rows.length;r++){
+    var x=rows[r];
+    if(!x.title&&!x.present) continue;
+    var qty=x.qty||0;
+    var extraNote=[];
+    for(var e=0;e<x.extras.length;e++){ qty+=x.extras[e].qty; extraNote.push(x.extras[e].text); }
+    var cat="present";
+    if(/サンプリング/.test(x.section)) cat="sampling";
+    else if(/LV|特別上映|イベント/i.test(x.section)) cat="event";
+    var note=[];
+    if(x.note) note.push(x.note);
+    if(x.bundle) note.push("一束"+x.bundle);
+    if(extraNote.length) note.push("入荷: "+extraNote.join(" / "));
+    if(x.tbd) note.push("配布終了日は調整中");
+    if(x.qtyText&&!x.qty) note.push("納品数: "+x.qtyText);
+    state.gifts.push(newGift({
+      title:x.title, present:x.present, cat:cat, qty:qty,
+      start:x.start||"", end:(x.openEnded||x.tbd)?"":(x.end||""),
+      note:note.join(" / ")
+    }));
+    added++;
+  }
+  return added;
+}
 function loadGiftFile(file){
   readFile(file,function(err,buf){
     if(err){ alert(err.message); return; }
@@ -2774,32 +2982,61 @@ function loadGiftFile(file){
       var rows=[];
       for(var i=0;i<sheets.length;i++) rows=rows.concat(parseGiftSheet(sheets[i],ref));
       if(!rows.length){ alert("入場者プレゼントの表を読み取れませんでした（作品名／プレゼント内容／納品数／配布開始日／配布終了日 の見出しが必要です）。"); return; }
-      var added=0;
-      for(var r=0;r<rows.length;r++){
-        var x=rows[r];
-        if(!x.title&&!x.present) continue;
-        var qty=x.qty||0;
-        var extraNote=[];
-        for(var e=0;e<x.extras.length;e++){ qty+=x.extras[e].qty; extraNote.push(x.extras[e].text); }
-        var cat="present";
-        if(/サンプリング/.test(x.section)) cat="sampling";
-        else if(/LV|特別上映|イベント/i.test(x.section)) cat="event";
-        var note=[];
-        if(x.note) note.push(x.note);
-        if(x.bundle) note.push("一束"+x.bundle);
-        if(extraNote.length) note.push("入荷: "+extraNote.join(" / "));
-        if(x.tbd) note.push("配布終了日は調整中");
-        if(x.qtyText&&!x.qty) note.push("納品数: "+x.qtyText);
-        state.gifts.push(newGift({
-          title:x.title, present:x.present, cat:cat, qty:qty,
-          start:x.start||"", end:(x.openEnded||x.tbd)?"":(x.end||""),
-          note:note.join(" / ")
-        }));
-        added++;
-      }
+      var added=addGiftRows(rows);
       markLoaded("dropGift","stateGift","読込済 "+added+"件");
       renderGifts(); save();
     }catch(e){ alert("読み込みエラー: "+e.message); }
+  });
+}
+/* ---- 表の貼り付け ---- */
+function pasteRef(){ return state.schedule?state.schedule.start:ymd(new Date()); }
+function renderPastePreview(){
+  var box=el("pastePreview"), txt=el("pasteArea").value;
+  if(!txt.trim()){ box.innerHTML=""; return 0; }
+  var rows=parseGiftText(txt,pasteRef());
+  if(!rows.length){
+    box.innerHTML='<div class="pv"><b>読み取れませんでした。</b>'
+      +'見出しごと、表の範囲をまるごと選択してコピーしてみてください。</div>';
+    return 0;
+  }
+  var h='<div class="pv"><b>'+rows.length+'件 読み取りました。</b>'
+    +'　この内容で足します。取り違えは②の表で直せます。'
+    +'<table><thead><tr><th>区分</th><th>作品名</th><th>プレゼント名</th>'
+    +'<th class="num">納品数</th><th>開始</th><th>終了</th></tr></thead><tbody>';
+  rows.forEach(function(x){
+    var cat=/サンプリング/.test(x.section)?"サンプリング":/LV|特別上映/i.test(x.section)?"LV・イベント":"入プレ";
+    h+='<tr><td>'+esc(cat)+'</td><td>'+esc(x.title)+'</td><td>'+esc(x.present)+'</td>'
+      +'<td class="num">'+(x.qty===null?'<span class="miss">—</span>':x.qty.toLocaleString())+'</td>'
+      +'<td>'+(x.start?fmtDate(x.start):'<span class="miss">—</span>')+'</td>'
+      +'<td>'+(x.openEnded?"無くなるまで":x.tbd?"調整中":x.end?fmtDate(x.end):"—")+'</td></tr>';
+  });
+  box.innerHTML=h+'</tbody></table></div>';
+  return rows.length;
+}
+function setupPaste(){
+  var open=el("pasteOpen"), box=el("pasteBox"), area=el("pasteArea");
+  open.addEventListener("click",function(e){
+    e.stopPropagation();
+    box.hidden=!box.hidden;
+    if(!box.hidden){ area.focus(); box.scrollIntoView({block:"nearest"}); }
+  });
+  /* 貼り付けた瞬間に読み取り結果を出す。押す前に取り違えに気づけるようにする */
+  area.addEventListener("input",function(){
+    var n=renderPastePreview();
+    el("pasteHint").textContent=n?"内容を確かめてから左のボタンを押してください":"";
+  });
+  el("pasteRun").addEventListener("click",function(){
+    var rows=parseGiftText(area.value,pasteRef());
+    if(!rows.length){ alert("読み取れる行がありませんでした。表の範囲をまるごとコピーしてみてください。"); return; }
+    var added=addGiftRows(rows);
+    markLoaded("dropGift","stateGift","読込済 "+state.gifts.length+"件");
+    area.value=""; el("pastePreview").innerHTML="";
+    el("pasteHint").textContent=added+"件を足しました。②で内容を確かめてください。";
+    renderGifts(); save();
+    el("giftTable").scrollIntoView({block:"start",behavior:"smooth"});
+  });
+  el("pasteClear").addEventListener("click",function(){
+    area.value=""; el("pastePreview").innerHTML=""; el("pasteHint").textContent="";
   });
 }
 function setupDrop(dropId, inputId, handler){
@@ -2855,6 +3092,7 @@ function initUI(){
   renderGifts();
   setupDrop("dropPs","filePs",loadPsFile);
   setupDrop("dropGift","fileGift",loadGiftFile);
+  setupPaste();
   el("addGift").addEventListener("click",function(){
     state.gifts.push(newGift({start:el("optBase").value||""}));
     renderGifts(); save();
@@ -2904,7 +3142,7 @@ if(typeof globalThis!=="undefined"){
   globalThis.__PGC={
     inflateRaw:inflateRaw, unzip:unzip, readXlsx:readXlsx,
     parseSchedule:parseSchedule, parseScheduleSheet:parseScheduleSheet,
-    parseGiftSheet:parseGiftSheet, projectPerfs:projectPerfs,
+    parseGiftSheet:parseGiftSheet, parseGiftText:parseGiftText, projectPerfs:projectPerfs,
     simulateGift:simulateGift, buildDailyPlan:buildDailyPlan,
     normTitle:normTitle, titleScore:titleScore,
     parseDateHeader:parseDateHeader, parseLooseDate:parseLooseDate, parseQty:parseQty

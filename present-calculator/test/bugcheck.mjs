@@ -113,6 +113,50 @@ let ng=0; const ok=(c,m)=>{ console.log((c?'  OK  ':'  NG  ')+m); if(!c) ng++; }
   ok(r.left!==r.gift.qty && r.showsLeft===Math.floor(r.gift.qty/r.needPerShow),
     `Q: left=${r.left}(終了時) / qty=${r.gift.qty}(起算日) / 約${r.showsLeft}回分は qty 基準`);
 }
+// R: 表をそのまま貼り付けても読み取れる
+{
+  const txt=fs.readFileSync(process.cwd()+'/test/fixtures/gift-paste.txt','utf8');
+  const rows=P.parseGiftText(txt,'2026-08-07');
+  const cat=r=>/サンプリング/.test(r.section)?'sampling':/LV|特別上映/i.test(r.section)?'event':'present';
+  const n=k=>rows.filter(r=>cat(r)===k).length;
+  ok(rows.length===24, `R: 24件を読み取る（実際 ${rows.length}件）`);
+  ok(n('present')===13&&n('event')===9&&n('sampling')===2,
+    `R: 区分の振り分け 入プレ${n('present')} / LV${n('event')} / サンプ${n('sampling')}`);
+  const pau=rows.find(r=>/ダイノ・ムービー/.test(r.title));
+  ok(pau&&pau.qty===2800&&pau.bundle===200&&pau.start==='2026-07-24'&&pau.openEnded,
+    `R: 「2800（200）」「7月24日(金)」「無くなるまで」 → ${pau&&pau.qty}/${pau&&pau.bundle}/${pau&&pau.start}`);
+  const toy=rows.find(r=>/トイ・ストーリー/.test(r.title));
+  ok(toy&&toy.qty===8000&&toy.bundle===1000, `R: 桁区切り「8,000（1000）」→ ${toy&&toy.qty}`);
+  /* 直前の件の備考を、次の件の作品名に取り違えないこと（現場で作品が入れ替わる事故） */
+  const chii=rows.find(r=>/ちいかわ/.test(r.title));
+  ok(chii&&/残数報告/.test(chii.note)&&chii.tbd, 'R: 複数行の備考は直前の件に付く／「調整中」を判別');
+  ok(toy&&!/残数報告/.test(toy.title), 'R: 備考を次の件の作品名に混ぜない');
+  const fam=rows.find(r=>/ファミリーシアター/.test(r.title));
+  ok(fam&&/同時に配布可能。/.test(fam.note), 'R: 文で終わる備考も直前の件に付く');
+  /* 【】で始まるが備考ではないもの（企画上映の作品名）を備考に吸い込まない */
+  const cars=rows.find(r=>/カーズ/.test(r.title));
+  ok(cars&&cars.start==='2026-09-04'&&cars.end==='2026-09-10', `R: 【企画上映】…の行を1件として読む`);
+  /* 納品数が空でも、日付だけで1件として立てる */
+  const doro=rows.find(r=>/ドロヘドロ/.test(r.title));
+  ok(doro&&doro.qty===null&&doro.present==='入浴剤', 'R: 納品数が空でも読み取る');
+  ok(rows.every(r=>r.start), 'R: 24件すべてに配布開始日が入る');
+}
+// S: Excelから直接コピーした形式（改行入りセルが引用符で囲まれる）も読める
+{
+  const q=c=>/[\n\t"]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;
+  const tsv=[
+    ['作品名','プレゼント内容','納品数\n（一束の数）','配布開始日','配布終了日'],
+    ['オークストリートの異変\nIMAX限定','IMAX限定ビジュアルA3ポスター','1000','8/14(金)','無くなるまで'],
+  ].map(r=>r.map(q).join('\t')).join('\n');
+  const rows=P.parseGiftText(tsv,'2026-08-07');
+  ok(rows.length===1&&rows[0].title==='オークストリートの異変 IMAX限定'&&rows[0].qty===1000,
+    `S: 引用符付きTSV → ${rows.length}件 / ${rows[0]&&rows[0].title}`);
+  /* 文中の引用符（手書き"災愛"）を壊さない */
+  const plain='作品名\tプレゼント内容\t納品数\t配布開始日\n'
+    +'『オブセッション 災愛』第２弾\t【ニッキー手書き"災愛"メッセージ入り】特製ポストカード\t1000（250）\t8/14(金)';
+  const r2=P.parseGiftText(plain,'2026-08-07');
+  ok(r2.length===1&&/"災愛"/.test(r2[0].present), `S: 文中の引用符を残す → ${r2[0]&&r2[0].present}`);
+}
 // M: 重複した上映回を二重に数えない
 {
   const psPath=process.argv[2];
