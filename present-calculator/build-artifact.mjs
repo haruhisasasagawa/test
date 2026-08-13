@@ -35,32 +35,48 @@ const downloadPanel = `
   </div>
 </section>`;
 
-/* 保存は必ず window.claude.downloads.save() を通す。
-   このページは claude.ai の枠内で開かれるので、<a download> や blob URL では
-   ファイルが降りてこない（クリックしても何も起きない）。 */
+/* 保存は claude.ai の枠内なら window.claude.downloads.save() を通す。
+   枠の外（保存したHTMLを直接開いた場合など）ではリンクで落とす。
+   どちらかは押した瞬間に決める。読み込み時に決め打ちすると、
+   まだ window.claude が入っていない一瞬に当たっただけでボタンが死ぬ。 */
 const dlScript = `
 <script>
 (function(){
   var B64="${b64}";
   var btn=document.getElementById("dlBtn"), msg=document.getElementById("dlMsg");
-  if(!btn) return;
-  function say(t){ if(msg) msg.textContent=t; }
-  var dl=(window.claude&&window.claude.downloads)||null;
-  if(!dl){
-    btn.disabled=true;
-    say("この画面では保存できません。チャットに添付した index.html をお使いください。");
-    return;
-  }
+  function say(t){ if(msg) msg.textContent=t||""; }
   function bytes(){
     var bin=atob(B64), buf=new Uint8Array(bin.length);
     for(var i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
     return buf;
   }
-  btn.addEventListener("click",function(){
-    btn.disabled=true; say("保存の確認が出ます。「保存」を選んでください。");
+  function viaLink(){
+    try{
+      var url=URL.createObjectURL(new Blob([bytes()],{type:"text/html;charset=utf-8"}));
+      var a=document.createElement("a");
+      a.href=url; a.download="present-calculator.html";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+      return true;
+    }catch(e){ return false; }
+  }
+  function run(){
+    var dl=(window.claude&&window.claude.downloads)||null;   /* 押した時点で見る */
+    if(!dl){
+      say("保存を試しています…");
+      var okLink=viaLink();
+      setTimeout(function(){
+        say(okLink
+          ? "保存されない場合は、この画面では保存できません。チャットに添付した index.html をお使いください。"
+          : "この画面では保存できません。チャットに添付した index.html をお使いください。");
+      },900);
+      return;
+    }
+    if(btn) btn.disabled=true;
+    say("保存の確認が出ます。「保存」を選んでください。");
     dl.save({filename:"present-calculator.html", data:bytes()}).then(function(){
       say("保存しました。ダブルクリックで開けます。");
-    }).catch(function(e){
+    })["catch"](function(e){
       var c=(e&&e.code)||"unavailable";
       if(c==="extension_not_enabled"||c==="rejected_extension"){
         /* .html を保存できない環境では .txt で渡し、拡張子を直してもらう */
@@ -70,11 +86,16 @@ const dlScript = `
       }
       if(c==="declined") say("保存を取り消しました。もう一度押せばやり直せます。");
       else if(c==="rate_limited") say("少し待ってからもう一度押してください。");
-      else say("保存できませんでした（"+c+"）。チャットに添付した index.html をお使いください。");
-    }).catch(function(){
-      say("保存できませんでした。チャットに添付した index.html をお使いください。");
-    }).then(function(){ btn.disabled=false; });
-  });
+      else if(c==="too_large") say("ファイルが大きすぎて保存できません。チャットの添付をお使いください。");
+      else { say("保存できませんでした（"+c+"）。リンクでの保存を試します…"); viaLink(); }
+    })["catch"](function(e){
+      var c=(e&&e.code)||"?";
+      say("保存できませんでした（"+c+"）。チャットに添付した index.html をお使いください。");
+    }).then(function(){ if(btn) btn.disabled=false; });
+  }
+  if(btn) btn.addEventListener("click",run);
+  /* スマホの「できること」シートからも呼べるようにしておく */
+  window.__dlTool={ run:run, label:"ツールをダウンロード", size:${Math.round(src.length/1024)} };
 })();
 <\/script>`;
 

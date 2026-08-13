@@ -2261,11 +2261,18 @@ function saveFile(filename, data, onFail){
     dl.save({filename:filename, data:data})["catch"](function(e){
       var c=(e&&e.code)||"unavailable";
       if(c==="declined") return;                 /* 取り消しは黙って戻る */
-      if(onFail) onFail(c);
-      else alert("保存できませんでした（"+c+"）。");
+      if(onFail){ onFail(c); return; }
+      /* 保存の仕組みが使えないだけなら、リンクでの保存を試す */
+      if(c==="unavailable"||c==="not_granted"||c==="capability_disabled"||c==="capability_removed"){
+        linkSave(filename,data); return;
+      }
+      alert("保存できませんでした（"+c+"）。");
     });
     return;
   }
+  linkSave(filename,data);
+}
+function linkSave(filename,data){
   var blob=(typeof Blob!=="undefined"&&data instanceof Blob)?data
           :new Blob([data],{type:"application/octet-stream"});
   var url=URL.createObjectURL(blob);
@@ -3674,6 +3681,13 @@ function openSheet(){
     list.push({i:"refresh", t:"計算をやり直す",     s:"条件を変えたときに押してください", f:function(){ runCalc(); setScreen(state.screen); }});
   } else {
     list.push({i:"calc", t:"計算する", s:"ファイルを置いてから押してください", f:function(){ runCalc(); if(state.results&&state.results.length) setScreen("dash"); }});
+  }
+  /* 配布ページで開いているときは、どの画面からでもツールを保存できるようにする
+     （保存パネルはデータ画面にしか出ないため） */
+  if(window.__dlTool){
+    list.push({i:"data", t:window.__dlTool.label,
+      s:"保存すればオフラインで使えます（約"+window.__dlTool.size+"KB）",
+      f:function(){ setScreen("data"); window.__dlTool.run(); }});
   }
   el("sheetList").innerHTML=list.map(function(x,i){
     return '<button data-k="'+i+'">'+icon(x.i)+'<span><b>'+esc(x.t)+'</b><i>'+esc(x.s)+'</i></span></button>';
