@@ -401,6 +401,53 @@ table.daily .ng{color:var(--alert);font-weight:700}
 .toolbar .sm{display:none}      /* 短いラベルはスマホでだけ出す */
 .printhead{display:none}
 
+
+/* ---- A4縦1枚にまとめる一覧 ----
+   画面の表をそのまま刷ると、列幅の都合で1行が何行にも折り返して何十ページにもなる。
+   1件1行の専用の版を作り、寸法はすべて基準サイズ --a4b からの相対で持つ。
+   刷る前に実際の高さを測り、1枚に収まるまで --a4b を下げる（fitA4）。 */
+body.phone.a4 #phoneSheet{font-size:var(--a4b,8.5pt);line-height:1.35;color:#000}
+#phoneSheet.measure{display:block !important;position:absolute;left:-10000px;top:0;
+  width:188mm;background:#fff}
+.a4head{border-bottom:2.5pt solid #000;padding-bottom:.5em;margin-bottom:.7em}
+.a4t{font-size:1.76em;font-weight:700;letter-spacing:.04em;line-height:1.2}
+.a4s{font-size:.94em;color:#333;margin-top:.2em}
+.a4warn{border:1pt solid #000;padding:.3em .6em;margin-bottom:.6em;font-size:.94em}
+/* 汎用の table{font-size:12.5px} が効くと em の連鎖が切れて縮まなくなる */
+table.a4tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:1em}
+table.a4tbl th{background:none;border:none;border-bottom:1pt solid #000;
+  font-size:.88em;font-weight:700;color:#000;padding:.2em .4em;text-align:left;
+  position:static;letter-spacing:.02em}
+table.a4tbl th.c{text-align:center} table.a4tbl th.num{text-align:right}
+table.a4tbl td{border:none;border-bottom:.5pt solid #B9B6AF;padding:.18em .4em;
+  vertical-align:top;background:none;overflow:hidden}
+table.a4tbl td.c{text-align:center}
+table.a4tbl td.num{text-align:right;font-family:var(--num);font-variant-numeric:tabular-nums;
+  font-size:1.06em;white-space:nowrap}
+table.a4tbl td.mk{font-size:1.18em;font-weight:700;color:#000;padding-left:0;padding-right:0}
+/* 1件を必ず2〜3行に収める。折り返させると1行が30mm近くまで伸びる */
+table.a4tbl td b,table.a4tbl td i,table.a4tbl td u{
+  display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.a4tbl td b{font-size:1.12em;font-weight:700;line-height:1.2}
+table.a4tbl td i{font-style:normal;font-size:.82em;color:#333;line-height:1.2}
+table.a4tbl td u{text-decoration:none;font-size:.8em;font-weight:700;line-height:1.2;
+  border-left:2pt solid #000;padding-left:.4em}
+table.a4tbl td.dt{font-family:var(--num);font-size:1.3em;font-weight:700;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+table.a4tbl td.dt span{font-family:var(--jp);font-size:.72em;font-weight:700}
+table.a4tbl th:nth-child(1){width:26px}
+table.a4tbl th:nth-child(3){width:96px} table.a4tbl th:nth-child(4){width:40px}
+table.a4tbl th:nth-child(5){width:54px} table.a4tbl th:nth-child(6){width:42px}
+table.a4tbl tr.a4sec td{border-top:1.5pt solid #000;border-bottom:none;
+  font-size:.94em;font-weight:700;letter-spacing:.06em;padding:.35em .4em 0}
+table.a4tbl tr.a4dim td b{font-size:.94em;font-weight:400}
+table.a4tbl tr.a4dim td i{display:none}
+table.a4tbl tr.a4dim td{padding:.12em .4em;color:#444}
+table.a4tbl tr.a4dim td.dt span{font-size:.8em}
+table.a4tbl tr{break-inside:avoid;page-break-inside:avoid}
+.a4foot{margin-top:.7em;border-top:1pt solid #000;padding-top:.4em;font-size:.82em;
+  color:#333;line-height:1.5}
+
 /* ---------- アイコン ---------- */
 .ic{width:22px;height:22px;flex:0 0 auto;display:inline-block;vertical-align:-4px}
 button .ic{margin-right:6px}
@@ -3013,6 +3060,59 @@ function viewDash(rs){
    A4をそのままスマホで開くと、画面幅に収まった瞬間に文字が豆粒になる。
    紙のサイズ自体を縦長の小さい判（90×160mm）にして、1件ずつ縦に積む。
    ページの向きは印刷時に @page を差し込んで切り替える。            */
+/* 紙にまとめた一覧。mode="phone" は90×160mm、"a4" はA4縦1枚。
+   画面の表をそのまま刷ると、列幅の都合で1行が何行にも折り返して
+   何十ページにもなる。用途ごとに専用の版を作るほうが確実。 */
+function summaryHtml(rs, mode){
+  return mode==="a4" ? a4SheetHtml(rs) : phoneSheetHtml(rs);
+}
+function a4SheetHtml(rs){
+  var base=state.opts.base;
+  var live=rs.filter(function(r){ return r.status==="out"||r.status==="period"||r.status==="surplus"; });
+  live.sort(function(a,b){ return catOf(a.gift).pri-catOf(b.gift).pri; });
+  var rest=rs.filter(function(r){ return live.indexOf(r)<0; });
+  var uncounted=live.filter(function(r){ return r.needsCount; }).length;
+  var h='<div class="a4head"><div class="a4t">入場者プレゼント 配布可能期間 一覧</div>'
+    +'<div class="a4s">'+esc(state.schedule.theater||"")+'　'+fmtDateFull(base)+' 現在の見込み（満席想定）'
+    +'　／　作成 '+fmtDateFull(ymd(new Date()))+'</div></div>';
+  if(uncounted) h+='<div class="a4warn">'+uncounted+'件は在庫の残数が未確認です（起算日までに配った分を引いていません）。'
+    +'表示より早く品切れることがあります。</div>';
+  h+='<table class="a4tbl"><thead><tr>'
+    +'<th class="c">状態</th><th>プレゼント ／ 作品</th>'
+    +'<th class="c">全回に配れる最終日</th><th class="num">あと</th>'
+    +'<th class="num">在庫</th><th class="num">回数分</th></tr></thead><tbody>';
+  var last=null;
+  live.forEach(function(r){
+    var g=r.gift, u=urgencyOf(r), c=catOf(g), nd=noticeDate(r), tt=tailText(r);
+    if(c.key!==last){ last=c.key; h+='<tr class="a4sec"><td colspan="6">'+c.full+'</td></tr>'; }
+    h+='<tr>'
+      +'<td class="c mk">'+u.mark+'</td>'
+      +'<td><b>'+esc(g.present||"（プレゼント名なし）")+'</b>'
+      +'<i>'+esc(g.title||"")+'</i>'
+      +(tt?'<u>'+esc(tt)+'</u>':'')+'</td>'
+      +'<td class="c dt">'+(nd?fmtDate(nd):'<span>'+esc(u.label)+'</span>')+'</td>'
+      +'<td class="num">'+(nd&&r.safeDaysLeft!==null?Math.max(0,r.safeDaysLeft)+'日':'—')+'</td>'
+      +'<td class="num">'+(g.qty||0).toLocaleString()+'</td>'
+      +'<td class="num">'+(r.showsLeft!==null?r.showsLeft:"—")+'</td></tr>';
+  });
+  if(rest.length){
+    h+='<tr class="a4sec"><td colspan="6">配布していないもの（終了・要確認）</td></tr>';
+    rest.forEach(function(r){
+      var g=r.gift, u=urgencyOf(r);
+      h+='<tr class="a4dim"><td class="c mk">'+u.mark+'</td>'
+        +'<td><b>'+esc(g.present||g.title||"")+'</b><i>'+esc(g.title||"")+'</i></td>'
+        +'<td class="c dt"><span>'+esc(u.label)+'</span></td>'
+        +'<td class="num">—</td><td class="num">'+(g.qty||0).toLocaleString()+'</td>'
+        +'<td class="num">—</td></tr>';
+    });
+  }
+  h+='</tbody></table>';
+  h+='<div class="a4foot"><b>その回のお客様全員に配れないときは、その回は配布しません。</b>'
+    +'半端に配らず副支配人へ報告してください。／'
+    +'満席想定の最短見込みです。実際の入りによっては表示より長く配布できます。／'
+    +esc(metaLine())+'</div>';
+  return h;
+}
 function phoneSheetHtml(rs){
   var live=rs.filter(function(r){ return r.status==="out"||r.status==="period"||r.status==="surplus"; });
   live.sort(function(a,b){ return catOf(a.gift).pri-catOf(b.gift).pri; });
@@ -3064,24 +3164,60 @@ function phoneSheetHtml(rs){
     +'満席想定の最短見込みです。'+esc(metaLine())+'</div>';
   return h;
 }
-function printPhoneSheet(){
-  if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
-  el("phoneSheet").innerHTML=phoneSheetHtml(sortedResults());
-  /* @page は入れ子にできないので、刷る直前に差し込んで終わったら外す */
+/* @page は入れ子にできず、名前付きページ（@page yoko）は効かないブラウザがある。
+   刷る直前に @page を差し込み、終わったら外すのが確実。 */
+function setPageRule(css){
   var st=document.getElementById("phonePage");
-  if(!st){
-    st=document.createElement("style"); st.id="phonePage";
-    st.textContent="@page{size:90mm 160mm;margin:6mm}";
-    document.head.appendChild(st);
-  }
-  document.body.classList.add("phone");
-  window.print();
+  if(!st){ st=document.createElement("style"); st.id="phonePage"; document.head.appendChild(st); }
+  st.textContent=css;
 }
-function endPhoneSheet(){
-  if(!document.body.classList.contains("phone")) return;
-  document.body.classList.remove("phone");
+function clearPageRule(){
   var st=document.getElementById("phonePage");
   if(st) st.parentNode.removeChild(st);
+}
+/* A4は「1枚にまとめる」と書いてある以上、はみ出したら約束を破ることになる。
+   画面外で実際に組んで高さを測り、収まるまで基準の文字サイズを下げる。 */
+function fitA4(){
+  var sh=el("phoneSheet"), body=document.body;
+  var wasA4=body.classList.contains("a4"), wasPhone=body.classList.contains("phone");
+  body.classList.add("phone","a4");
+  sh.classList.add("measure");
+  /* 実際の印刷では行の分割や丸めで数mm膨らむ。余裕を8mm取って測る */
+  var target=Math.round((275-8)/25.4*96);   /* A4縦 297mm − 余白11mm×2 − 余裕 */
+  var base=8.5, min=6.2;
+  sh.style.setProperty("--a4b", base+"pt");
+  for(var i=0;i<20&&sh.scrollHeight>target&&base>min;i++){
+    base=Math.round((base-0.15)*100)/100;
+    sh.style.setProperty("--a4b", base+"pt");
+  }
+  var fits=sh.scrollHeight<=target, pages=Math.ceil(sh.scrollHeight/target);
+  sh.classList.remove("measure");
+  if(!wasA4) body.classList.remove("a4");
+  if(!wasPhone) body.classList.remove("phone");
+  return {base:base, fits:fits, pages:pages};
+}
+function printSummary(mode){
+  if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
+  el("phoneSheet").innerHTML=summaryHtml(sortedResults(),mode);
+  if(mode==="a4"){
+    var f=fitA4();
+    setPageRule("@page{size:A4 portrait;margin:11mm}");
+    if(!f.fits) el("phoneSheet").insertAdjacentHTML("beforeend",
+      '<div class="a4foot">※件数が多いため'+f.pages+'枚になります。'
+      +'②で不要なプレゼントの「計算する」を外すと1枚に収まります。</div>');
+  } else {
+    el("phoneSheet").style.removeProperty("--a4b");
+    setPageRule("@page{size:90mm 160mm;margin:6mm}");
+  }
+  document.body.classList.add("phone");
+  document.body.classList.toggle("a4", mode==="a4");
+  window.print();
+}
+function printPhoneSheet(){ printSummary("phone"); }
+function endPhoneSheet(){
+  if(!document.body.classList.contains("phone")&&!document.body.classList.contains("printview")) return;
+  document.body.classList.remove("phone","a4","printview");
+  clearPageRule();
 }
 
 /* ---------------------------------------------------- ②スタッフ掲示 */
@@ -3723,9 +3859,15 @@ function printAs(view){
   if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
   var prevView=state.view, prevScreen=state.screen;
   state.view=view; renderResults();
+  /* 名前付きページ（body.land）に頼らず、向きをここで決める */
+  var land=(view==="daily"||view==="detail");
+  setPageRule(land ? "@page{size:A4 landscape;margin:10mm}" : "@page{size:A4 portrait;margin:12mm}");
+  document.body.classList.add("printview");
   setTimeout(function(){
     window.print();
     setTimeout(function(){
+      document.body.classList.remove("printview");
+      clearPageRule();
       state.view=prevView; renderResults();
       if(isPhone()&&prevScreen) setScreen(prevScreen);
     },400);
@@ -3735,7 +3877,7 @@ function printAs(view){
 function pdfChoices(){
   return [
     {i:"phone", t:"スマホで読む一覧",  s:"90×160mm。スマホで拡大せずに読めます", f:printPhoneSheet},
-    {i:"print", t:"A4に一覧を1枚",     s:"A4横。事務所・ファイル用",             f:function(){ printAs("dash"); }},
+    {i:"print", t:"A4に一覧を1枚",     s:"A4縦。全件を1枚にまとめます",           f:function(){ printSummary("a4"); }},
     {i:"board", t:"掲示のかたちで出す", s:"A4縦。バックヤードに貼る用",           f:function(){ printAs("notice"); }},
     {i:"today", t:"その日の配布指示",   s:"A4横。もぎり・配布担当に渡す",         f:function(){ printAs("daily"); }}
   ];
