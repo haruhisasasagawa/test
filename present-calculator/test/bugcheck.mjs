@@ -157,6 +157,26 @@ let ng=0; const ok=(c,m)=>{ console.log((c?'  OK  ':'  NG  ')+m); if(!c) ng++; }
   const r2=P.parseGiftText(plain,'2026-08-07');
   ok(r2.length===1&&/"災愛"/.test(r2[0].present), `S: 文中の引用符を残す → ${r2[0]&&r2[0].present}`);
 }
+// T: スマホ用PDFの一覧（配布中のものだけを、区分の順に、日付つきで並べる）
+{
+  const perfs=[]; for(let d=0;d<30;d++) perfs.push(mk('2026-08-'+String(10+d).padStart(2,'0'),1,100,600));
+  const g=(cat,name,qty,end)=>({id:1,cat,title:'T',present:name,qty,per:1,start:'2026-08-10',end,
+    links:null,titleKey:K,screens:[],include:'',exclude:'',timeFrom:'',timeTo:''});
+  const o={base:'2026-08-10',rate:1,strict:false,weeks:4,horizon:'2026-09-07'};
+  globalThis.state.opts=o;
+  globalThis.state.schedule={theater:'新宿',start:'2026-08-10',end:'2026-08-16',perfs:perfs,titles:[]};
+  globalThis.state.results=[
+    P.simulateGift(g('sampling','チラシ',500,null),perfs,o),      /* 8/14で終了 */
+    P.simulateGift(g('present','クリアファイル',900,null),perfs,o),/* もっと先まで */
+    P.simulateGift(g('present','終わったもの',100,'2026-08-01'),perfs,o)
+  ];
+  const h=globalThis.phoneSheetHtml(globalThis.state.results);
+  ok(/入場者プレゼント<\/div>[\s\S]*サンプリング/.test(h), 'T: 区分は入プレ→サンプリングの順に出る');
+  ok((h.match(/class="ph-row/g)||[]).length===2, `T: 配布中の2件だけ載る（${(h.match(/class="ph-row/g)||[]).length}件）`);
+  ok(/配布終了（聞かれたとき用）/.test(h)&&/終わったもの/.test(h), 'T: 終了済みは末尾にまとめる');
+  ok(/ph-when/.test(h)&&/8\/1[0-9]<\/b>|<b>8\//.test(h), 'T: 期限を大きい数字で出す');
+  ok(!/style="[^"]*background/.test(h), 'T: 塗りに頼らない（背景オフのプリンタでも読める）');
+}
 // M: 重複した上映回を二重に数えない
 {
   const psPath=process.argv[2];

@@ -223,6 +223,7 @@ table.dash tr.sub td:first-child,table.dash tr.sub td:nth-child(2){border-right:
 .statbox.hot{border-color:var(--alert)} .statbox.hot .v{color:var(--alert)}
 .statbox.warn{border-color:var(--warn)} .statbox.warn .v{color:var(--warn)}
 .statbox .v small{font-size:11px;font-weight:400;color:var(--ink-2);margin-left:2px}
+#phoneSheet{display:none}
 .needbox{margin-top:12px;border:2px solid var(--accent);border-radius:8px;padding:11px 15px;
   background:var(--accent-bg);color:var(--accent);font-size:14px;font-weight:700}
 /* 起算日より前から配っているものの棚卸し促し */
@@ -466,6 +467,35 @@ table.daily .ng{color:var(--alert);font-weight:700}
   .deck{grid-template-columns:1fr 1fr;gap:8px}
   .nrow{padding:9px 0}
   a{color:inherit;text-decoration:none}
+  /* ---- スマホで読む一覧。紙を90×160mmにして、1件ずつ縦に積む ----
+     この判ならiPhoneで全幅表示したときに拡大せずに読める。
+     プリンタの背景オフでも消えないよう、区切りは罫線と記号だけで作る。 */
+  body.phone .printhead,body.phone section.card,body.phone .toolbar{display:none !important}
+  body.phone #phoneSheet{display:block}
+  body.phone{font-size:9pt;line-height:1.45;background:#fff;color:#000}
+  #phoneSheet{color:#000}
+  .ph-head{border-bottom:2.5pt solid #000;padding-bottom:4px;margin-bottom:7px}
+  .ph-ttl{font-size:12pt;font-weight:700;letter-spacing:.02em;line-height:1.25}
+  .ph-sub{font-size:7.5pt;color:#333;margin-top:2px;line-height:1.45}
+  .ph-warn{border:1pt solid #000;padding:4px 6px;margin:6px 0;font-size:8pt;line-height:1.5}
+  .ph-sec{border-top:2.5pt solid #000;border-bottom:.75pt solid #000;
+    font-size:8.5pt;font-weight:700;letter-spacing:.06em;padding:2px 0;margin:9px 0 0}
+  .ph-row{border-bottom:.75pt solid #999;padding:6px 0 7px;break-inside:avoid;page-break-inside:avoid}
+  .ph-film{font-size:7.5pt;color:#333;line-height:1.35}
+  .ph-item{font-size:11.5pt;font-weight:700;line-height:1.3;margin-top:1px}
+  .ph-when{margin-top:3px;display:flex;align-items:baseline;gap:4px}
+  .ph-when b{font-family:var(--num);font-size:21pt;font-weight:700;line-height:1;
+    font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .ph-when b.ph-none{font-family:inherit;font-size:9pt;letter-spacing:0;
+    border:1pt solid #000;padding:1px 6px;line-height:1.4}
+  .ph-when span{font-size:9pt;font-weight:700}
+  .ph-st{font-size:8pt;margin-top:2px}
+  .st-alert .ph-st,.st-warn .ph-st{font-weight:700}
+  .ph-tail{font-size:7.5pt;font-weight:700;margin-top:2px;
+    border-left:2.5pt solid #000;padding-left:5px}
+  .ph-done{font-size:7.5pt;color:#333;line-height:1.6;padding:4px 0}
+  .ph-foot{margin-top:9px;border-top:1.5pt solid #000;padding-top:5px;
+    font-size:7pt;color:#333;line-height:1.55}
   @page{size:A4 portrait;margin:12mm}
   /* その日の配布指示と明細は横向きで刷る（名前付きページ。未対応ブラウザでは縦のまま） */
   @page yoko{size:A4 landscape;margin:10mm}
@@ -620,10 +650,13 @@ table.daily .ng{color:var(--alert);font-weight:700}
   <span class="hint" id="calcHint">ファイルを置いたら押してください</span>
   <span id="afterCalc" hidden>
     <button id="doPrint">印刷 / PDF保存</button>
+    <button id="phonePdf" title="90×160mmの縦長で書き出します。スマホで拡大せずに読めます">スマホ用PDF（一覧）</button>
     <span class="hint" id="printHint"></span>
   </span>
   <button id="toExcel" style="margin-left:auto">Excelで書き出し</button>
 </div>
+<!-- スマホで読む用の一覧。印刷（PDF保存）のときだけ出す -->
+<div id="phoneSheet"></div>
 </main>
 
 <script>
@@ -2494,6 +2527,81 @@ function viewDash(rs){
   return h;
 }
 
+/* ------------------------------------------- スマホで読む一覧（PDF用）
+   A4をそのままスマホで開くと、画面幅に収まった瞬間に文字が豆粒になる。
+   紙のサイズ自体を縦長の小さい判（90×160mm）にして、1件ずつ縦に積む。
+   ページの向きは印刷時に @page を差し込んで切り替える。            */
+function phoneSheetHtml(rs){
+  var live=rs.filter(function(r){ return r.status==="out"||r.status==="period"||r.status==="surplus"; });
+  live.sort(function(a,b){ return catOf(a.gift).pri-catOf(b.gift).pri; });
+  var done=rs.filter(function(r){ return r.status==="ended"; });
+  var hidden=rs.length-live.length-done.length;
+  var base=state.opts.base;
+  var h='<div class="ph-head">'
+    +'<div class="ph-ttl">入場者プレゼント 配布可能期間</div>'
+    +'<div class="ph-sub">'+esc(state.schedule.theater||"")+'<br>'
+    +fmtDateFull(base)+' 現在の見込み（満席想定）</div></div>';
+  var uncounted=live.filter(function(r){ return r.needsCount; }).length;
+  if(uncounted){
+    h+='<div class="ph-warn">'+uncounted+'件は在庫の残数が未確認です。'
+      +'表示より早く品切れることがあります。</div>';
+  }
+  if(!live.length){
+    return h+'<div class="ph-warn">配布中のプレゼントはありません。</div>';
+  }
+  var last=null;
+  live.forEach(function(r){
+    var g=r.gift, u=urgencyOf(r), c=catOf(g), nd=noticeDate(r), d=nd?parseYmd(nd):null;
+    if(c.key!==last){ last=c.key; h+='<div class="ph-sec">'+c.full+'</div>'; }
+    h+='<div class="ph-row st-'+u.k+'">'
+      +'<div class="ph-film">'+esc(g.title||"")+'</div>'
+      +'<div class="ph-item">'+esc(g.present||"")+'</div>'
+      +'<div class="ph-when">'
+      /* 日付が出せないものは、プレゼント名と地続きに見えないよう囲みで見せる */
+      +(d? '<b>'+(d.getMonth()+1)+'/'+d.getDate()+'</b><span>('+WD[d.getDay()]+') まで</span>'
+         : '<b class="ph-none">'+(hasRealEndDate(r)
+              ? fmtDate(base)+"から一部の回のみ" : "当面 終了予定なし")+'</b>')
+      +'</div>'
+      +'<div class="ph-st">'+u.mark+' '+esc(u.label)
+      +(r.needsCount?'／残数未確認':'')+'</div>';
+    var tt=tailText(r);
+    if(tt) h+='<div class="ph-tail">'+esc(tt)+'</div>';
+    h+='</div>';
+  });
+  if(done.length){
+    /* 紙が小さいので、終了分は名前だけ。長いものは切って行数を抑える */
+    h+='<div class="ph-sec">配布終了（聞かれたとき用）</div><div class="ph-done">'
+      +done.map(function(r){
+        var n=(r.gift.present||r.gift.title||"").replace(/\s+/g," ").trim();
+        return esc(n.length>22?n.slice(0,22)+"…":n);
+      }).join("／")+'</div>';
+  }
+  if(hidden) h+='<div class="ph-warn">この一覧に載っていないものが'+hidden+'件あります（要確認）。</div>';
+  h+='<div class="ph-foot"><b>その回のお客様全員に配れないときは配布しません。</b>'
+    +'半端に配らず副支配人へ報告してください。<br>'
+    +'満席想定の最短見込みです。'+esc(metaLine())+'</div>';
+  return h;
+}
+function printPhoneSheet(){
+  if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
+  el("phoneSheet").innerHTML=phoneSheetHtml(sortedResults());
+  /* @page は入れ子にできないので、刷る直前に差し込んで終わったら外す */
+  var st=document.getElementById("phonePage");
+  if(!st){
+    st=document.createElement("style"); st.id="phonePage";
+    st.textContent="@page{size:90mm 160mm;margin:6mm}";
+    document.head.appendChild(st);
+  }
+  document.body.classList.add("phone");
+  window.print();
+}
+function endPhoneSheet(){
+  if(!document.body.classList.contains("phone")) return;
+  document.body.classList.remove("phone");
+  var st=document.getElementById("phonePage");
+  if(st) st.parentNode.removeChild(st);
+}
+
 /* ---------------------------------------------------- ②スタッフ掲示 */
 function viewNotice(rs){
   /* 掲示に出すのは「今まさに配っているもの」だけ。
@@ -3132,6 +3240,9 @@ function initUI(){
   el("calcSticky").addEventListener("click",runCalc);
   el("toExcel").addEventListener("click",exportExcel);
   el("doPrint").addEventListener("click",function(){ window.print(); });
+  el("phonePdf").addEventListener("click",printPhoneSheet);
+  /* 刷り終わり・取り消しのどちらでも元の画面に戻す */
+  window.addEventListener("afterprint",endPhoneSheet);
   el("viewTabs").addEventListener("click",function(e){
     var b=e.target.closest("button[data-view]");
     if(!b) return;
