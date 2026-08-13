@@ -407,7 +407,23 @@ button .ic{margin-right:6px}
 button .ic:only-child{margin-right:0}
 
 /* ---------- スマホのアプリ外枠（画面が広いときは出さない） ---------- */
-.appbar,.tabbar,.sheet,.sheet-bg,.pull,.toast{display:none}
+.appbar,.tabbar,.pull,.toast,.fab{display:none}
+/* 選択肢のシート。画面が広いときは中央のダイアログとして出す */
+.sheet-bg{position:fixed;inset:0;background:rgba(20,20,22,.42);z-index:30}
+.sheet{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:31;
+  width:min(460px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--rule);
+  border-radius:14px;padding:14px 16px 16px;box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.sh-grip{display:none}
+.sh-title{font-size:16px;font-weight:700;letter-spacing:.02em;margin:0 0 8px}
+.sh-list button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  border:1px solid var(--rule);background:var(--surface);padding:11px 13px;border-radius:9px;
+  margin-bottom:7px}
+.sh-list button:hover{background:var(--surface-2);border-color:var(--accent-2)}
+.sh-list .ic{width:23px;height:23px;color:var(--accent);margin:0}
+.sh-list span{display:block;min-width:0}
+.sh-list b{display:block;font-size:14.5px;font-weight:700;line-height:1.3}
+.sh-list i{display:block;font-style:normal;font-size:11.5px;color:var(--ink-2);line-height:1.4}
+.sh-close{width:100%;margin-top:4px;font-weight:700}
 .ic.flip{transform:scaleX(-1)}
 
 /* =====================================================================
@@ -464,6 +480,15 @@ button .ic:only-child{margin-right:0}
   .tabbar button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;
     height:2.5px;background:var(--accent);border-radius:0 0 3px 3px}
   .tabbar button.off{opacity:.34}
+  /* 一覧の上に浮かせる「PDFで出す」。シートの中に隠さない */
+  .fab{display:flex;align-items:center;gap:7px;position:fixed;right:14px;z-index:18;
+    bottom:calc(var(--tb-h,74px) + 14px);
+    background:var(--accent);color:#fff;border:none;border-radius:99px;min-height:48px;
+    padding:12px 18px;font-size:14px;font-weight:700;
+    box-shadow:0 5px 16px rgba(27,58,107,.34)}
+  .fab .ic{width:20px;height:20px;margin:0}
+  .fab[hidden]{display:none !important}
+  body.kb .fab{display:none}
   body.kb .tabbar{display:none}          /* 文字を打っているあいだは邪魔なので隠す */
   body.kb main{padding-bottom:24px}
   .tabbar .dot{display:none;position:absolute;top:8px;right:50%;margin-right:-16px;
@@ -471,6 +496,8 @@ button .ic:only-child{margin-right:0}
   .tabbar .dot.on{display:block}
 
   /* 画面の出し分け。1画面=1つの用途 */
+  /* PDFボタンが最後の行に重ならないよう、結果の画面では下の余白を足す */
+  body:not([data-screen="data"]) main{padding-bottom:calc(var(--tb-h,74px) + 78px)}
   body[data-screen="data"] #resultCard{display:none}
   body:not([data-screen="data"]) section.card.noprint{display:none}
   body:not([data-screen="data"]) #resultCard{display:block;border:none;background:none;
@@ -482,21 +509,23 @@ button .ic:only-child{margin-right:0}
 
   /* ---- 下から出るシート ---- */
   .sheet-bg{display:block;position:fixed;inset:0;background:rgba(20,20,22,.45);z-index:30}
-  .sheet{display:block;position:fixed;left:0;right:0;bottom:0;z-index:31;
-    background:var(--surface);border-radius:16px 16px 0 0;
+  .sheet{display:block;position:fixed;left:0;right:0;top:auto;bottom:0;z-index:31;width:auto;
+    background:var(--surface);border:none;border-radius:16px 16px 0 0;
     padding:8px calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom))
             calc(12px + env(safe-area-inset-left));
     max-height:min(80dvh,80vh);overflow-y:auto;
     box-shadow:0 -8px 30px rgba(0,0,0,.18);
     transform:translateY(100%);transition:transform .18s ease-out}
   .sheet.open{transform:translateY(0)}
-  .sh-grip{width:38px;height:4px;border-radius:2px;background:var(--rule);margin:2px auto 10px;
-    position:relative}
+  .sh-grip{display:block;width:38px;height:4px;border-radius:2px;background:var(--rule);
+    margin:2px auto 10px;position:relative}
+  .sh-title{font-size:15px;margin:0 0 6px;padding:0 8px}
   .sh-grip::after{content:"";position:absolute;left:-60px;right:-60px;top:-12px;bottom:-12px}
   .sheet{touch-action:none}
-  .sh-list button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
-    border:none;background:none;padding:12px 8px;border-radius:10px;min-height:58px}
+  .sh-list button{border:none;background:none;padding:12px 8px;border-radius:10px;
+    min-height:58px;margin-bottom:0}
   .sh-list button+button{border-top:1px solid var(--rule-2)}
+  .sh-list b{font-size:15px}
   .sh-list button:active{background:var(--surface-2)}
   .sh-list .ic{width:24px;height:24px;color:var(--accent);margin:0}
   .sh-list span{display:block;min-width:0}
@@ -519,7 +548,7 @@ button .ic:only-child{margin-right:0}
 
   /* ---- 使い方の一言（初回だけ） ---- */
   .toast{display:flex;align-items:center;gap:8px;position:fixed;left:12px;right:12px;
-    bottom:calc(var(--tb-h,74px) + 12px);z-index:25;
+    bottom:calc(var(--tb-h,74px) + 76px);z-index:25;   /* PDFボタンに重ねない */
     background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;font-size:13px;
     box-shadow:0 6px 20px rgba(0,0,0,.22);
     transform:translateY(14px);opacity:0;transition:opacity .22s,transform .22s}
@@ -1013,9 +1042,9 @@ button .ic:only-child{margin-right:0}
   <button class="primary big" id="calcSticky"><b class="lg">計算する</b><b class="sm">計算</b></button>
   <span class="hint" id="calcHint">ファイルを置いたら押してください</span>
   <span id="afterCalc" hidden>
-    <button id="doPrint"><b class="lg">印刷 / PDF保存</b><b class="sm">印刷</b></button>
-    <button id="phonePdf" title="90×160mmの縦長で書き出します。スマホで拡大せずに読めます"
-      ><b class="lg">スマホ用PDF（一覧）</b><b class="sm">スマホPDF</b></button>
+    <button class="primary" id="phonePdf" title="紙のかたちを選んでPDFにします"
+      ><b class="lg">一覧をPDFで出す</b><b class="sm">PDF</b></button>
+    <button id="doPrint"><b class="lg">この画面を印刷 / PDF</b><b class="sm">印刷</b></button>
     <span class="hint" id="printHint"></span>
   </span>
   <button id="toExcel" style="margin-left:auto"><b class="lg">Excelで書き出し</b><b class="sm">Excel</b></button>
@@ -1024,13 +1053,17 @@ button .ic:only-child{margin-right:0}
 <div id="phoneSheet"></div>
 </main>
 
+<!-- 一覧画面に出す「PDFで出す」ボタン。シートの中に隠さない -->
+<button class="fab noprint" id="fabPdf" hidden></button>
+
 <!-- スマホ用の下タブ。画面の行き来はここだけで完結させる -->
 <nav class="tabbar noprint" id="tabbar" role="tablist"></nav>
 
 <!-- できることの一覧（下から出るシート） -->
 <div class="sheet-bg noprint" id="sheetBg" hidden></div>
-<div class="sheet noprint" id="sheet" hidden role="dialog" aria-label="この画面でできること">
+<div class="sheet noprint" id="sheet" hidden role="dialog" aria-labelledby="sheetTitle">
   <div class="sh-grip"></div>
+  <div class="sh-title" id="sheetTitle"></div>
   <div class="sh-list" id="sheetList"></div>
   <button class="sh-close" id="sheetClose">閉じる</button>
 </div>
@@ -3670,6 +3703,8 @@ function setScreen(key){
     b.setAttribute("aria-selected", b.getAttribute("data-screen")===sc.key?"true":"false");
   });
   updateTabState();
+  var fab=el("fabPdf");
+  if(fab) fab.hidden=!(sc.key!=="data"&&state.results&&state.results.length);
   save();
 }
 /* 計算が終わるまで結果の画面には行けない。行けないタブは薄くして印を消す */
@@ -3683,12 +3718,36 @@ function updateTabState(){
   var need=el("tabbar").querySelector('button[data-screen="data"] .dot');
   if(need) need.classList.toggle("on", !ready);
 }
+/* 表示中のビューを差し替えて刷り、終わったら元に戻す */
+function printAs(view){
+  if(!state.results||!state.results.length){ alert("先に「計算する」を実行してください。"); return; }
+  var prevView=state.view, prevScreen=state.screen;
+  state.view=view; renderResults();
+  setTimeout(function(){
+    window.print();
+    setTimeout(function(){
+      state.view=prevView; renderResults();
+      if(isPhone()&&prevScreen) setScreen(prevScreen);
+    },400);
+  },120);
+}
+/* 「一覧をPDFで出す」の選択肢。用途で紙のかたちが違うので、ここで選んでもらう */
+function pdfChoices(){
+  return [
+    {i:"phone", t:"スマホで読む一覧",  s:"90×160mm。スマホで拡大せずに読めます", f:printPhoneSheet},
+    {i:"print", t:"A4に一覧を1枚",     s:"A4横。事務所・ファイル用",             f:function(){ printAs("dash"); }},
+    {i:"board", t:"掲示のかたちで出す", s:"A4縦。バックヤードに貼る用",           f:function(){ printAs("notice"); }},
+    {i:"today", t:"その日の配布指示",   s:"A4横。もぎり・配布担当に渡す",         f:function(){ printAs("daily"); }}
+  ];
+}
+function openPdfSheet(){ showSheet("一覧をPDFで出す", pdfChoices()); }
+
 /* この画面でできることを下から出す。ボタンを常時並べないぶん一覧が長く見える */
 function openSheet(){
   var list=[];
   if(state.results&&state.results.length){
-    list.push({i:"phone", t:"スマホ用PDF（一覧）", s:"90×160mm。スマホでそのまま読めます", f:printPhoneSheet});
-    list.push({i:"print", t:"印刷 / PDF保存",      s:VIEW_INFO[state.view||"dash"].hint, f:function(){window.print();}});
+    list.push({i:"print", t:"一覧をPDFで出す", s:"紙のかたちを選べます", f:openPdfSheet});
+    list.push({i:"phone", t:"この画面を印刷 / PDF", s:VIEW_INFO[state.view||"dash"].hint, f:function(){window.print();}});
     list.push({i:"sheet", t:"Excelで書き出し",     s:"数式入り。在庫を書き換えると再計算されます", f:exportExcel});
     list.push({i:"refresh", t:"計算をやり直す",     s:"条件を変えたときに押してください", f:function(){ runCalc(); setScreen(state.screen); }});
   } else {
@@ -3701,6 +3760,10 @@ function openSheet(){
       s:"保存すればオフラインで使えます（約"+window.__dlTool.size+"KB）",
       f:function(){ setScreen("data"); window.__dlTool.run(); }});
   }
+  showSheet("この画面でできること", list);
+}
+function showSheet(title, list){
+  el("sheetTitle").textContent=title||"";
   el("sheetList").innerHTML=list.map(function(x,i){
     return '<button data-k="'+i+'">'+icon(x.i)+'<span><b>'+esc(x.t)+'</b><i>'+esc(x.s)+'</i></span></button>';
   }).join("");
@@ -3719,7 +3782,7 @@ function closeSheet(){
 function decorateIcons(){
   [["filePsBtn","file"],["fileGiftBtn","file"],["pasteOpen","paste"],["pasteRun","check"],
    ["calc","calc"],["addGift","plus"],["exportJson","data"],["importJsonBtn","data"],
-   ["clearGift","trash"],["doPrint","print"],["phonePdf","phone"],["toExcel","sheet"],
+   ["clearGift","trash"],["doPrint","print"],["phonePdf","file"],["toExcel","sheet"],
    ["calcSticky","calc"]].forEach(function(x){
     var e=el(x[0]); if(e&&!e.querySelector("svg")) e.insertAdjacentHTML("afterbegin",icon(x[1]));
   });
@@ -4006,7 +4069,9 @@ function initUI(){
   el("calcSticky").addEventListener("click",runCalc);
   el("toExcel").addEventListener("click",exportExcel);
   el("doPrint").addEventListener("click",function(){ window.print(); });
-  el("phonePdf").addEventListener("click",printPhoneSheet);
+  el("phonePdf").addEventListener("click",openPdfSheet);
+  el("fabPdf").innerHTML=icon("file")+"<span>PDFで出す</span>";
+  el("fabPdf").addEventListener("click",openPdfSheet);
   /* 刷り終わり・取り消しのどちらでも元の画面に戻す */
   window.addEventListener("afterprint",endPhoneSheet);
   el("viewTabs").addEventListener("click",function(e){
