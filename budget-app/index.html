@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>月次予算割振アプリ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <h1>月次予算割振アプリ</h1>
+    <p class="sub">接客部門 人件費予算の週別・部門別割振</p>
+  </div>
+  <div class="header-controls">
+    <label class="field">
+      <span>対象月</span>
+      <input type="month" id="ym">
+    </label>
+    <label class="field">
+      <span>開始WEEK</span>
+      <input type="number" id="weekStartNo" min="1" max="53" step="1">
+    </label>
+    <button type="button" id="btnAutoWeek" class="btn ghost" title="対象月の第1週のWEEK番号を自動計算します">自動</button>
+    <span class="saved-state" id="savedState"></span>
+  </div>
+</header>
+
+<nav class="tabbar" id="tabbar">
+  <button type="button" class="tab active" data-target="sec-setup">1. 基本設定</button>
+  <button type="button" class="tab" data-target="sec-attendance">2. 動員入力</button>
+  <button type="button" class="tab" data-target="sec-hall">3. 接客部門割振</button>
+  <button type="button" class="tab" data-target="sec-categories">4. 項目別予算</button>
+  <button type="button" class="tab" data-target="sec-leave">5. 有休・更衣</button>
+  <button type="button" class="tab" data-target="sec-summary">6. 集計・出力</button>
+</nav>
+
+<main>
+
+  <!-- ============ 1. 基本設定 ============ -->
+  <section id="sec-setup" class="panel active">
+    <h2>1. 基本設定</h2>
+
+    <div class="card">
+      <h3>接客部門 予算</h3>
+      <div class="row">
+        <label class="field wide">
+          <span>接客部門 月間予算（円）</span>
+          <input type="text" inputmode="numeric" id="hallBudget" class="num">
+        </label>
+        <div class="field wide readout">
+          <span>週数</span>
+          <strong data-out="weekCount">-</strong>
+        </div>
+      </div>
+      <p class="hint">週は「金曜〜木曜」で区切ります。月初・月末は端数の週になります。</p>
+    </div>
+
+    <div class="card">
+      <h3>部門構成比</h3>
+      <table class="grid narrow" id="deptRatioTable">
+        <thead><tr><th>部門</th><th>構成比</th><th>％</th></tr></thead>
+        <tbody></tbody>
+        <tfoot><tr><th>合計</th><td data-out="deptRatioSum">-</td><td data-out="deptRatioSumPct">-</td></tr></tfoot>
+      </table>
+      <p class="hint">合計が100%になるように入力してください（小数で入力：例 0.4427）。</p>
+    </div>
+
+    <div class="card">
+      <h3>保存データ</h3>
+      <div class="row wrap">
+        <button type="button" class="btn" id="btnSave">この月を保存</button>
+        <label class="field">
+          <span>保存済みの月</span>
+          <select id="savedMonths"><option value="">-</option></select>
+        </label>
+        <button type="button" class="btn ghost" id="btnLoadMonth">読込</button>
+        <button type="button" class="btn ghost" id="btnCopyPrev">前月の設定を複製</button>
+        <button type="button" class="btn ghost" id="btnExportJson">JSON書出</button>
+        <button type="button" class="btn ghost" id="btnImportJson">JSON読込</button>
+        <button type="button" class="btn danger" id="btnResetMonth">この月をリセット</button>
+        <input type="file" id="fileJson" accept="application/json" hidden>
+      </div>
+      <p class="hint">データはこのブラウザ内（ローカルストレージ）に月単位で保存されます。</p>
+    </div>
+  </section>
+
+  <!-- ============ 2. 動員入力 ============ -->
+  <section id="sec-attendance" class="panel">
+    <h2>2. 動員入力</h2>
+
+    <div class="card">
+      <h3>まとめて貼り付け</h3>
+      <p class="hint">Excelの動員列をコピーして貼り付け → 「取込」。1行1日（1日から順）、または「日付[TAB]動員」の2列形式にも対応します。</p>
+      <textarea id="pasteBox" rows="4" placeholder="5359&#10;3158&#10;4783 …"></textarea>
+      <div class="row">
+        <button type="button" class="btn" id="btnPaste">取込</button>
+        <button type="button" class="btn ghost" id="btnClearAttendance">動員をクリア</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>日別動員</h3>
+      <div class="table-scroll">
+        <table class="grid" id="attendanceTable">
+          <thead><tr><th>日付</th><th>曜日</th><th>WEEK</th><th>動員</th><th>構成比</th></tr></thead>
+          <tbody></tbody>
+          <tfoot><tr><th colspan="3">月計</th><td data-out="attTotal">-</td><td data-out="attTotalPct">-</td></tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>週別集計</h3>
+      <div class="table-scroll">
+        <table class="grid" id="weekSummaryTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. 接客部門割振 ============ -->
+  <section id="sec-hall" class="panel">
+    <h2>3. 接客部門 割振</h2>
+
+    <div class="card">
+      <h3>週別・部門別 割振</h3>
+      <div class="row wrap">
+        <label class="check"><input type="checkbox" id="hallWeeklyManual"> 週予算を手入力する（既定は動員構成比で自動按分）</label>
+      </div>
+      <div class="table-scroll">
+        <table class="grid" id="hallTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint">「予算外」は予算に含まれないミーティング・棚卸・返品作業などの追加分です（各部門・各週に入力）。</p>
+    </div>
+
+    <div class="card compact-stats">
+      <div class="stat"><span>月計</span><strong data-out="hallTotal">-</strong></div>
+      <div class="stat"><span>予算</span><strong data-out="hallBudgetOut">-</strong></div>
+      <div class="stat"><span>予算比</span><strong data-out="hallRate">-</strong></div>
+      <div class="stat"><span>差額</span><strong data-out="hallDiff">-</strong></div>
+    </div>
+  </section>
+
+  <!-- ============ 4. 項目別予算 ============ -->
+  <section id="sec-categories" class="panel">
+    <h2>4. 項目別予算</h2>
+    <div class="row wrap">
+      <button type="button" class="btn ghost" id="btnAddCategory">項目を追加</button>
+      <button type="button" class="btn ghost" id="btnRestoreCategories">既定の項目に戻す</button>
+    </div>
+    <div id="categoryList"></div>
+  </section>
+
+  <!-- ============ 5. 有休・更衣 ============ -->
+  <section id="sec-leave" class="panel">
+    <h2>5. 有休・更衣時間</h2>
+
+    <div class="card">
+      <h3>有休計算表</h3>
+      <div class="row wrap">
+        <label class="field"><span>有休単価</span><input type="text" inputmode="numeric" id="leaveUnit" class="num"></label>
+        <label class="field"><span>時間</span><input type="text" inputmode="decimal" id="leaveHours" class="num"></label>
+        <label class="field"><span>予算（円）</span><input type="text" inputmode="numeric" id="leaveBudget" class="num"></label>
+      </div>
+      <div class="table-scroll">
+        <table class="grid" id="leaveTable">
+          <thead><tr><th>WEEK</th><th>単価</th><th>時間</th><th>人数</th><th>金額</th><th>補正後</th><th>1日あたり</th></tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+      <p class="hint">予算との差額は各週へ均等に振り分け、補正後の合計が予算と一致します。</p>
+    </div>
+
+    <div class="card">
+      <h3>更衣時間</h3>
+      <div class="row wrap">
+        <label class="field"><span>単価</span><input type="text" inputmode="numeric" id="changeUnit" class="num"></label>
+        <label class="field"><span>時間（分）</span><input type="text" inputmode="decimal" id="changeMinutes" class="num"></label>
+        <label class="field"><span>予算基準額</span><input type="text" inputmode="numeric" id="changeBase" class="num"></label>
+      </div>
+      <p class="hint">予算 ＝ 予算基準額 × 接客部門の予算比</p>
+      <div class="table-scroll">
+        <table class="grid" id="changeTable">
+          <thead><tr><th>WEEK</th><th>単価</th><th>時間（分）</th><th>人数</th><th>金額</th></tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6. 集計・出力 ============ -->
+  <section id="sec-summary" class="panel">
+    <h2>6. 集計・出力</h2>
+
+    <div class="card">
+      <h3>項目別 週配分 集計</h3>
+      <div class="table-scroll">
+        <table class="grid" id="summaryTable">
+          <thead></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+      <div class="row wrap">
+        <button type="button" class="btn" data-copy="summaryTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="summaryTable">CSVダウンロード</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>接客部門 週配分</h3>
+      <div class="table-scroll">
+        <table class="grid" id="summaryHallTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row wrap">
+        <button type="button" class="btn" data-copy="summaryHallTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="summaryHallTable">CSVダウンロード</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>チェック</h3>
+      <ul class="checklist" id="checkList"></ul>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
