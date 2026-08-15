@@ -1,4 +1,13 @@
-"""月次予算割振ブックを生成する。"""
+"""月次予算割振ブックを生成する。
+
+構成
+  1. 設定          … 年・月を変えると週の区切り（金曜〜木曜）が入れ替わる
+  2. 動員予測      … 日別（または週別）の動員予測 → 週ごとの構成比
+  3. 予算割振      … 月予算を週別動員の構成比で自動配分（メイン）
+  4. 明細（実施予定）… 週ごとの回数から積み上げたい項目用
+  5. 接客部門      … 週配分を部門別に分ける
+  6. 有休          … 有休計算表
+"""
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -11,12 +20,14 @@ YELLOW = "FFF2CC"     # 入力セル
 GRAY = "F2F2F2"       # 見出し
 HEAD = "D9E2F3"       # 表ヘッダ
 TOTALFILL = "E2EFDA"  # 合計行
+RATIOFILL = "FCE4D6"  # 構成比の行
 
 thin = Side(style="thin", color="BFBFBF")
 BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
 
 YEN = '#,##0;[Red]-#,##0;"-"'
 PCT = '0.0%;[Red]-0.0%;"-"'
+PCT2 = '0.00%;[Red]-0.00%;"-"'
 NUM = '#,##0.##;[Red]-#,##0.##;"-"'
 
 wb = openpyxl.Workbook()
@@ -62,11 +73,11 @@ def widths(ws, spec):
 # =====================================================================
 s = wb.active
 s.title = "設定"
-title(s, "月次予算割振", "対象月を変えるだけで、日付・週の区切り・WEEK番号がすべて入れ替わります。")
+title(s, "月次予算割振",
+      "対象月を変えるだけで、日付・週の区切り（金曜〜木曜）・WEEK番号がすべて入れ替わります。")
 
 put(s, "A4", "■ 対象月", bold=True, fill=GRAY)
-for row, (label, val) in enumerate(
-        [("年", 2026), ("月", 4)], start=5):
+for row, (label, val) in enumerate([("年", 2026), ("月", 4)], start=5):
     put(s, f"A{row}", label, bold=True)
     put(s, f"B{row}", val, color=BLUE, fill=YELLOW, border=True, align="center")
 put(s, "A7", "開始WEEK", bold=True)
@@ -108,9 +119,9 @@ for i, (name, ratio) in enumerate([
         ("STORE", 0.03629238541840829),
         ("OFFICE", 0.08877471764477365)], start=29):
     put(s, f"A{i}", name, border=True)
-    put(s, f"B{i}", ratio, color=BLUE, fill=YELLOW, fmt="0.00%", align="center", border=True)
+    put(s, f"B{i}", ratio, color=BLUE, fill=YELLOW, fmt=PCT2, align="center", border=True)
 put(s, "A33", "合計", bold=True, border=True)
-put(s, "B33", "=SUM(B29:B32)", bold=True, fmt="0.00%", align="center", border=True)
+put(s, "B33", "=SUM(B29:B32)", bold=True, fmt=PCT2, align="center", border=True)
 put(s, "C33", "← 100.00% になるようにしてください", size=9, color="808080")
 
 put(s, "A35", "■ 凡例", bold=True, fill=GRAY)
@@ -118,16 +129,19 @@ put(s, "A36", "入力するセル", fill=YELLOW, color=BLUE, border=True)
 put(s, "B36", "黄色 ＝ 手で入力するところ（青字）", size=9, color="808080")
 put(s, "A37", "自動計算", border=True)
 put(s, "B37", "白 ＝ 数式が入っています（触らないでください）", size=9, color="808080")
-put(s, "A39", "※ 元の値は 2026年4月シートから写しています。実態に合わせて書き換えてください。",
+put(s, "A39", "※ 初期値は 2026年4月シートから写しています。実態に合わせて書き換えてください。",
     size=9, color="808080")
-widths(s, {"A": 24, "B": 14, "C": 52, "D": 12, "E": 8})
+widths(s, {"A": 24, "B": 14, "C": 54, "D": 12, "E": 8})
 
 # =====================================================================
-# 2. 動員
+# 2. 動員予測
 # =====================================================================
-a = wb.create_sheet("動員")
-title(a, "日別動員", "D列に日別動員を入力すると、週別の構成比まで自動で出ます（未入力でも他シートは使えます）。")
-for col, label in zip("ABCDE", ["日付", "曜日", "WEEK", "動員", "構成比"]):
+a = wb.create_sheet("動員予測")
+title(a, "動員予測",
+      "日別の予測を入れると、金曜〜木曜の週ごとに合計され、その月の何％にあたるかが出ます。"
+      "週単位の予測しかない場合は右の表のK列に直接入れてください。")
+
+for col, label in zip("ABCDE", ["日付", "曜日", "WEEK", "動員予測", "日別構成比"]):
     put(a, f"{col}3", label, bold=True, fill=HEAD, align="center", border=True)
 for i in range(31):
     r = 4 + i
@@ -138,49 +152,187 @@ for i in range(31):
     put(a, f"C{r}", f'=IF($A{r}="","",IF($A{r}<=設定!$B$13,1,1+CEILING(($A{r}-設定!$B$13)/7,1)))',
         align="center", border=True)
     put(a, f"D{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
-    put(a, f"E{r}", f'=IF($A{r}="","",IF($D$35=0,0,$D{r}/$D$35))', fmt=PCT, border=True)
+    put(a, f"E{r}", f'=IF($A{r}="","",IF($D$35=0,0,$D{r}/$D$35))', fmt=PCT2, border=True)
 put(a, "A35", "合計", bold=True, fill=TOTALFILL, border=True)
 for col in "BC":
     put(a, f"{col}35", None, fill=TOTALFILL, border=True)
 put(a, "D35", "=SUM(D4:D34)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(a, "E35", '=IF($D$35=0,"",SUM(E4:E34))', bold=True, fill=TOTALFILL, fmt=PCT, border=True)
+put(a, "E35", '=IF($D$35=0,"",SUM(E4:E34))', bold=True, fill=TOTALFILL, fmt=PCT2, border=True)
 
-for col, label in zip("GHIJK", ["週", "WEEK", "期間", "動員", "構成比"]):
-    put(a, f"{col}3", label, bold=True, fill=HEAD, align="center", border=True)
+put(a, "G2", "■ 週別（金曜〜木曜）", bold=True, fill=GRAY)
+for col, label in zip("GHIJKLM",
+                      ["週", "WEEK", "期間", "日別からの合計", "週で直接入力", "動員予測", "構成比"]):
+    put(a, f"{col}3", label, bold=True, fill=HEAD, align="center", border=True, wrap=True)
 for i in range(1, 7):
     r = 3 + i
-    sr = 20 + i  # 設定シートの対応行
+    sr = 20 + i  # 設定シートの週テーブル行
     put(a, f"G{r}", i, align="center", border=True)
-    put(a, f"H{r}", f'=設定!$B${sr}', align="center", border=True)
+    put(a, f"H{r}", f"=設定!$B${sr}", align="center", border=True)
     put(a, f"I{r}", f'=IF(設定!$B${sr}="","",TEXT(設定!$C${sr},"m/d")&"〜"&TEXT(設定!$D${sr},"m/d"))',
         align="center", border=True)
     put(a, f"J{r}", f'=IF(設定!$B${sr}="","",SUMIF($C$4:$C$34,$G{r},$D$4:$D$34))',
         fmt=YEN, border=True)
-    put(a, f"K{r}", f'=IF(設定!$B${sr}="","",IF($J$10=0,0,$J{r}/$J$10))', fmt=PCT, border=True)
+    put(a, f"K{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+    put(a, f"L{r}", f'=IF(設定!$B${sr}="","",IF($K{r}="",$J{r},$K{r}))',
+        bold=True, fmt=YEN, border=True)
+    put(a, f"M{r}", f'=IF(設定!$B${sr}="","",IF($L$10=0,0,$L{r}/$L$10))',
+        bold=True, fmt=PCT2, border=True)
 put(a, "I10", "合計", bold=True, fill=TOTALFILL, align="center", border=True)
 put(a, "J10", "=SUM(J4:J9)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(a, "K10", '=IF($J$10=0,"",SUM(K4:K9))', bold=True, fill=TOTALFILL, fmt=PCT, border=True)
-for cell in ("G3", "H3", "I3", "J3", "K3"):
-    pass
-widths(a, {"A": 9, "B": 7, "C": 7, "D": 12, "E": 10, "F": 3,
-           "G": 6, "H": 8, "I": 16, "J": 12, "K": 10})
+put(a, "K10", "=SUM(K4:K9)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(a, "L10", "=SUM(L4:L9)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(a, "M10", '=IF($L$10=0,"",SUM(M4:M9))', bold=True, fill=TOTALFILL, fmt=PCT2, border=True)
+put(a, "G12", "※ K列（週で直接入力）に数字を入れると、その週は日別の合計ではなくK列の値を使います。",
+    size=9, color="808080")
+put(a, "G13", "※ M列の構成比が「予算割振」シートの割振に使われます。",
+    size=9, color="808080")
+widths(a, {"A": 9, "B": 7, "C": 7, "D": 12, "E": 11, "F": 3,
+           "G": 6, "H": 8, "I": 15, "J": 13, "K": 12, "L": 13, "M": 10})
 a.freeze_panes = "A4"
 
 # =====================================================================
-# 3. 割振（メイン）
+# 3. 予算割振（メイン）
 # =====================================================================
-p = wb.create_sheet("割振")
-title(p, "項目別の実施予定",
-      "黄色のセルに入力します。金額 ＝ 単価 × 時間 × 人数 × 回数（回数＝その週に何回・何日実施するか）。行は自由に増やせます。")
+b = wb.create_sheet("予算割振")
+title(b, "予算割振（動員予測の構成比で自動配分）",
+      "月予算（B列）を入れると、その月の週ごとの動員構成比に応じて金額が割り振られます。"
+      "端数は最終週で調整するので、配分計は必ず月予算と一致します。")
+
+put(b, "A4", "月動員予測", bold=True)
+put(b, "B4", "=動員予測!$L$10", fmt=YEN, border=True)
+put(b, "C4", "週数", bold=True, align="center")
+put(b, "D4", "=設定!$B$17", align="center", border=True)
+
+HEADR = 6
+RATIOR = 7
+ITEM_FIRST = 8
+ITEM_LAST = 27
+TOTR = 29
+
+put(b, f"A{HEADR}", "項目", bold=True, fill=HEAD, align="center", border=True)
+put(b, f"B{HEADR}", "月予算", bold=True, fill=HEAD, align="center", border=True)
+for i in range(6):
+    col = get_column_letter(3 + i)  # C..H
+    put(b, f"{col}{HEADR}", f"=設定!$B${21 + i}", bold=True, fill=HEAD, align="center", border=True)
+for col, label in zip("IJKL", ["配分計", "明細合計", "差（予算−明細）", "備考"]):
+    put(b, f"{col}{HEADR}", label, bold=True, fill=HEAD, align="center", border=True, wrap=True)
+
+put(b, f"A{RATIOR}", "動員構成比", bold=True, fill=RATIOFILL, border=True)
+put(b, f"B{RATIOR}", None, fill=RATIOFILL, border=True)
+for i in range(6):
+    col = get_column_letter(3 + i)
+    put(b, f"{col}{RATIOR}", f'=IF({col}${HEADR}="","",動員予測!$M${4 + i})',
+        bold=True, fill=RATIOFILL, fmt=PCT2, border=True)
+put(b, f"I{RATIOR}", f'=IF($B$4=0,"",SUM($C{RATIOR}:$H{RATIOR}))',
+    bold=True, fill=RATIOFILL, fmt=PCT2, border=True)
+for col in "JKL":
+    put(b, f"{col}{RATIOR}", None, fill=RATIOFILL, border=True)
+
+ITEMS = [
+    "接客部門",
+    "障がい者雇用",
+    "新規採用研修（トレーニー）",
+    "新規採用研修（トレーナー）",
+    "既存スタッフ研修",
+    "防災訓練",
+    "棚卸（予算分）",
+    "ストア準備・返品（予算分）",
+    "ストア準備・返品（追加分）",
+    "その他",
+    "リーダー手当",
+]
+LEAVE_ROW = ITEM_FIRST + len(ITEMS)  # 有給休暇の行
+
+for idx in range(ITEM_LAST - ITEM_FIRST + 1):
+    r = ITEM_FIRST + idx
+    name = ITEMS[idx] if idx < len(ITEMS) else ("有給休暇" if r == LEAVE_ROW else None)
+    is_leave = (r == LEAVE_ROW)
+
+    put(b, f"A{r}", name, color=BLACK if is_leave else BLUE,
+        fill=None if is_leave else YELLOW, border=True)
+    if is_leave:
+        put(b, f"B{r}", "=有休!$B$5", fmt=YEN, border=True)
+    else:
+        put(b, f"B{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+
+    for i in range(6):
+        col = get_column_letter(3 + i)
+        nxt = get_column_letter(4 + i) if i < 5 else None
+        if is_leave:
+            f = f'=IF({col}${HEADR}="","",有休!$E${8 + i})'
+        elif i == 0:
+            f = (f'=IF(OR($A{r}="",{col}${HEADR}=""),"",'
+                 f'IF({nxt}${HEADR}="",$B{r},ROUND($B{r}*{col}${RATIOR},0)))')
+        elif i < 5:
+            prev = get_column_letter(2 + i)
+            f = (f'=IF(OR($A{r}="",{col}${HEADR}=""),"",'
+                 f'IF({nxt}${HEADR}="",$B{r}-SUM($C{r}:{prev}{r}),ROUND($B{r}*{col}${RATIOR},0)))')
+        else:
+            f = f'=IF(OR($A{r}="",{col}${HEADR}=""),"",$B{r}-SUM($C{r}:G{r}))'
+        put(b, f"{col}{r}", f, fmt=YEN, border=True)
+
+    put(b, f"I{r}", f'=IF($A{r}="","",SUM($C{r}:$H{r}))', bold=True, fmt=YEN, border=True)
+    if is_leave:
+        put(b, f"J{r}", None, border=True)
+        put(b, f"K{r}", None, border=True)
+        put(b, f"L{r}", "有休シートの金額を使用", size=9, color="808080", border=True)
+    else:
+        put(b, f"J{r}", f'=IF($A{r}="","",SUMIF(明細!$A$5:$A$104,$A{r},明細!$M$5:$M$104))',
+            fmt=YEN, border=True)
+        put(b, f"K{r}", f'=IF(OR($A{r}="",$J{r}=0),"",$B{r}-$J{r})', fmt=YEN, border=True)
+        put(b, f"L{r}", None, color=BLUE, fill=YELLOW, border=True)
+
+put(b, f"A{TOTR}", "合計", bold=True, fill=TOTALFILL, border=True)
+put(b, f"B{TOTR}", f"=SUM($B${ITEM_FIRST}:$B${ITEM_LAST})", bold=True, fill=TOTALFILL,
+    fmt=YEN, border=True)
+for i in range(6):
+    col = get_column_letter(3 + i)
+    put(b, f"{col}{TOTR}", f'=IF({col}${HEADR}="","",SUM({col}${ITEM_FIRST}:{col}${ITEM_LAST}))',
+        bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(b, f"I{TOTR}", f"=SUM($I${ITEM_FIRST}:$I${ITEM_LAST})", bold=True, fill=TOTALFILL,
+    fmt=YEN, border=True)
+put(b, f"J{TOTR}", f"=SUM($J${ITEM_FIRST}:$J${ITEM_LAST})", bold=True, fill=TOTALFILL,
+    fmt=YEN, border=True)
+put(b, f"K{TOTR}", f"=$B{TOTR}-$J{TOTR}", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(b, f"L{TOTR}", None, fill=TOTALFILL, border=True)
+
+put(b, f"A{TOTR + 2}", "■ チェック", bold=True, fill=GRAY)
+put(b, f"A{TOTR + 3}", "配分計 − 月予算")
+put(b, f"B{TOTR + 3}", f"=$I{TOTR}-$B{TOTR}", fmt=YEN, border=True)
+put(b, f"C{TOTR + 3}", "← 0 なら、割り振った金額の合計が月予算とぴったり一致しています",
+    size=9, color="808080")
+put(b, f"A{TOTR + 4}", "明細シートの金額計")
+put(b, f"B{TOTR + 4}", "=明細!$M$106", fmt=YEN, border=True)
+put(b, f"A{TOTR + 5}", "うち上の表に載った額")
+put(b, f"B{TOTR + 5}", f"=$J{TOTR}", fmt=YEN, border=True)
+put(b, f"A{TOTR + 6}", "差（項目名が一致していない額）", bold=True)
+put(b, f"B{TOTR + 6}", f"=$B{TOTR + 4}-$B{TOTR + 5}", bold=True, fmt=YEN, border=True)
+put(b, f"C{TOTR + 6}", "← 0 以外なら、明細シートの項目名がこの表の項目名と一致していません",
+    size=9, color="808080")
+
+put(b, f"A{TOTR + 8}",
+    "※ 月予算だけ入れれば、動員予測の構成比どおりに週へ配分されます。"
+    "「明細合計」は明細シートで積み上げた金額（参考）です。",
+    size=9, color="808080")
+widths(b, {"A": 28, "B": 14, **{get_column_letter(3 + i): 13 for i in range(6)},
+           "I": 14, "J": 13, "K": 15, "L": 22})
+b.freeze_panes = f"C{ITEM_FIRST}"
+
+# =====================================================================
+# 4. 明細（実施予定）
+# =====================================================================
+p = wb.create_sheet("明細")
+title(p, "明細（実施予定）",
+      "週ごとの回数から金額を積み上げたい項目に使います。金額 ＝ 単価 × 時間 × 人数 × 回数。"
+      "使わない場合は空のままで構いません。")
 
 p.merge_cells("F3:K3")
 put(p, "F3", "週ごとの回数（日数）を入力", bold=True, fill=HEAD, align="center", border=True)
 p.merge_cells("N3:S3")
 put(p, "N3", "週別金額（自動計算）", bold=True, fill=GRAY, align="center", border=True)
 
-heads = {"A": "項目", "B": "内容", "C": "単価(時給)", "D": "時間", "E": "人数",
-         "L": "回数計", "M": "金額計"}
-for col, label in heads.items():
+for col, label in {"A": "項目", "B": "内容", "C": "単価(時給)", "D": "時間", "E": "人数",
+                   "L": "回数計", "M": "金額計"}.items():
     put(p, f"{col}4", label, bold=True, fill=HEAD, align="center", border=True, wrap=True)
 for i in range(6):
     wk = get_column_letter(6 + i)     # F..K
@@ -189,7 +341,7 @@ for i in range(6):
     put(p, f"{wk}4", f"={ref}", bold=True, fill=HEAD, align="center", border=True)
     put(p, f"{amt}4", f"={ref}", bold=True, fill=GRAY, align="center", border=True)
 
-ITEMS = [
+DETAIL = [
     ("障がい者雇用", "駒澤さん", 1236, 5, 1, [3, 3, 3, 3, 3, None]),
     ("新規採用研修（トレーニー）", "週2〜3名", 1226, 5.5, 2, [None] * 6),
     ("新規採用研修（トレーニー）", "カンポリ参加", 1226, 2.15, 3, [None] * 6),
@@ -216,7 +368,7 @@ ITEMS = [
 FIRST, LAST = 5, 104
 for r in range(FIRST, LAST + 1):
     idx = r - FIRST
-    item = ITEMS[idx] if idx < len(ITEMS) else None
+    item = DETAIL[idx] if idx < len(DETAIL) else None
     put(p, f"A{r}", item[0] if item else None, color=BLUE, fill=YELLOW, border=True)
     put(p, f"B{r}", item[1] if item else None, color=BLUE, fill=YELLOW, border=True)
     put(p, f"C{r}", item[2] if item else None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
@@ -227,8 +379,7 @@ for r in range(FIRST, LAST + 1):
         amt = get_column_letter(14 + i)
         put(p, f"{wk}{r}", item[5][i] if item else None,
             color=BLUE, fill=YELLOW, fmt=NUM, align="center", border=True)
-        put(p, f"{amt}{r}",
-            f'=IF(OR($A{r}="",{amt}$4=""),"",$C{r}*$D{r}*$E{r}*{wk}{r})',
+        put(p, f"{amt}{r}", f'=IF(OR($A{r}="",{amt}$4=""),"",$C{r}*$D{r}*$E{r}*{wk}{r})',
             fmt=YEN, border=True)
     put(p, f"L{r}", f'=IF($A{r}="","",SUMPRODUCT(($F$4:$K$4<>"")*$F{r}:$K{r}))',
         fmt=NUM, align="center", border=True)
@@ -240,111 +391,32 @@ for col in "BCDE":
 for i in range(6):
     wk = get_column_letter(6 + i)
     amt = get_column_letter(14 + i)
-    put(p, f"{wk}{LAST + 2}", f"=SUM({wk}{FIRST}:{wk}{LAST})",
-        bold=True, fill=TOTALFILL, fmt=NUM, align="center", border=True)
-    put(p, f"{amt}{LAST + 2}", f"=SUM({amt}{FIRST}:{amt}{LAST})",
-        bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+    put(p, f"{wk}{LAST + 2}", f"=SUM({wk}{FIRST}:{wk}{LAST})", bold=True, fill=TOTALFILL,
+        fmt=NUM, align="center", border=True)
+    put(p, f"{amt}{LAST + 2}", f"=SUM({amt}{FIRST}:{amt}{LAST})", bold=True, fill=TOTALFILL,
+        fmt=YEN, border=True)
 put(p, f"L{LAST + 2}", f"=SUM(L{FIRST}:L{LAST})", bold=True, fill=TOTALFILL, fmt=NUM,
     align="center", border=True)
 put(p, f"M{LAST + 2}", f"=SUM(M{FIRST}:M{LAST})", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
 put(p, f"A{LAST + 4}",
-    "※ 項目名は「集計」シートの項目名と同じ文字にしてください（違うと集計に載りません。集計シートの下にチェック欄があります）。",
+    "※ 項目名は「予算割振」シートの項目名と同じ文字にしてください（違うと集計に載りません）。",
     size=9, color="808080")
 
 widths(p, {"A": 26, "B": 30, "C": 11, "D": 8, "E": 8,
            **{get_column_letter(6 + i): 7 for i in range(6)},
-           "L": 8, "M": 12, "N": 3,
-           **{get_column_letter(14 + i): 12 for i in range(6)}})
-p.column_dimensions["N"].width = 12
+           "L": 8, "M": 12, "N": 12,
+           **{get_column_letter(15 + i): 12 for i in range(5)}})
 p.freeze_panes = "F5"
-
-# =====================================================================
-# 4. 集計
-# =====================================================================
-g = wb.create_sheet("集計")
-title(g, "項目別 集計", "「割振」シートの明細を項目ごとに集計します。予算（I列）だけ入力してください。")
-
-for col, label in zip("A", ["項目"]):
-    put(g, "A3", "項目", bold=True, fill=HEAD, align="center", border=True)
-for i in range(6):
-    col = get_column_letter(2 + i)  # B..G
-    put(g, f"{col}3", f"=設定!$B${21 + i}", bold=True, fill=HEAD, align="center", border=True)
-for col, label in zip("HIJK", ["月計", "予算", "予算比", "差額"]):
-    put(g, f"{col}3", label, bold=True, fill=HEAD, align="center", border=True)
-
-CATS = ["障がい者雇用", "新規採用研修（トレーニー）", "新規採用研修（トレーナー）",
-        "既存スタッフ研修", "防災訓練", "棚卸（予算分）", "ストア準備・返品（予算分）",
-        "ストア準備・返品（追加分）", "その他", "リーダー手当"]
-CAT_FIRST = 4
-CAT_LAST = CAT_FIRST + 14  # 予備行を含めて15行
-
-for i in range(15):
-    r = CAT_FIRST + i
-    name = CATS[i] if i < len(CATS) else None
-    put(g, f"A{r}", name, color=BLUE, fill=YELLOW, border=True)
-    for j in range(6):
-        col = get_column_letter(2 + j)
-        src = get_column_letter(14 + j)
-        put(g, f"{col}{r}",
-            f'=IF(OR($A{r}="",{col}$3=""),"",SUMIF(割振!$A$5:$A$104,$A{r},割振!{src}$5:{src}$104))',
-            fmt=YEN, border=True)
-    put(g, f"H{r}", f'=IF($A{r}="","",SUM($B{r}:$G{r}))', bold=True, fmt=YEN, border=True)
-    put(g, f"I{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
-    put(g, f"J{r}", f'=IF(OR($A{r}="",$I{r}=0),"",$H{r}/$I{r})', fmt=PCT, border=True)
-    put(g, f"K{r}", f'=IF(OR($A{r}="",$I{r}=0),"",$I{r}-$H{r})', fmt=YEN, border=True)
-
-LEAVE_ROW = CAT_LAST + 2   # 有給休暇
-CHG_ROW = LEAVE_ROW + 1    # 更衣時間
-put(g, f"A{LEAVE_ROW}", "有給休暇", border=True)
-put(g, f"A{CHG_ROW}", "更衣時間", border=True)
-for j in range(6):
-    col = get_column_letter(2 + j)
-    put(g, f"{col}{LEAVE_ROW}", f"='有休・更衣'!$E${8 + j}", fmt=YEN, border=True)
-    put(g, f"{col}{CHG_ROW}", f"='有休・更衣'!$D${27 + j}", fmt=YEN, border=True)
-for r, budget in ((LEAVE_ROW, "='有休・更衣'!$B$5"), (CHG_ROW, "='有休・更衣'!$B$34")):
-    put(g, f"H{r}", f"=SUM($B{r}:$G{r})", bold=True, fmt=YEN, border=True)
-    put(g, f"I{r}", budget, fmt=YEN, border=True)
-    put(g, f"J{r}", f'=IF($I{r}=0,"",$H{r}/$I{r})', fmt=PCT, border=True)
-    put(g, f"K{r}", f'=IF($I{r}=0,"",$I{r}-$H{r})', fmt=YEN, border=True)
-
-TOT_ROW = CHG_ROW + 2
-put(g, f"A{TOT_ROW}", "合計（有休を除く）", bold=True, fill=TOTALFILL, border=True)
-for j in range(6):
-    col = get_column_letter(2 + j)
-    put(g, f"{col}{TOT_ROW}",
-        f'=IF({col}$3="","",SUM({col}${CAT_FIRST}:{col}${CAT_LAST})+{col}{CHG_ROW})',
-        bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(g, f"H{TOT_ROW}", f"=SUM($B{TOT_ROW}:$G{TOT_ROW})", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(g, f"I{TOT_ROW}", f"=SUM($I${CAT_FIRST}:$I${CAT_LAST})+$I{CHG_ROW}", bold=True,
-    fill=TOTALFILL, fmt=YEN, border=True)
-put(g, f"J{TOT_ROW}", f'=IF($I{TOT_ROW}=0,"",$H{TOT_ROW}/$I{TOT_ROW})', bold=True,
-    fill=TOTALFILL, fmt=PCT, border=True)
-put(g, f"K{TOT_ROW}", f'=IF($I{TOT_ROW}=0,"",$I{TOT_ROW}-$H{TOT_ROW})', bold=True,
-    fill=TOTALFILL, fmt=YEN, border=True)
-
-CHK = TOT_ROW + 2
-put(g, f"A{CHK}", "■ チェック", bold=True, fill=GRAY)
-put(g, f"A{CHK + 1}", "割振シートの金額計")
-put(g, f"B{CHK + 1}", "=割振!$M$106", fmt=YEN, border=True)
-put(g, f"A{CHK + 2}", "上の表の項目合計")
-put(g, f"B{CHK + 2}", f"=SUM($H${CAT_FIRST}:$H${CAT_LAST})", fmt=YEN, border=True)
-put(g, f"A{CHK + 3}", "差（集計に載っていない金額）", bold=True)
-put(g, f"B{CHK + 3}", f"=$B${CHK + 1}-$B${CHK + 2}", bold=True, fmt=YEN, border=True)
-put(g, f"C{CHK + 3}", "← 0 以外なら、割振シートの項目名がこの表の項目名と一致していません",
-    size=9, color="808080")
-
-widths(g, {"A": 28, **{get_column_letter(2 + i): 13 for i in range(6)},
-           "H": 14, "I": 14, "J": 10, "K": 13})
-g.freeze_panes = "B4"
 
 # =====================================================================
 # 5. 接客部門
 # =====================================================================
 h = wb.create_sheet("接客部門")
-title(h, "接客部門 週別・部門別割振", "月間予算を、週別動員の構成比と部門構成比で自動的に割り振ります。")
-put(h, "A3", "月間予算", bold=True)
-put(h, "B3", 22210643, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
-put(h, "C3", "← 接客部門の月間予算を入力", size=9, color="808080")
+title(h, "接客部門 部門別の内訳",
+      "「予算割振」シートの接客部門の週配分を、部門構成比で分けます。予算外は各週に直接入力します。")
+put(h, "A3", "接客部門 月予算", bold=True)
+put(h, "B3", f"=予算割振!$B${ITEM_FIRST}", fmt=YEN, border=True)
+put(h, "C3", "← 「予算割振」シートのB列で入力します", size=9, color="808080")
 
 put(h, "A5", "項目", bold=True, fill=HEAD, align="center", border=True)
 for i in range(6):
@@ -352,20 +424,25 @@ for i in range(6):
     put(h, f"{col}5", f"=設定!$B${21 + i}", bold=True, fill=HEAD, align="center", border=True)
 put(h, "H5", "月計", bold=True, fill=HEAD, align="center", border=True)
 
-put(h, "A6", "週予算", bold=True, border=True)
+put(h, "A6", "週配分（動員構成比）", bold=True, border=True)
 for i in range(6):
     col = get_column_letter(2 + i)
-    put(h, f"{col}6", f'=IF({col}$5="","",$B$3*動員!$K${4 + i})', bold=True, fmt=YEN, border=True)
+    src = get_column_letter(3 + i)
+    put(h, f"{col}6", f'=IF({col}$5="","",予算割振!{src}${ITEM_FIRST})', bold=True, fmt=YEN, border=True)
 put(h, "H6", "=SUM(B6:G6)", bold=True, fmt=YEN, border=True)
 
 DEPTS = ["FLOOR", "CONCESSION", "STORE", "OFFICE"]
-put(h, "A8", "■ 予算配分（週予算 × 部門構成比）", bold=True, fill=GRAY)
+put(h, "A8", "■ 部門別配分（週配分 × 部門構成比。端数はOFFICEで調整）", bold=True, fill=GRAY)
 for k, d in enumerate(DEPTS):
     r = 9 + k
     put(h, f"A{r}", d, border=True)
     for i in range(6):
         col = get_column_letter(2 + i)
-        put(h, f"{col}{r}", f'=IF({col}$5="","",{col}$6*設定!$B${29 + k})', fmt=YEN, border=True)
+        if k < len(DEPTS) - 1:
+            f = f'=IF({col}$5="","",ROUND({col}$6*設定!$B${29 + k},0))'
+        else:
+            f = f'=IF({col}$5="","",{col}$6-SUM({col}9:{col}11))'
+        put(h, f"{col}{r}", f, fmt=YEN, border=True)
     put(h, f"H{r}", f"=SUM(B{r}:G{r})", fmt=YEN, border=True)
 
 put(h, "A14", "■ 予算外（ミーティング・棚卸・返品など）", bold=True, fill=GRAY)
@@ -377,7 +454,7 @@ for k, d in enumerate(DEPTS):
         put(h, f"{col}{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
     put(h, f"H{r}", f"=SUM(B{r}:G{r})", fmt=YEN, border=True)
 
-put(h, "A20", "■ 合計（予算配分＋予算外）", bold=True, fill=GRAY)
+put(h, "A20", "■ 合計（部門別配分＋予算外）", bold=True, fill=GRAY)
 for k, d in enumerate(DEPTS):
     r = 21 + k
     put(h, f"A{r}", d, bold=True, border=True)
@@ -393,18 +470,18 @@ for i in range(6):
 put(h, "H25", "=SUM(B25:G25)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
 
 put(h, "A27", "予算比", bold=True)
-put(h, "B27", '=IF($B$3=0,"",$H$25/$B$3)', bold=True, fmt=PCT, border=True)
+put(h, "B27", '=IF($B$3=0,"",$H$25/$B$3)', bold=True, fmt=PCT2, border=True)
 put(h, "A28", "差額（予算 − 合計）", bold=True)
 put(h, "B28", '=IF($B$3=0,"",$B$3-$H$25)', bold=True, fmt=YEN, border=True)
 widths(h, {"A": 30, **{get_column_letter(2 + i): 13 for i in range(6)}, "H": 14})
 h.freeze_panes = "B6"
 
 # =====================================================================
-# 6. 有休・更衣
+# 6. 有休
 # =====================================================================
-lv = wb.create_sheet("有休・更衣")
-title(lv, "有休・更衣時間", "人数を入力すると金額が出ます。有休は予算との差額を各週へ均等に振り分けます。")
-
+lv = wb.create_sheet("有休")
+title(lv, "有休計算表",
+      "週ごとの人数を入れると金額が出ます。予算との差額は各週へ均等に振り分けます。")
 put(lv, "A3", "有休単価", bold=True)
 put(lv, "B3", 979, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
 put(lv, "A4", "時間", bold=True)
@@ -423,40 +500,16 @@ for i in range(6):
     put(lv, f"E{r}", f'=IF($B{r}="","",$D{r}+$B$16)', fmt=YEN, border=True)
     put(lv, f"F{r}", f'=IF(OR($B{r}="",$C{r}=0),"",$E{r}/$C{r})', fmt=YEN, border=True)
 put(lv, "A14", "合計", bold=True, fill=TOTALFILL, border=True)
-for col in "BC":
-    put(lv, f"{col}14", None, fill=TOTALFILL, border=True)
+put(lv, "B14", None, fill=TOTALFILL, border=True)
 put(lv, "C14", "=SUM(C8:C13)", bold=True, fill=TOTALFILL, fmt=NUM, border=True)
 put(lv, "D14", "=SUM(D8:D13)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
 put(lv, "E14", "=SUM(E8:E13)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(lv, "F14", None, fill=TOTALFILL, border=True)
 put(lv, "A15", "予算 − 単純計算額")
 put(lv, "B15", "=$B$5-$D$14", fmt=YEN, border=True)
 put(lv, "A16", "1週あたりの調整額")
-put(lv, "B16", '=IF(設定!$B$17=0,0,$B$15/設定!$B$17)', fmt=YEN, border=True)
+put(lv, "B16", "=IF(設定!$B$17=0,0,$B$15/設定!$B$17)", fmt=YEN, border=True)
 put(lv, "C16", "← 各週へ均等に振り分け、補正後の合計が予算と一致します", size=9, color="808080")
-
-put(lv, "A20", "■ 更衣時間", bold=True, fill=GRAY)
-put(lv, "A22", "単価", bold=True)
-put(lv, "B22", 1132, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
-put(lv, "A23", "時間（分）", bold=True)
-put(lv, "B23", 9, color=BLUE, fill=YELLOW, fmt=NUM, border=True)
-put(lv, "A24", "予算基準額", bold=True)
-put(lv, "B24", 81178, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
-put(lv, "C24", "← 予算 ＝ 予算基準額 × 接客部門の予算比", size=9, color="808080")
-for col, label in zip("ABCD", ["週", "WEEK", "人数", "金額"]):
-    put(lv, f"{col}26", label, bold=True, fill=HEAD, align="center", border=True)
-for i in range(6):
-    r = 27 + i
-    put(lv, f"A{r}", i + 1, align="center", border=True)
-    put(lv, f"B{r}", f"=設定!$B${21 + i}", align="center", border=True)
-    put(lv, f"C{r}", None, color=BLUE, fill=YELLOW, fmt=NUM, border=True)
-    put(lv, f"D{r}", f'=IF($B{r}="","",$B$22*($B$23/60)*$C{r})', fmt=YEN, border=True)
-put(lv, "A33", "合計", bold=True, fill=TOTALFILL, border=True)
-put(lv, "C33", "=SUM(C27:C32)", bold=True, fill=TOTALFILL, fmt=NUM, border=True)
-put(lv, "D33", "=SUM(D27:D32)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(lv, "A34", "予算")
-put(lv, "B34", '=$B$24*IF(接客部門!$B$3=0,0,接客部門!$H$25/接客部門!$B$3)', fmt=YEN, border=True)
-put(lv, "A35", "差（合計 − 予算）")
-put(lv, "B35", "=$D$33-$B$34", fmt=YEN, border=True)
 widths(lv, {"A": 20, "B": 14, "C": 10, "D": 14, "E": 14, "F": 14})
 
 for ws in wb.worksheets:
