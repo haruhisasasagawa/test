@@ -238,13 +238,54 @@ td.out, th.out { font-variant-numeric: tabular-nums; }
 .cat-head .cat-name { font-weight: 700; font-size: 14px; min-width: 200px; }
 .cat-head .spacer { flex: 1; }
 
-.cat-body { padding: 12px 14px; display: grid; gap: 14px 20px; grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1.1fr); align-items: start; }
-
-@media (max-width: 1100px) {
-  .cat-body { grid-template-columns: 1fr; }
-}
+.cat-body { padding: 12px 14px; }
 
 .cat-body h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 700; }
+
+/* ---------- 月ナビ・週ストリップ・ゲージ ---------- */
+.nav-month { padding: 6px 10px; font-size: 13px; align-self: flex-end; }
+
+.lead { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+
+.toolbar { margin-bottom: 12px; }
+
+.weekbar { padding-bottom: 10px; }
+.weekbar-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px 28px;
+  margin-bottom: 10px;
+}
+.weekbar-head h3 { margin: 0; font-size: 15px; }
+
+.gauge {
+  flex: 0 0 120px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.gauge-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width .15s ease;
+}
+.gauge-fill.good { background: var(--good); }
+.gauge-fill.over { background: var(--bad); }
+
+table.grid th.wk, table.grid td.wk { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+table.grid th.wk-group { background: var(--surface-2); font-size: 12px; }
+table.grid td.ops { white-space: nowrap; }
+table.grid td.ops .btn { margin-left: 2px; }
+table.grid.plan input { min-width: 54px; }
+table.grid.plan input.text { min-width: 120px; }
+
+.card-actions { margin-top: 8px; align-items: center; }
+.hint.inline { margin: 0; }
 
 .compact-stats { display: flex; flex-wrap: wrap; gap: 26px; }
 .stat { display: flex; flex-direction: column; }

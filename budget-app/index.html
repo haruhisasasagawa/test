@@ -11,13 +11,19 @@
 <header class="app-header">
   <div class="brand">
     <h1>月次予算割振アプリ</h1>
-    <p class="sub">接客部門 人件費予算の週別・部門別割振</p>
+    <p class="sub">項目別・週別の予算割振</p>
   </div>
   <div class="header-controls">
+    <button type="button" class="btn ghost nav-month" id="btnPrevMonth" title="前月">◀</button>
     <label class="field">
-      <span>対象月</span>
-      <input type="month" id="ym">
+      <span>年</span>
+      <select id="selYear"></select>
     </label>
+    <label class="field">
+      <span>月</span>
+      <select id="selMonth"></select>
+    </label>
+    <button type="button" class="btn ghost nav-month" id="btnNextMonth" title="翌月">▶</button>
     <label class="field">
       <span>開始WEEK</span>
       <input type="number" id="weekStartNo" min="1" max="53" step="1">
@@ -28,67 +34,49 @@
 </header>
 
 <nav class="tabbar" id="tabbar">
-  <button type="button" class="tab active" data-target="sec-setup">1. 基本設定</button>
+  <button type="button" class="tab active" data-target="sec-items">1. 項目別割振</button>
   <button type="button" class="tab" data-target="sec-attendance">2. 動員入力</button>
-  <button type="button" class="tab" data-target="sec-hall">3. 接客部門割振</button>
-  <button type="button" class="tab" data-target="sec-categories">4. 項目別予算</button>
-  <button type="button" class="tab" data-target="sec-leave">5. 有休・更衣</button>
-  <button type="button" class="tab" data-target="sec-summary">6. 集計・出力</button>
+  <button type="button" class="tab" data-target="sec-leave">3. 有休・更衣</button>
+  <button type="button" class="tab" data-target="sec-hall">4. 接客部門</button>
+  <button type="button" class="tab" data-target="sec-summary">5. 集計・出力</button>
+  <button type="button" class="tab" data-target="sec-settings">6. 設定・データ</button>
 </nav>
 
 <main>
 
-  <!-- ============ 1. 基本設定 ============ -->
-  <section id="sec-setup" class="panel active">
-    <h2>1. 基本設定</h2>
+  <!-- ============ 1. 項目別割振 ============ -->
+  <section id="sec-items" class="panel active">
 
-    <div class="card">
-      <h3>接客部門 予算</h3>
-      <div class="row">
-        <label class="field wide">
-          <span>接客部門 月間予算（円）</span>
-          <input type="text" inputmode="numeric" id="hallBudget" class="num">
-        </label>
-        <div class="field wide readout">
-          <span>週数</span>
-          <strong data-out="weekCount">-</strong>
+    <div class="card weekbar">
+      <div class="weekbar-head">
+        <h3 id="monthTitle">対象月</h3>
+        <div class="compact-stats">
+          <div class="stat"><span>項目合計</span><strong data-out="items.total">-</strong></div>
+          <div class="stat"><span>予算</span><strong data-out="items.budget">-</strong></div>
+          <div class="stat"><span>予算比</span><strong data-out="items.rate">-</strong></div>
+          <div class="stat"><span>差額</span><strong data-out="items.diff">-</strong></div>
         </div>
       </div>
-      <p class="hint">週は「金曜〜木曜」で区切ります。月初・月末は端数の週になります。</p>
-    </div>
-
-    <div class="card">
-      <h3>部門構成比</h3>
-      <table class="grid narrow" id="deptRatioTable">
-        <thead><tr><th>部門</th><th>構成比</th><th>％</th></tr></thead>
-        <tbody></tbody>
-        <tfoot><tr><th>合計</th><td data-out="deptRatioSum">-</td><td data-out="deptRatioSumPct">-</td></tr></tfoot>
-      </table>
-      <p class="hint">合計が100%になるように入力してください（小数で入力：例 0.4427）。</p>
-    </div>
-
-    <div class="card">
-      <h3>保存データ</h3>
-      <div class="row wrap">
-        <button type="button" class="btn" id="btnSave">この月を保存</button>
-        <label class="field">
-          <span>保存済みの月</span>
-          <select id="savedMonths"><option value="">-</option></select>
-        </label>
-        <button type="button" class="btn ghost" id="btnLoadMonth">読込</button>
-        <button type="button" class="btn ghost" id="btnCopyPrev">前月の設定を複製</button>
-        <button type="button" class="btn ghost" id="btnExportJson">JSON書出</button>
-        <button type="button" class="btn ghost" id="btnImportJson">JSON読込</button>
-        <button type="button" class="btn danger" id="btnResetMonth">この月をリセット</button>
-        <input type="file" id="fileJson" accept="application/json" hidden>
+      <div class="table-scroll">
+        <table class="grid" id="weekStripTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <p class="hint">データはこのブラウザ内（ローカルストレージ）に月単位で保存されます。</p>
     </div>
+
+    <div class="row wrap toolbar">
+      <button type="button" class="btn ghost" id="btnAddCategory">項目を追加</button>
+      <button type="button" class="btn ghost" id="btnRestoreCategories">既定の項目に戻す</button>
+    </div>
+
+    <div id="categoryList"></div>
   </section>
 
   <!-- ============ 2. 動員入力 ============ -->
   <section id="sec-attendance" class="panel">
     <h2>2. 動員入力</h2>
+    <p class="lead">週の区切り（金曜〜木曜）と、動員構成比による按分に使います。積み上げ入力だけで運用する場合は未入力でも構いません。</p>
 
     <div class="card">
       <h3>まとめて貼り付け</h3>
@@ -120,55 +108,15 @@
         </table>
       </div>
       <div class="row wrap">
-        <button type="button" class="btn" data-copy="weekSummaryTable" data-csvname="週別動員">Excel貼付用にコピー</button>
-        <button type="button" class="btn ghost" data-csv="weekSummaryTable" data-csvname="週別動員">CSVダウンロード</button>
+        <button type="button" class="btn" data-copy="weekSummaryTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="weekSummaryTable">CSVダウンロード</button>
       </div>
     </div>
   </section>
 
-  <!-- ============ 3. 接客部門割振 ============ -->
-  <section id="sec-hall" class="panel">
-    <h2>3. 接客部門 割振</h2>
-
-    <div class="card">
-      <h3>週別・部門別 割振</h3>
-      <div class="row wrap">
-        <label class="check"><input type="checkbox" id="hallWeeklyManual"> 週予算を手入力する（既定は動員構成比で自動按分）</label>
-      </div>
-      <div class="table-scroll">
-        <table class="grid" id="hallTable">
-          <thead></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="row wrap">
-        <button type="button" class="btn" data-copy="hallTable" data-csvname="接客部門割振">Excel貼付用にコピー</button>
-        <button type="button" class="btn ghost" data-csv="hallTable" data-csvname="接客部門割振">CSVダウンロード</button>
-      </div>
-      <p class="hint">「予算外」は予算に含まれないミーティング・棚卸・返品作業などの追加分です（各部門・各週に入力）。</p>
-    </div>
-
-    <div class="card compact-stats">
-      <div class="stat"><span>月計</span><strong data-out="hallTotal">-</strong></div>
-      <div class="stat"><span>予算</span><strong data-out="hallBudgetOut">-</strong></div>
-      <div class="stat"><span>予算比</span><strong data-out="hallRate">-</strong></div>
-      <div class="stat"><span>差額</span><strong data-out="hallDiff">-</strong></div>
-    </div>
-  </section>
-
-  <!-- ============ 4. 項目別予算 ============ -->
-  <section id="sec-categories" class="panel">
-    <h2>4. 項目別予算</h2>
-    <div class="row wrap">
-      <button type="button" class="btn ghost" id="btnAddCategory">項目を追加</button>
-      <button type="button" class="btn ghost" id="btnRestoreCategories">既定の項目に戻す</button>
-    </div>
-    <div id="categoryList"></div>
-  </section>
-
-  <!-- ============ 5. 有休・更衣 ============ -->
+  <!-- ============ 3. 有休・更衣 ============ -->
   <section id="sec-leave" class="panel">
-    <h2>5. 有休・更衣時間</h2>
+    <h2>3. 有休・更衣時間</h2>
 
     <div class="card">
       <h3>有休計算表</h3>
@@ -205,9 +153,52 @@
     </div>
   </section>
 
-  <!-- ============ 6. 集計・出力 ============ -->
+  <!-- ============ 4. 接客部門 ============ -->
+  <section id="sec-hall" class="panel">
+    <h2>4. 接客部門 割振</h2>
+
+    <div class="card">
+      <div class="row wrap">
+        <label class="field wide">
+          <span>接客部門 月間予算（円）</span>
+          <input type="text" inputmode="numeric" id="hallBudget" class="num">
+        </label>
+        <label class="check"><input type="checkbox" id="hallWeeklyManual"> 週予算を手入力する（既定は動員構成比で自動按分）</label>
+      </div>
+      <div class="table-scroll">
+        <table class="grid" id="hallTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row wrap">
+        <button type="button" class="btn" data-copy="hallTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="hallTable">CSVダウンロード</button>
+      </div>
+      <p class="hint">「予算外」は予算に含まれないミーティング・棚卸・返品作業などの追加分です（各部門・各週に入力）。</p>
+    </div>
+
+    <div class="card compact-stats">
+      <div class="stat"><span>月計</span><strong data-out="hallTotal">-</strong></div>
+      <div class="stat"><span>予算</span><strong data-out="hallBudgetOut">-</strong></div>
+      <div class="stat"><span>予算比</span><strong data-out="hallRate">-</strong></div>
+      <div class="stat"><span>差額</span><strong data-out="hallDiff">-</strong></div>
+    </div>
+
+    <div class="card">
+      <h3>部門構成比</h3>
+      <table class="grid narrow" id="deptRatioTable">
+        <thead><tr><th>部門</th><th>構成比</th><th>％</th></tr></thead>
+        <tbody></tbody>
+        <tfoot><tr><th>合計</th><td data-out="deptRatioSum">-</td><td data-out="deptRatioSumPct">-</td></tr></tfoot>
+      </table>
+      <p class="hint">合計が100%になるように入力してください（小数で入力：例 0.4427）。</p>
+    </div>
+  </section>
+
+  <!-- ============ 5. 集計・出力 ============ -->
   <section id="sec-summary" class="panel">
-    <h2>6. 集計・出力</h2>
+    <h2>5. 集計・出力</h2>
 
     <div class="card">
       <h3>項目別 週配分 集計</h3>
@@ -219,8 +210,22 @@
         </table>
       </div>
       <div class="row wrap">
-        <button type="button" class="btn" data-copy="summaryTable" data-csvname="項目別集計">Excel貼付用にコピー</button>
-        <button type="button" class="btn ghost" data-csv="summaryTable" data-csvname="項目別集計">CSVダウンロード</button>
+        <button type="button" class="btn" data-copy="summaryTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="summaryTable">CSVダウンロード</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>実施予定の明細（項目別・週別）</h3>
+      <div class="table-scroll">
+        <table class="grid" id="planTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row wrap">
+        <button type="button" class="btn" data-copy="planTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="planTable">CSVダウンロード</button>
       </div>
     </div>
 
@@ -233,14 +238,48 @@
         </table>
       </div>
       <div class="row wrap">
-        <button type="button" class="btn" data-copy="summaryHallTable" data-csvname="接客部門集計">Excel貼付用にコピー</button>
-        <button type="button" class="btn ghost" data-csv="summaryHallTable" data-csvname="接客部門集計">CSVダウンロード</button>
+        <button type="button" class="btn" data-copy="summaryHallTable">Excel貼付用にコピー</button>
+        <button type="button" class="btn ghost" data-csv="summaryHallTable">CSVダウンロード</button>
       </div>
     </div>
 
     <div class="card">
       <h3>チェック</h3>
       <ul class="checklist" id="checkList"></ul>
+    </div>
+  </section>
+
+  <!-- ============ 6. 設定・データ ============ -->
+  <section id="sec-settings" class="panel">
+    <h2>6. 設定・データ</h2>
+
+    <div class="card">
+      <h3>保存データ</h3>
+      <div class="row wrap">
+        <button type="button" class="btn" id="btnSave">この月を保存</button>
+        <label class="field">
+          <span>保存済みの月</span>
+          <select id="savedMonths"><option value="">-</option></select>
+        </label>
+        <button type="button" class="btn ghost" id="btnLoadMonth">読込</button>
+        <button type="button" class="btn ghost" id="btnCopyPrev">前月の設定を複製</button>
+        <button type="button" class="btn ghost" id="btnExportJson">JSON書出</button>
+        <button type="button" class="btn ghost" id="btnImportJson">JSON読込</button>
+        <button type="button" class="btn danger" id="btnResetMonth">この月をリセット</button>
+        <input type="file" id="fileJson" accept="application/json" hidden>
+      </div>
+      <p class="hint">データはこのブラウザ内（ローカルストレージ）に月単位で保存されます。PCを移すときはJSON書出／読込を使ってください。</p>
+    </div>
+
+    <div class="card">
+      <h3>週の区切り</h3>
+      <div class="table-scroll">
+        <table class="grid" id="weekListTable">
+          <thead><tr><th>WEEK</th><th>期間</th><th>日数</th><th>動員</th><th>構成比</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint">週は「金曜〜木曜」で区切ります。月初・月末は端数の週になります。WEEK番号は「3/1を含む週＝第1週」で自動計算し、画面上部で手修正できます。</p>
     </div>
   </section>
 
