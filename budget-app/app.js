@@ -1185,7 +1185,7 @@ function tableToRows(tableId) {
  * claude.ai で公開したページでは downloads 機能経由で保存する。
  * 公開ページで CSV が許可されていない場合は TSV(.txt) で保存し直す。
  */
-async function saveFile(filename, text, fallback) {
+async function saveFile(filename, text, fallback, note) {
   const api = window.claude;
   if (api && typeof api.use === 'function') {
     let downloads = null;
@@ -1194,7 +1194,7 @@ async function saveFile(filename, text, fallback) {
     if (!downloads) {
       // 公開ページだがファイル保存が使えない環境 → 画面表示に切り替える
       showTextPanel(filename, (fallback && fallback.text) || text,
-        'この環境ではファイル保存が使えないため、内容を表示しています。選択してコピーし、Excelに貼り付けてください。');
+        note || 'この環境ではファイル保存が使えないため、内容を表示しています。選択してコピーし、Excelに貼り付けてください。');
       return;
     }
 
@@ -1209,14 +1209,14 @@ async function saveFile(filename, text, fallback) {
       if ((code === 'extension_not_enabled' || code === 'rejected_extension') && fallback) {
         try {
           await downloads.save({ filename: fallback.filename, data: fallback.text });
-          toast(`${fallback.filename} でダウンロードしました（Excelにそのまま貼付・取込できます）`);
+          toast(fallback.message || `${fallback.filename} でダウンロードしました（Excelにそのまま貼付・取込できます）`);
           return;
         } catch (err2) {
           if (err2 && err2.code === 'declined') return;
         }
       }
       showTextPanel(filename, (fallback && fallback.text) || text,
-        'ダウンロードできなかったため、内容を表示しています。選択してコピーし、Excelに貼り付けてください。');
+        note || 'ダウンロードできなかったため、内容を表示しています。選択してコピーし、Excelに貼り付けてください。');
       return;
     }
   }
@@ -1231,8 +1231,18 @@ async function saveFile(filename, text, fallback) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast(`${filename} をダウンロードしました`);
   } catch (e) {
-    showTextPanel(filename, (fallback && fallback.text) || text);
+    showTextPanel(filename, (fallback && fallback.text) || text, note);
   }
+}
+
+/** アプリ自身（1ファイルHTML）を保存する */
+function downloadApp() {
+  const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  saveFile('budget-app.html', html, {
+    filename: 'budget-app.txt',
+    text: html,
+    message: 'budget-app.txt で保存しました。拡張子を .html に変えるとアプリとして開けます',
+  }, 'この環境ではファイル保存が使えないため、HTMLを表示しています。すべて選択してコピーし、メモ帳などに貼り付けて「budget-app.html」という名前で保存すると、そのままアプリとして開けます。');
 }
 
 /**
@@ -1488,6 +1498,7 @@ function init() {
     toast('リセットしました');
   });
   $('#btnExportJson').addEventListener('click', () => saveFile(`budget_${state.ym}.json`, JSON.stringify(state, null, 2)));
+  $$('.btn-download-app').forEach((btn) => btn.addEventListener('click', downloadApp));
   $('#btnImportJson').addEventListener('click', () => $('#fileJson').click());
   $('#fileJson').addEventListener('change', (e) => {
     const file = e.target.files[0];

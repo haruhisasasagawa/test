@@ -29,6 +29,7 @@
       <input type="number" id="weekStartNo" min="1" max="53" step="1">
     </label>
     <button type="button" id="btnAutoWeek" class="btn ghost" title="対象月の第1週のWEEK番号を自動計算します">自動</button>
+    <button type="button" class="btn ghost btn-download-app" title="このアプリを1ファイルのHTMLとして保存します">HTML保存</button>
     <span class="saved-state" id="savedState"></span>
   </div>
 </header>
@@ -274,6 +275,14 @@
         <input type="file" id="fileJson" accept="application/json" hidden>
       </div>
       <p class="hint">データはこのブラウザ内（ローカルストレージ）に月単位で保存されます。PCを移すときはJSON書出／読込を使ってください。</p>
+    </div>
+
+    <div class="card">
+      <h3>アプリの保存（HTML）</h3>
+      <div class="row wrap">
+        <button type="button" class="btn btn-download-app">このアプリをHTMLで保存</button>
+      </div>
+      <p class="hint">1ファイルのHTMLとして保存できます。保存したファイルをダブルクリックすれば、ネット接続なしで同じアプリが動きます（入力データは保存先のブラウザごとに管理されます）。</p>
     </div>
 
     <div class="card">
