@@ -12,6 +12,7 @@
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 FONT = "Meiryo UI"
 BLUE = "0000FF"       # 入力値
@@ -208,115 +209,149 @@ RATIOR = 7
 ITEM_FIRST = 8
 ITEM_LAST = 27
 TOTR = 29
+W1 = 4          # 週の先頭列（D列）
+WCOLS = [get_column_letter(W1 + i) for i in range(6)]   # D..I
+SUMC, DETC, DIFC, NOTEC = "J", "K", "L", "M"
 
 put(b, f"A{HEADR}", "項目", bold=True, fill=HEAD, align="center", border=True)
 put(b, f"B{HEADR}", "月予算", bold=True, fill=HEAD, align="center", border=True)
-for i in range(6):
-    col = get_column_letter(3 + i)  # C..H
+put(b, f"C{HEADR}", "割振方法", bold=True, fill=HEAD, align="center", border=True)
+for i, col in enumerate(WCOLS):
     put(b, f"{col}{HEADR}", f"=設定!$B${21 + i}", bold=True, fill=HEAD, align="center", border=True)
-for col, label in zip("IJKL", ["配分計", "明細合計", "差（予算−明細）", "備考"]):
+for col, label in zip([SUMC, DETC, DIFC, NOTEC], ["配分計", "明細合計", "差（予算−明細）", "備考"]):
     put(b, f"{col}{HEADR}", label, bold=True, fill=HEAD, align="center", border=True, wrap=True)
 
 put(b, f"A{RATIOR}", "動員構成比", bold=True, fill=RATIOFILL, border=True)
-put(b, f"B{RATIOR}", None, fill=RATIOFILL, border=True)
-for i in range(6):
-    col = get_column_letter(3 + i)
+for col in ("B", "C"):
+    put(b, f"{col}{RATIOR}", None, fill=RATIOFILL, border=True)
+for i, col in enumerate(WCOLS):
     put(b, f"{col}{RATIOR}", f'=IF({col}${HEADR}="","",動員予測!$M${4 + i})',
         bold=True, fill=RATIOFILL, fmt=PCT2, border=True)
-put(b, f"I{RATIOR}", f'=IF($B$4=0,"",SUM($C{RATIOR}:$H{RATIOR}))',
+put(b, f"{SUMC}{RATIOR}", f'=IF($B$4=0,"",SUM({WCOLS[0]}{RATIOR}:{WCOLS[5]}{RATIOR}))',
     bold=True, fill=RATIOFILL, fmt=PCT2, border=True)
-for col in "JKL":
+for col in (DETC, DIFC, NOTEC):
     put(b, f"{col}{RATIOR}", None, fill=RATIOFILL, border=True)
 
+# 項目名と既定の割振方法
 ITEMS = [
-    "接客部門",
-    "障がい者雇用",
-    "新規採用研修（トレーニー）",
-    "新規採用研修（トレーナー）",
-    "既存スタッフ研修",
-    "防災訓練",
-    "棚卸（予算分）",
-    "ストア準備・返品（予算分）",
-    "ストア準備・返品（追加分）",
-    "その他",
-    "リーダー手当",
+    ("接客部門", "動員比率"),
+    ("障がい者雇用", "動員比率"),
+    ("新規採用研修（トレーニー）", "動員比率"),
+    ("新規採用研修（トレーナー）", "動員比率"),
+    ("既存スタッフ研修", "動員比率"),
+    ("防災訓練", "動員比率"),
+    ("棚卸（予算分）", "動員比率"),
+    ("ストア準備・返品（予算分）", "動員比率"),
+    ("ストア準備・返品（追加分）", "動員比率"),
+    ("その他", "動員比率"),
+    ("リーダー手当", "最終週"),
 ]
 LEAVE_ROW = ITEM_FIRST + len(ITEMS)  # 有給休暇の行
 
 for idx in range(ITEM_LAST - ITEM_FIRST + 1):
     r = ITEM_FIRST + idx
-    name = ITEMS[idx] if idx < len(ITEMS) else ("有給休暇" if r == LEAVE_ROW else None)
     is_leave = (r == LEAVE_ROW)
+    name = ITEMS[idx][0] if idx < len(ITEMS) else ("有給休暇" if is_leave else None)
+    method = ITEMS[idx][1] if idx < len(ITEMS) else None
 
     put(b, f"A{r}", name, color=BLACK if is_leave else BLUE,
         fill=None if is_leave else YELLOW, border=True)
     if is_leave:
         put(b, f"B{r}", "=有休!$B$5", fmt=YEN, border=True)
+        put(b, f"C{r}", "有休シート", align="center", border=True)
     else:
         put(b, f"B{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+        put(b, f"C{r}", method if name else "動員比率",
+            color=BLUE, fill=YELLOW, align="center", border=True)
 
-    for i in range(6):
-        col = get_column_letter(3 + i)
-        nxt = get_column_letter(4 + i) if i < 5 else None
+    for i, col in enumerate(WCOLS):
+        nxt = WCOLS[i + 1] if i < 5 else None
         if is_leave:
             f = f'=IF({col}${HEADR}="","",有休!$E${8 + i})'
         elif i == 0:
+            # 最初の週。ここが最終週になるのは「週数=1」のときだけ
             f = (f'=IF(OR($A{r}="",{col}${HEADR}=""),"",'
-                 f'IF({nxt}${HEADR}="",$B{r},ROUND($B{r}*{col}${RATIOR},0)))')
+                 f'IF({nxt}${HEADR}="",$B{r},'
+                 f'IF($C{r}="最終週",0,'
+                 f'IF($C{r}="均等",ROUND($B{r}/$D$4,0),ROUND($B{r}*{col}${RATIOR},0)))))')
         elif i < 5:
-            prev = get_column_letter(2 + i)
+            prev_range = f'${WCOLS[0]}{r}:{WCOLS[i - 1]}{r}'
             f = (f'=IF(OR($A{r}="",{col}${HEADR}=""),"",'
-                 f'IF({nxt}${HEADR}="",$B{r}-SUM($C{r}:{prev}{r}),ROUND($B{r}*{col}${RATIOR},0)))')
+                 f'IF({nxt}${HEADR}="",$B{r}-SUM({prev_range}),'
+                 f'IF($C{r}="最終週",0,'
+                 f'IF($C{r}="均等",ROUND($B{r}/$D$4,0),ROUND($B{r}*{col}${RATIOR},0)))))')
         else:
-            f = f'=IF(OR($A{r}="",{col}${HEADR}=""),"",$B{r}-SUM($C{r}:G{r}))'
+            prev_range = f'${WCOLS[0]}{r}:{WCOLS[4]}{r}'
+            f = (f'=IF(OR($A{r}="",{col}${HEADR}=""),"",$B{r}-SUM({prev_range}))')
         put(b, f"{col}{r}", f, fmt=YEN, border=True)
 
-    put(b, f"I{r}", f'=IF($A{r}="","",SUM($C{r}:$H{r}))', bold=True, fmt=YEN, border=True)
+    put(b, f"{SUMC}{r}", f'=IF($A{r}="","",SUM({WCOLS[0]}{r}:{WCOLS[5]}{r}))',
+        bold=True, fmt=YEN, border=True)
     if is_leave:
-        put(b, f"J{r}", None, border=True)
-        put(b, f"K{r}", None, border=True)
-        put(b, f"L{r}", "有休シートの金額を使用", size=9, color="808080", border=True)
+        put(b, f"{DETC}{r}", None, border=True)
+        put(b, f"{DIFC}{r}", None, border=True)
+        put(b, f"{NOTEC}{r}", "有休シートの金額を使用", size=9, color="808080", border=True)
     else:
-        put(b, f"J{r}", f'=IF($A{r}="","",SUMIF(明細!$A$5:$A$104,$A{r},明細!$M$5:$M$104))',
+        put(b, f"{DETC}{r}", f'=IF($A{r}="","",SUMIF(明細!$A$5:$A$104,$A{r},明細!$M$5:$M$104))',
             fmt=YEN, border=True)
-        put(b, f"K{r}", f'=IF(OR($A{r}="",$J{r}=0),"",$B{r}-$J{r})', fmt=YEN, border=True)
-        put(b, f"L{r}", None, color=BLUE, fill=YELLOW, border=True)
+        put(b, f"{DIFC}{r}", f'=IF(OR($A{r}="",{DETC}{r}=0),"",$B{r}-{DETC}{r})',
+            fmt=YEN, border=True)
+        note = "月末の週にまとめて計上" if method == "最終週" else None
+        put(b, f"{NOTEC}{r}", note, color=BLUE, fill=YELLOW, size=9, border=True)
+
+# 割振方法の入力規則（プルダウン）
+dv = DataValidation(type="list", formula1='"動員比率,最終週,均等"', allow_blank=True,
+                    showDropDown=False)
+dv.error = "「動員比率」「最終週」「均等」から選んでください"
+dv.errorTitle = "割振方法"
+b.add_data_validation(dv)
+dv.add(f"C{ITEM_FIRST}:C{LEAVE_ROW - 1}")
+dv.add(f"C{LEAVE_ROW + 1}:C{ITEM_LAST}")
 
 put(b, f"A{TOTR}", "合計", bold=True, fill=TOTALFILL, border=True)
 put(b, f"B{TOTR}", f"=SUM($B${ITEM_FIRST}:$B${ITEM_LAST})", bold=True, fill=TOTALFILL,
     fmt=YEN, border=True)
-for i in range(6):
-    col = get_column_letter(3 + i)
+put(b, f"C{TOTR}", None, fill=TOTALFILL, border=True)
+for col in WCOLS:
     put(b, f"{col}{TOTR}", f'=IF({col}${HEADR}="","",SUM({col}${ITEM_FIRST}:{col}${ITEM_LAST}))',
         bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(b, f"I{TOTR}", f"=SUM($I${ITEM_FIRST}:$I${ITEM_LAST})", bold=True, fill=TOTALFILL,
+put(b, f"{SUMC}{TOTR}", f"=SUM(${SUMC}${ITEM_FIRST}:${SUMC}${ITEM_LAST})", bold=True,
+    fill=TOTALFILL, fmt=YEN, border=True)
+put(b, f"{DETC}{TOTR}", f"=SUM(${DETC}${ITEM_FIRST}:${DETC}${ITEM_LAST})", bold=True,
+    fill=TOTALFILL, fmt=YEN, border=True)
+put(b, f"{DIFC}{TOTR}", f"=$B{TOTR}-${DETC}{TOTR}", bold=True, fill=TOTALFILL,
     fmt=YEN, border=True)
-put(b, f"J{TOTR}", f"=SUM($J${ITEM_FIRST}:$J${ITEM_LAST})", bold=True, fill=TOTALFILL,
-    fmt=YEN, border=True)
-put(b, f"K{TOTR}", f"=$B{TOTR}-$J{TOTR}", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
-put(b, f"L{TOTR}", None, fill=TOTALFILL, border=True)
+put(b, f"{NOTEC}{TOTR}", None, fill=TOTALFILL, border=True)
 
 put(b, f"A{TOTR + 2}", "■ チェック", bold=True, fill=GRAY)
 put(b, f"A{TOTR + 3}", "配分計 − 月予算")
-put(b, f"B{TOTR + 3}", f"=$I{TOTR}-$B{TOTR}", fmt=YEN, border=True)
+put(b, f"B{TOTR + 3}", f"=${SUMC}{TOTR}-$B{TOTR}", fmt=YEN, border=True)
 put(b, f"C{TOTR + 3}", "← 0 なら、割り振った金額の合計が月予算とぴったり一致しています",
     size=9, color="808080")
 put(b, f"A{TOTR + 4}", "明細シートの金額計")
 put(b, f"B{TOTR + 4}", "=明細!$M$106", fmt=YEN, border=True)
 put(b, f"A{TOTR + 5}", "うち上の表に載った額")
-put(b, f"B{TOTR + 5}", f"=$J{TOTR}", fmt=YEN, border=True)
+put(b, f"B{TOTR + 5}", f"=${DETC}{TOTR}", fmt=YEN, border=True)
 put(b, f"A{TOTR + 6}", "差（項目名が一致していない額）", bold=True)
 put(b, f"B{TOTR + 6}", f"=$B{TOTR + 4}-$B{TOTR + 5}", bold=True, fmt=YEN, border=True)
 put(b, f"C{TOTR + 6}", "← 0 以外なら、明細シートの項目名がこの表の項目名と一致していません",
     size=9, color="808080")
 
-put(b, f"A{TOTR + 8}",
-    "※ 月予算だけ入れれば、動員予測の構成比どおりに週へ配分されます。"
-    "「明細合計」は明細シートで積み上げた金額（参考）です。",
+put(b, f"A{TOTR + 8}", "■ 割振方法（C列）", bold=True, fill=GRAY)
+put(b, f"A{TOTR + 9}", "動員比率")
+put(b, f"B{TOTR + 9}", "その週の動員構成比に応じて配分（既定）", size=9, color="808080")
+put(b, f"A{TOTR + 10}", "最終週")
+put(b, f"B{TOTR + 10}", "その月の一番最後の週にまとめて計上（リーダー手当など）",
     size=9, color="808080")
-widths(b, {"A": 28, "B": 14, **{get_column_letter(3 + i): 13 for i in range(6)},
-           "I": 14, "J": 13, "K": 15, "L": 22})
-b.freeze_panes = f"C{ITEM_FIRST}"
+put(b, f"A{TOTR + 11}", "均等")
+put(b, f"B{TOTR + 11}", "週数で等分（端数は最終週で調整）", size=9, color="808080")
+put(b, f"A{TOTR + 12}",
+    "※ どの方法でも端数は最終週で調整するので、配分計は必ず月予算と一致します。",
+    size=9, color="808080")
+
+widths(b, {"A": 28, "B": 14, "C": 11, **{col: 13 for col in WCOLS},
+           SUMC: 14, DETC: 13, DIFC: 15, NOTEC: 22})
+b.freeze_panes = f"{WCOLS[0]}{ITEM_FIRST}"
 
 # =====================================================================
 # 4. 明細（実施予定）
@@ -427,7 +462,7 @@ put(h, "H5", "月計", bold=True, fill=HEAD, align="center", border=True)
 put(h, "A6", "週配分（動員構成比）", bold=True, border=True)
 for i in range(6):
     col = get_column_letter(2 + i)
-    src = get_column_letter(3 + i)
+    src = WCOLS[i]  # 予算割振シートの週列（D..I）
     put(h, f"{col}6", f'=IF({col}$5="","",予算割振!{src}${ITEM_FIRST})', bold=True, fmt=YEN, border=True)
 put(h, "H6", "=SUM(B6:G6)", bold=True, fmt=YEN, border=True)
 
