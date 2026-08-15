@@ -1190,36 +1190,89 @@ async function saveFile(filename, text, fallback) {
   if (api && typeof api.use === 'function') {
     let downloads = null;
     try { downloads = await api.use('downloads'); } catch (e) { downloads = null; }
-    if (downloads) {
-      try {
-        await downloads.save({ filename, data: text });
-        toast('ダウンロードしました');
-        return;
-      } catch (err) {
-        const code = err && err.code;
-        if (code === 'declined') return;
-        if (code === 'rate_limited') { toast('少し待ってからもう一度お試しください'); return; }
-        if ((code === 'extension_not_enabled' || code === 'rejected_extension') && fallback) {
-          try {
-            await downloads.save({ filename: fallback.filename, data: fallback.text });
-            toast(`${fallback.filename} でダウンロードしました（Excelにそのまま貼付・取込できます）`);
-            return;
-          } catch (err2) {
-            if (err2 && err2.code === 'declined') return;
-          }
+
+    if (!downloads) {
+      // 公開ページだがファイル保存が使えない環境 → 画面表示に切り替える
+      showTextPanel(filename, (fallback && fallback.text) || text,
+        'この環境ではファイル保存が使えないため、内容を表示しています。選択してコピーし、Excelに貼り付けてください。');
+      return;
+    }
+
+    try {
+      await downloads.save({ filename, data: text });
+      toast('ダウンロードしました');
+      return;
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'declined') return;
+      if (code === 'rate_limited') { toast('少し待ってからもう一度お試しください'); return; }
+      if ((code === 'extension_not_enabled' || code === 'rejected_extension') && fallback) {
+        try {
+          await downloads.save({ filename: fallback.filename, data: fallback.text });
+          toast(`${fallback.filename} でダウンロードしました（Excelにそのまま貼付・取込できます）`);
+          return;
+        } catch (err2) {
+          if (err2 && err2.code === 'declined') return;
         }
-        toast('ダウンロードできませんでした。「Excel貼付用にコピー」をお使いください');
-        return;
       }
+      showTextPanel(filename, (fallback && fallback.text) || text,
+        'ダウンロードできなかったため、内容を表示しています。選択してコピーし、Excelに貼り付けてください。');
+      return;
     }
   }
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: filename });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  try {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: filename });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`${filename} をダウンロードしました`);
+  } catch (e) {
+    showTextPanel(filename, (fallback && fallback.text) || text);
+  }
+}
+
+/**
+ * どの環境でも必ずデータを取り出せる最後の受け皿。
+ * ダウンロードもクリップボードも使えないとき、本文を画面に出して手動コピーできるようにする。
+ */
+function showTextPanel(filename, text, note) {
+  const area = el('textarea', { class: 'panel-text', readonly: 'readonly', rows: 14, spellcheck: 'false' });
+  area.value = text;
+
+  const overlay = el('div', { class: 'modal-overlay' });
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  overlay.appendChild(el('div', { class: 'modal' }, [
+    el('h3', { text: filename }),
+    el('p', { class: 'hint', text: note || 'この内容を選択してコピーし、Excelに貼り付けてください（タブ区切り）。' }),
+    area,
+    el('div', { class: 'row wrap' }, [
+      el('button', {
+        type: 'button', class: 'btn', text: 'すべて選択',
+        onclick: () => { area.focus(); area.select(); },
+      }),
+      el('button', {
+        type: 'button', class: 'btn ghost', text: 'コピーを試す',
+        onclick: () => {
+          area.focus();
+          area.select();
+          let ok = false;
+          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+          toast(ok ? 'コピーしました' : '手動で選択してコピーしてください');
+        },
+      }),
+      el('button', { type: 'button', class: 'btn ghost', text: '閉じる', onclick: close }),
+    ]),
+  ]));
+
+  document.body.appendChild(overlay);
+  area.focus();
+  area.select();
 }
 
 function copyTable(tableId) {
@@ -1457,10 +1510,14 @@ function init() {
 
   // コピー / CSV
   document.addEventListener('click', (e) => {
-    const copyId = e.target.dataset && e.target.dataset.copy;
-    const csvId = e.target.dataset && e.target.dataset.csv;
-    if (copyId) copyTable(copyId);
-    if (csvId) downloadCsv(csvId);
+    const ds = e.target.dataset;
+    if (!ds) return;
+    if (ds.copy) copyTable(ds.copy);
+    if (ds.csv) downloadCsv(ds.csv);
+    if (ds.show) {
+      const tsv = tableToRows(ds.show).map((r) => r.join('\t')).join('\n');
+      showTextPanel(`${FILE_BASE[ds.show] || 'export'}_${state.ym}`, tsv);
+    }
   });
 
   window.addEventListener('beforeunload', () => saveState(true));
