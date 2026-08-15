@@ -5,9 +5,13 @@
   2. 動員予測      … 日別（または週別）の動員予測 → 週ごとの構成比
   3. 予算割振      … 月予算を週別動員の構成比で自動配分（メイン）
   4. 明細（実施予定）… 週ごとの回数から積み上げたい項目用
-  5. 接客部門      … 週配分を部門別に分ける
+  5. 接客部門      … 日別の予測動員から部門別の人件費を自動計算（動員帯マスター方式）
   6. 有休          … 有休計算表
+  7. 人件費マスター … 動員帯別の部門別人件費テーブル
 """
+
+import json
+import os
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -113,17 +117,12 @@ for i in range(1, 7):
         fmt="m/d", align="center", border=True)
     put(s, f"E{r}", f'=IF($A{r}<=$B$17,$D{r}-$C{r}+1,"")', align="center", border=True)
 
-put(s, "A28", "■ 部門構成比（接客部門シートで使用）", bold=True, fill=GRAY)
-for i, (name, ratio) in enumerate([
-        ("FLOOR", 0.442736342367074),
-        ("CONCESSION", 0.4321965545697439),
-        ("STORE", 0.03629238541840829),
-        ("OFFICE", 0.08877471764477365)], start=29):
-    put(s, f"A{i}", name, border=True)
-    put(s, f"B{i}", ratio, color=BLUE, fill=YELLOW, fmt=PCT2, align="center", border=True)
-put(s, "A33", "合計", bold=True, border=True)
-put(s, "B33", "=SUM(B29:B32)", bold=True, fmt=PCT2, align="center", border=True)
-put(s, "C33", "← 100.00% になるようにしてください", size=9, color="808080")
+put(s, "A28", "■ 部門別の人件費について", bold=True, fill=GRAY)
+put(s, "A29", "部門別（ボックス／コンセ／フロア／ストア／オフィス）の人件費は、",
+    size=9, color="808080")
+put(s, "A30", "「人件費マスター」シートの動員帯別テーブルから、日別の予測動員に応じて自動で引きます。",
+    size=9, color="808080")
+put(s, "A31", "計算結果は「接客部門」シートに出ます。", size=9, color="808080")
 
 put(s, "A35", "■ 凡例", bold=True, fill=GRAY)
 put(s, "A36", "入力するセル", fill=YELLOW, color=BLUE, border=True)
@@ -444,72 +443,235 @@ widths(p, {"A": 26, "B": 30, "C": 11, "D": 8, "E": 8,
 p.freeze_panes = "F5"
 
 # =====================================================================
-# 5. 接客部門
+# 5. 人件費マスター（動員帯別）
+# =====================================================================
+mst = wb.create_sheet("人件費マスター")
+title(mst, "人件費マスター（動員帯別）",
+      "日別の予測動員がどの帯に入るかで、部門別の人件費を決めます。"
+      "現行の接客部門割振表と同じ数値を初期値にしています。")
+
+put(mst, "A3", "時給", bold=True)
+put(mst, "B3", 1251, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+put(mst, "D3", "■ 劇場マスター額（早朝・ナイト）", bold=True, fill=GRAY)
+NIGHT = [("早朝", 28512), ("ナイトボックス", 8168), ("ナイトコンセ", 59400),
+         ("ナイトフロア", 53460), ("ナイトストア", 9653)]
+for i, (label, val) in enumerate(NIGHT):
+    put(mst, f"D{4 + i}", label)
+    put(mst, f"E{4 + i}", val, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+put(mst, "G4", "← 接客部門シートの早朝・ナイト欄に入れる金額です", size=9, color="808080")
+
+MST_HEAD = 11
+MST_FIRST = 12
+SECTIONS = ["ボックス", "コンセ", "フロア", "ストア", "オフィス"]
+
+mst.merge_cells(f"D{MST_HEAD - 1}:H{MST_HEAD - 1}")
+put(mst, f"D{MST_HEAD - 1}", "構成比", bold=True, fill=GRAY, align="center", border=True)
+mst.merge_cells(f"I{MST_HEAD - 1}:M{MST_HEAD - 1}")
+put(mst, f"I{MST_HEAD - 1}", "金額（標準総額 × 構成比）", bold=True, fill=HEAD,
+    align="center", border=True)
+for col, label in zip("ABC", ["動員 下限", "動員 上限", "標準総額"]):
+    put(mst, f"{col}{MST_HEAD}", label, bold=True, fill=HEAD, align="center", border=True)
+for i, sec in enumerate(SECTIONS):
+    put(mst, f"{get_column_letter(4 + i)}{MST_HEAD}", sec, bold=True, fill=GRAY,
+        align="center", border=True)
+    put(mst, f"{get_column_letter(9 + i)}{MST_HEAD}", sec, bold=True, fill=HEAD,
+        align="center", border=True)
+put(mst, f"N{MST_HEAD}", "部門計", bold=True, fill=HEAD, align="center", border=True)
+
+BANDS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "master.json")))
+for i, band in enumerate(BANDS):
+    r = MST_FIRST + i
+    lo, hi, total = band[0], band[1], band[2]
+    put(mst, f"A{r}", lo, color=BLUE, fill=YELLOW, fmt=YEN, align="center", border=True)
+    put(mst, f"B{r}", hi, color=BLUE, fill=YELLOW, fmt=YEN, align="center", border=True)
+    put(mst, f"C{r}", total, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+    for k in range(5):
+        put(mst, f"{get_column_letter(4 + k)}{r}", band[3 + k], color=BLUE, fill=YELLOW,
+            fmt=PCT2, border=True)
+        put(mst, f"{get_column_letter(9 + k)}{r}",
+            f"=$C{r}*{get_column_letter(4 + k)}{r}", fmt=YEN, border=True)
+    put(mst, f"N{r}", f"=SUM(I{r}:M{r})", bold=True, fmt=YEN, border=True)
+MST_LAST = MST_FIRST + len(BANDS) - 1
+
+put(mst, f"A{MST_LAST + 2}",
+    "※ 動員が帯の下限以上・次の帯の下限未満なら、その帯の金額を使います（VLOOKUPの近似一致）。",
+    size=9, color="808080")
+put(mst, f"A{MST_LAST + 3}",
+    "※ 帯は動員の小さい順に並べてください。行の追加・単価や構成比の変更はそのまま反映されます。",
+    size=9, color="808080")
+widths(mst, {"A": 11, "B": 11, "C": 13, **{get_column_letter(4 + i): 11 for i in range(5)},
+             **{get_column_letter(9 + i): 13 for i in range(5)}, "N": 13})
+mst.freeze_panes = f"A{MST_FIRST}"
+
+# =====================================================================
+# 6. 接客部門（日別の見込人件費）
 # =====================================================================
 h = wb.create_sheet("接客部門")
-title(h, "接客部門 部門別の内訳",
-      "「予算割振」シートの接客部門の週配分を、部門構成比で分けます。予算外は各週に直接入力します。")
-put(h, "A3", "接客部門 月予算", bold=True)
-put(h, "B3", f"=予算割振!$B${ITEM_FIRST}", fmt=YEN, border=True)
-put(h, "C3", "← 「予算割振」シートのB列で入力します", size=9, color="808080")
+title(h, "接客部門 人件費（動員帯マスターから自動計算）",
+      "日別の予測動員（動員予測シート）から、部門別の人件費を自動で引きます。"
+      "早朝・ナイトは金額を直接入力します。")
 
-put(h, "A5", "項目", bold=True, fill=HEAD, align="center", border=True)
+put(h, "A3", "予算動員", bold=True)
+put(h, "B3", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+put(h, "C3", "予測動員", bold=True, align="center")
+put(h, "D3", "=$D$40", fmt=YEN, border=True)
+put(h, "E3", "動員 予算比", bold=True, align="center")
+put(h, "F3", '=IF($B$3=0,"",$D$3/$B$3)', fmt=PCT2, border=True)
+put(h, "H3", "早朝・ナイトの金額 →", size=9, color="808080")
+for i, (label, _) in enumerate(NIGHT):
+    put(h, f"{get_column_letter(10 + i)}4", f"=人件費マスター!$E${4 + i}",
+        fmt=YEN, align="center", size=9, color="808080")
+
+DAY_HEAD = 8
+DAY_FIRST = 9
+DAY_LAST = DAY_FIRST + 30   # 31日分
+DAY_TOT = DAY_LAST + 1
+
+heads = ["日付", "曜日", "週", "予測動員"] + SECTIONS + \
+        ["早朝", "ナイトボックス", "ナイトコンセ", "ナイトフロア", "ナイトストア", "日計"]
+for i, label in enumerate(heads):
+    col = get_column_letter(1 + i)
+    fill = HEAD if i < 9 else (YELLOW if i < 14 else TOTALFILL)
+    put(h, f"{col}{DAY_HEAD}", label, bold=True, fill=fill, align="center",
+        border=True, wrap=True)
+
+for i in range(31):
+    r = DAY_FIRST + i
+    src = 4 + i  # 動員予測シートの行
+    put(h, f"A{r}", f'=IF({i + 1}<=DAY(設定!$B$12),設定!$B$11+{i},"")',
+        fmt="m/d", align="center", border=True)
+    put(h, f"B{r}", f'=IF($A{r}="","",CHOOSE(WEEKDAY($A{r},2),"月","火","水","木","金","土","日"))',
+        align="center", border=True)
+    put(h, f"C{r}", f'=IF($A{r}="","",IF($A{r}<=設定!$B$13,1,1+CEILING(($A{r}-設定!$B$13)/7,1)))',
+        align="center", border=True)
+    put(h, f"D{r}", f'=IF($A{r}="","",動員予測!$D${src})', fmt=YEN, border=True)
+    for k in range(5):
+        col = get_column_letter(5 + k)
+        put(h, f"{col}{r}",
+            f'=IF(OR($A{r}="",$D{r}=0),"",'
+            f'VLOOKUP($D{r},人件費マスター!$A${MST_FIRST}:$N${MST_LAST},{9 + k},TRUE))',
+            fmt=YEN, border=True)
+    for k in range(5):
+        col = get_column_letter(10 + k)
+        put(h, f"{col}{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
+    put(h, f"O{r}", f'=IF($A{r}="","",SUM($E{r}:$N{r}))', bold=True, fmt=YEN, border=True)
+
+put(h, f"A{DAY_TOT}", "合計", bold=True, fill=TOTALFILL, border=True)
+for col in "BC":
+    put(h, f"{col}{DAY_TOT}", None, fill=TOTALFILL, border=True)
+for i in range(4, 16):
+    col = get_column_letter(i)
+    put(h, f"{col}{DAY_TOT}", f"=SUM({col}{DAY_FIRST}:{col}{DAY_LAST})",
+        bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+
+# ---- 週別集計 ----
+WK_HEAD = DAY_TOT + 3
+put(h, f"A{WK_HEAD - 1}", "■ 週別集計（金曜〜木曜。早朝はフロアに含めます）", bold=True, fill=GRAY)
+put(h, f"A{WK_HEAD}", "項目", bold=True, fill=HEAD, align="center", border=True)
 for i in range(6):
     col = get_column_letter(2 + i)
-    put(h, f"{col}5", f"=設定!$B${21 + i}", bold=True, fill=HEAD, align="center", border=True)
-put(h, "H5", "月計", bold=True, fill=HEAD, align="center", border=True)
+    put(h, f"{col}{WK_HEAD}", f"=設定!$B${21 + i}", bold=True, fill=HEAD,
+        align="center", border=True)
+put(h, f"H{WK_HEAD}", "月計", bold=True, fill=HEAD, align="center", border=True)
 
-put(h, "A6", "週配分（動員構成比）", bold=True, border=True)
+WK_ATT = WK_HEAD + 1
+put(h, f"A{WK_ATT}", "予測動員", bold=True, border=True)
 for i in range(6):
     col = get_column_letter(2 + i)
-    src = WCOLS[i]  # 予算割振シートの週列（D..I）
-    put(h, f"{col}6", f'=IF({col}$5="","",予算割振!{src}${ITEM_FIRST})', bold=True, fmt=YEN, border=True)
-put(h, "H6", "=SUM(B6:G6)", bold=True, fmt=YEN, border=True)
+    put(h, f"{col}{WK_ATT}",
+        f'=IF({col}${WK_HEAD}="","",SUMIF($C${DAY_FIRST}:$C${DAY_LAST},{i + 1},$D${DAY_FIRST}:$D${DAY_LAST}))',
+        fmt=YEN, border=True)
+put(h, f"H{WK_ATT}", f"=SUM(B{WK_ATT}:G{WK_ATT})", bold=True, fmt=YEN, border=True)
 
-DEPTS = ["FLOOR", "CONCESSION", "STORE", "OFFICE"]
-put(h, "A8", "■ 部門別配分（週配分 × 部門構成比。端数はOFFICEで調整）", bold=True, fill=GRAY)
-for k, d in enumerate(DEPTS):
-    r = 9 + k
-    put(h, f"A{r}", d, border=True)
+# 部門別（早朝はフロア、ナイトは各部門に加算）
+EXTRA = {"ボックス": ["K"], "コンセ": ["L"], "フロア": ["M", "J"], "ストア": ["N"], "オフィス": []}
+WK_SEC = WK_ATT + 1
+for k, sec in enumerate(SECTIONS):
+    r = WK_SEC + k
+    base = get_column_letter(5 + k)
+    put(h, f"A{r}", sec, border=True)
     for i in range(6):
         col = get_column_letter(2 + i)
-        if k < len(DEPTS) - 1:
-            f = f'=IF({col}$5="","",ROUND({col}$6*設定!$B${29 + k},0))'
-        else:
-            f = f'=IF({col}$5="","",{col}$6-SUM({col}9:{col}11))'
-        put(h, f"{col}{r}", f, fmt=YEN, border=True)
+        terms = [f'SUMIF($C${DAY_FIRST}:$C${DAY_LAST},{i + 1},${c}${DAY_FIRST}:${c}${DAY_LAST})'
+                 for c in [base] + EXTRA[sec]]
+        put(h, f"{col}{r}", f'=IF({col}${WK_HEAD}="","",{"+".join(terms)})', fmt=YEN, border=True)
     put(h, f"H{r}", f"=SUM(B{r}:G{r})", fmt=YEN, border=True)
+WK_SUM = WK_SEC + 5
+put(h, f"A{WK_SUM}", "週計", bold=True, fill=TOTALFILL, border=True)
+for i in range(6):
+    col = get_column_letter(2 + i)
+    put(h, f"{col}{WK_SUM}", f'=IF({col}${WK_HEAD}="","",SUM({col}{WK_SEC}:{col}{WK_SUM - 1}))',
+        bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(h, f"H{WK_SUM}", f"=SUM(B{WK_SUM}:G{WK_SUM})", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
 
-put(h, "A14", "■ 予算外（ミーティング・棚卸・返品など）", bold=True, fill=GRAY)
-for k, d in enumerate(DEPTS):
-    r = 15 + k
-    put(h, f"A{r}", d, border=True)
+# ---- 追加分 ----
+ADD_HEAD = WK_SUM + 2
+put(h, f"A{ADD_HEAD}", "■ 追加分（週・部門ごとに入力）", bold=True, fill=GRAY)
+ADD_FIRST = ADD_HEAD + 1
+for k, sec in enumerate(SECTIONS):
+    r = ADD_FIRST + k
+    put(h, f"A{r}", sec, border=True)
     for i in range(6):
         col = get_column_letter(2 + i)
         put(h, f"{col}{r}", None, color=BLUE, fill=YELLOW, fmt=YEN, border=True)
     put(h, f"H{r}", f"=SUM(B{r}:G{r})", fmt=YEN, border=True)
 
-put(h, "A20", "■ 合計（部門別配分＋予算外）", bold=True, fill=GRAY)
-for k, d in enumerate(DEPTS):
-    r = 21 + k
-    put(h, f"A{r}", d, bold=True, border=True)
+# ---- 合計 ----
+TOT_HEAD = ADD_FIRST + 6
+put(h, f"A{TOT_HEAD}", "■ 合計（週別集計＋追加分）", bold=True, fill=GRAY)
+TOT_FIRST = TOT_HEAD + 1
+for k, sec in enumerate(SECTIONS):
+    r = TOT_FIRST + k
+    put(h, f"A{r}", sec, bold=True, border=True)
     for i in range(6):
         col = get_column_letter(2 + i)
-        put(h, f"{col}{r}", f'=IF({col}$5="","",{col}{9 + k}+{col}{15 + k})', fmt=YEN, border=True)
+        put(h, f"{col}{r}", f'=IF({col}${WK_HEAD}="","",{col}{WK_SEC + k}+{col}{ADD_FIRST + k})',
+            fmt=YEN, border=True)
     put(h, f"H{r}", f"=SUM(B{r}:G{r})", fmt=YEN, border=True)
-put(h, "A25", "週合計", bold=True, fill=TOTALFILL, border=True)
+TOT_SUM = TOT_FIRST + 5
+put(h, f"A{TOT_SUM}", "週合計", bold=True, fill=TOTALFILL, border=True)
 for i in range(6):
     col = get_column_letter(2 + i)
-    put(h, f"{col}25", f'=IF({col}$5="","",SUM({col}21:{col}24))', bold=True,
-        fill=TOTALFILL, fmt=YEN, border=True)
-put(h, "H25", "=SUM(B25:G25)", bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+    put(h, f"{col}{TOT_SUM}", f'=IF({col}${WK_HEAD}="","",SUM({col}{TOT_FIRST}:{col}{TOT_SUM - 1}))',
+        bold=True, fill=TOTALFILL, fmt=YEN, border=True)
+put(h, f"H{TOT_SUM}", f"=SUM(B{TOT_SUM}:G{TOT_SUM})", bold=True, fill=TOTALFILL,
+    fmt=YEN, border=True)
 
-put(h, "A27", "予算比", bold=True)
-put(h, "B27", '=IF($B$3=0,"",$H$25/$B$3)', bold=True, fmt=PCT2, border=True)
-put(h, "A28", "差額（予算 − 合計）", bold=True)
-put(h, "B28", '=IF($B$3=0,"",$B$3-$H$25)', bold=True, fmt=YEN, border=True)
-widths(h, {"A": 30, **{get_column_letter(2 + i): 13 for i in range(6)}, "H": 14})
-h.freeze_panes = "B6"
+# ---- 予算との比較 ----
+CMP = TOT_SUM + 2
+put(h, f"A{CMP}", "■ 予算との比較", bold=True, fill=GRAY)
+put(h, f"A{CMP + 1}", "予算配分（予算割振シート）", bold=True, border=True)
+for i in range(6):
+    col = get_column_letter(2 + i)
+    src = get_column_letter(4 + i)
+    put(h, f"{col}{CMP + 1}", f'=IF({col}${WK_HEAD}="","",予算割振!{src}${ITEM_FIRST})',
+        fmt=YEN, border=True)
+put(h, f"H{CMP + 1}", f"=SUM(B{CMP + 1}:G{CMP + 1})", bold=True, fmt=YEN, border=True)
+put(h, f"A{CMP + 2}", "差額（予算配分 − 合計）", bold=True, border=True)
+for i in range(6):
+    col = get_column_letter(2 + i)
+    put(h, f"{col}{CMP + 2}", f'=IF({col}${WK_HEAD}="","",{col}{CMP + 1}-{col}{TOT_SUM})',
+        fmt=YEN, border=True)
+put(h, f"H{CMP + 2}", f"=SUM(B{CMP + 2}:G{CMP + 2})", bold=True, fmt=YEN, border=True)
+put(h, f"A{CMP + 3}", "予算比（合計 ÷ 予算配分）", bold=True, border=True)
+for i in range(6):
+    col = get_column_letter(2 + i)
+    put(h, f"{col}{CMP + 3}", f'=IF(OR({col}${WK_HEAD}="",{col}{CMP + 1}=0),"",{col}{TOT_SUM}/{col}{CMP + 1})',
+        fmt=PCT2, border=True)
+put(h, f"H{CMP + 3}", f'=IF($H{CMP + 1}=0,"",$H{TOT_SUM}/$H{CMP + 1})', bold=True,
+    fmt=PCT2, border=True)
+
+put(h, f"A{CMP + 5}",
+    "※ 部門別の金額は「人件費マスター」シートの動員帯テーブルから、日別の予測動員に応じて引いています。",
+    size=9, color="808080")
+put(h, f"A{CMP + 6}",
+    "※ 週別集計では、早朝はフロアに、ナイト分は各部門に足しています（現行の割振表と同じ扱い）。",
+    size=9, color="808080")
+
+widths(h, {"A": 22, "B": 8, "C": 6, "D": 12,
+           **{get_column_letter(5 + i): 12 for i in range(5)},
+           **{get_column_letter(10 + i): 12 for i in range(5)}, "O": 13})
+h.freeze_panes = f"E{DAY_FIRST}"
 
 # =====================================================================
 # 6. 有休
@@ -552,6 +714,10 @@ for ws in wb.worksheets:
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
     ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+# シートの並び順
+ORDER = ["設定", "動員予測", "予算割振", "接客部門", "明細", "有休", "人件費マスター"]
+wb._sheets = [wb[n] for n in ORDER]
 
 wb.calculation.fullCalcOnLoad = True  # 開いたときに必ず再計算させる
 
