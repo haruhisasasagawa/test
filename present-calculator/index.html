@@ -118,6 +118,15 @@ button.danger{color:var(--alert);border-color:#E2BDB9}
 .pastebox .pv td,.pastebox .pv th{padding:3px 6px;font-size:11px}
 .pastebox .pv td:nth-child(1),.pastebox .pv td:nth-last-child(-n+3){white-space:nowrap}
 .pastebox .pv .miss{color:var(--warn);font-weight:700}
+/* 写真から取り込むときの手順 */
+.photosteps{background:var(--surface);border:1px solid var(--rule);border-radius:8px;
+  padding:10px 13px;margin-bottom:9px}
+.photosteps .ps-t{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.04em}
+.photosteps ol{margin:5px 0 0;padding-left:1.35em;font-size:13px;line-height:1.75}
+.photosteps li{margin:1px 0}
+.photosteps li b{background:var(--accent-bg);color:var(--accent);border-radius:3px;padding:0 4px}
+.photosteps .ps-n{margin-top:7px;padding-top:6px;border-top:1px solid var(--rule-2);
+  font-size:11.5px;color:var(--ink-2);line-height:1.6}
 
 /* ---------- 折りたたみ ---------- */
 details.fold{border:1px solid var(--rule);border-radius:8px;margin-top:14px;background:var(--surface)}
@@ -632,6 +641,7 @@ button .ic:only-child{margin-right:0}
   .dz-t{font-size:16px;padding-right:106px;line-height:1.35}  /* 右上の状態バッジに重ねない */
   .dz-s{font-size:12px}
   .dz-btn,.dz-btn2{width:100%}
+  .photosteps ol{font-size:14px;line-height:1.9}
   .dz-drag{display:none}                          /* スマホにドラッグ＆ドロップは無い */
   .pastebox textarea{min-height:120px}
   .pastebox .pv{max-height:300px}
@@ -980,15 +990,17 @@ button .ic:only-child{margin-right:0}
           <button class="dz-btn" type="button" id="fileGiftBtn" data-for="fileGift">ファイルを選ぶ</button>
           <div class="dz-drag">ここにドラッグ＆ドロップでも入ります（手入力だけでも使えます）</div>
           <button class="dz-btn2" type="button" id="pasteOpen">またはコピーした表を貼り付ける</button>
-          <input type="file" id="fileGift" accept=".xlsx" hidden>
+          <button class="dz-btn2" type="button" id="photoOpen">写真から取り込む</button>
+          <input type="file" id="fileGift" accept=".xlsx,image/*" hidden>
         </div>
         <div class="dz-state" id="stateGift">未読込</div>
       </div>
     </div>
     <div class="pastebox" id="pasteBox" hidden>
-      <div class="pb-t">表をそのまま貼り付ける</div>
-      <div class="pb-s">Excel・メール・社内サイトの表をマウスで範囲選択してコピーし、下の枠に貼り付けてください
+      <div class="pb-t" id="pbTitle">表をそのまま貼り付ける</div>
+      <div class="pb-s" id="pbSub">Excel・メール・社内サイトの表をマウスで範囲選択してコピーし、下の枠に貼り付けてください
         （Ctrl+V）。見出し行や「管理方法」「保管場所」などの列が混ざったままで構いません。</div>
+      <div class="photosteps" id="photoSteps" hidden></div>
       <textarea id="pasteArea" rows="7" spellcheck="false"
         placeholder="作品名　プレゼント内容　納品数　配布開始日　配布終了日 … の表をそのまま貼り付け"></textarea>
       <div class="pb-a">
@@ -1741,7 +1753,26 @@ function isGiftStatusToken(s){
 }
 function isQtyToken(s){
   var t=toHalf(s).replace(/\s/g,"");
-  return /^[\d,]+[(（][\d,]+[)）]$/.test(t) || /^[\d,]+$/.test(t);
+  if(/^[\d,]+[(（][\d,]+[)）]$/.test(t)) return true;   /* 2800（200） */
+  if(/^[\d,]+(\+[\d,]+)+$/.test(t)) return true;       /* 1500+300 追加入荷 */
+  if(/^各?日?[\d,]+[づず]つ$/.test(t)) return true;      /* 各日500づつ */
+  return /^[\d,]+$/.test(t);
+}
+/* 貼り付け・写真から来た納品数の読み取り。合算や「各日◯づつ」に対応する */
+function pasteQty(tok){
+  var t=toHalf(tok||"").replace(/[\s,]/g,"");
+  if(/^各?日?\d+[づず]つ$/.test(t)){
+    var n=/(\d+)/.exec(t);
+    /* 1日あたりの数。合計は日数分だが日数は表から読めないので、少ないほうに倒す */
+    return {qty:+n[1], bundle:null, note:"納品数「"+tok+"」は1日あたり。合計を入れ直してください"};
+  }
+  if(/^\d+(\+\d+)+$/.test(t)){
+    var sum=0, parts=t.split("+");
+    for(var i=0;i<parts.length;i++) sum+=+parts[i];
+    return {qty:sum, bundle:null, note:"納品数 "+tok+" を合計しました"};
+  }
+  var q=parseQty(tok);
+  return {qty:q.qty, bundle:q.bundle, note:""};
 }
 function isDateToken(s){
   var t=toHalf(s).replace(/\s/g,"");
@@ -1756,7 +1787,7 @@ function isOpenEndToken(s){
 function isGiftNoteToken(s){
   if(/https?:\/\//.test(s)) return true;      /* URL */
   if(/^【[^】]*】$/.test(s)) return true;      /* 【残数報告フォーム】のような小見出し */
-  if(/^[①-⑳㈠-㈩※＊*＞>･→➡]/.test(s)) return true;  /* 箇条書き */
+  if(/^[①-⑳㈠-㈩※＊*＞>･→➡■□◆◇▪▫◎]/.test(s)) return true;  /* 箇条書き・小見出し */
   if(/[。｡]\s*$/.test(s)) return true;         /* 文で終わる説明 */
   return false;
 }
@@ -1810,13 +1841,13 @@ function parseGiftText(text, refYmd){
     var present="", title="";
     if(names.length===1){ title=names[0]; }
     else if(names.length>1){ present=names[names.length-1]; title=names.slice(0,-1).join(" "); }
-    var q=parseQty(qtyTok);
+    var q=pasteQty(qtyTok);
     cur={
       section:section, title:title, present:present,
       qtyText:qtyTok||"", qty:q.qty, bundle:q.bundle, extras:[],
       startText:startTok||"", endText:"",
       start:startTok?parseLooseDate(startTok,refYmd):null, end:null,
-      openEnded:false, tbd:false, note:"", endSeen:false
+      openEnded:false, tbd:false, note:q.note||"", endSeen:false
     };
     out.push(cur);
     qtyTok=null;
@@ -2397,7 +2428,8 @@ var ICONS={
   warn:  '<path d="M12 3.5 21.5 20h-19z"/><path d="M12 9.5v5M12 17.2v.01"/>',
   back:  '<path d="M15 5l-7 7 7 7"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  refresh:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.5 3.5v5h-5"/>'
+  refresh:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.5 3.5v5h-5"/>',
+  camera:'<path d="M3.5 8.5A1.5 1.5 0 0 1 5 7h2.2l1.2-2h7.2l1.2 2H19a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/><circle cx="12" cy="12.8" r="3.4"/>'
 };
 function icon(name,cls){
   var d=ICONS[name]; if(!d) return "";
@@ -3743,6 +3775,12 @@ function addGiftRows(rows){
   return added;
 }
 function loadGiftFile(file){
+  /* 写真を置かれることがある。読めないので黙って失敗させず、文字にする手順へ案内する */
+  if(file&&(/^image\//.test(file.type)||/\.(jpe?g|png|heic|heif|webp|gif)$/i.test(file.name||""))){
+    openPaste("photo");
+    el("pasteHint").textContent="写真は直接読み取れません。上の手順で文字にしてから貼り付けてください。";
+    return;
+  }
   readFile(file,function(err,buf){
     if(err){ alert(err.message); return; }
     try{
@@ -3782,12 +3820,60 @@ function renderPastePreview(){
   box.innerHTML=h+'</tbody></table></div>';
   return rows.length;
 }
+/* 写真そのものを読む仕組み（OCR）は積んでいない。外部ライブラリを取りに行けず、
+   日本語の学習データを同梱すると十数MBになり、しかも表のスクリーンショットでは
+   誤読が多い。在庫数を1桁読み違えれば掲示の日付が壊れるので、それは載せられない。
+   代わりに、端末が持っている文字認識（iPhoneのテキスト認識表示など）で
+   文字にしてから貼ってもらう。認識精度は端末側のほうが確実に高い。 */
+function photoStepsHtml(){
+  var ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  var and=/Android/i.test(navigator.userAgent);
+  var steps = ios ? [
+      "「写真」アプリで表の写真を開く",
+      "文字の上を長押しして、右下に出る <b>テキスト認識表示</b> のマークを押す",
+      "「すべて選択」→「コピー」",
+      "下の枠を長押しして「ペースト」"
+    ] : and ? [
+      "「Googleフォト」で写真を開く",
+      "下の <b>レンズ</b>（または「画像内のテキスト」）を押す",
+      "文字を選んで「コピー」",
+      "下の枠を長押しして「貼り付け」"
+    ] : [
+      "写真をGoogleドライブに入れ、右クリック →「アプリで開く」→「Googleドキュメント」",
+      "文字に変換された内容を全選択してコピー",
+      "下の枠に貼り付け（Ctrl+V）",
+      "スマホで撮った写真なら、スマホ側で文字にしてから送るほうが早いです"
+    ];
+  return '<div class="ps-t">'+(ios?"iPhone":and?"Android":"パソコン")+'での手順</div><ol>'
+    +steps.map(function(t){ return "<li>"+t+"</li>"; }).join("")
+    +'</ol><div class="ps-n">写真そのものを読み取る機能は積んでいません。'
+    +'このツールは外部の部品を一切使わないぶん、文字認識だけは端末の機能を借ります。'
+    +'そのほうが読み違いも少なくて済みます。</div>';
+}
+function openPaste(mode){
+  var box=el("pasteBox"), area=el("pasteArea");
+  box.hidden=false;
+  var photo=(mode==="photo");
+  el("photoSteps").hidden=!photo;
+  if(photo) el("photoSteps").innerHTML=photoStepsHtml();
+  el("pbTitle").textContent = photo ? "写真から取り込む" : "表をそのまま貼り付ける";
+  el("pbSub").textContent = photo
+    ? "写真の文字を端末の機能で読み取って、下の枠に貼り付けてください。表の形が崩れていても読み取れます。"
+    : "Excel・メール・社内サイトの表をマウスで範囲選択してコピーし、下の枠に貼り付けてください（Ctrl+V）。見出し行や「管理方法」「保管場所」などの列が混ざったままで構いません。";
+  area.focus();
+  box.scrollIntoView({block:"nearest"});
+}
 function setupPaste(){
   var open=el("pasteOpen"), box=el("pasteBox"), area=el("pasteArea");
   open.addEventListener("click",function(e){
     e.stopPropagation();
-    box.hidden=!box.hidden;
-    if(!box.hidden){ area.focus(); box.scrollIntoView({block:"nearest"}); }
+    if(box.hidden||!el("photoSteps").hidden) openPaste("text");
+    else box.hidden=true;
+  });
+  el("photoOpen").addEventListener("click",function(e){
+    e.stopPropagation();
+    if(box.hidden||el("photoSteps").hidden) openPaste("photo");
+    else box.hidden=true;
   });
   /* 貼り付けた瞬間に読み取り結果を出す。押す前に取り違えに気づけるようにする */
   area.addEventListener("input",function(){
@@ -3925,6 +4011,7 @@ function decorateIcons(){
   [["filePsBtn","file"],["fileGiftBtn","file"],["pasteOpen","paste"],["pasteRun","check"],
    ["calc","calc"],["addGift","plus"],["exportJson","data"],["importJsonBtn","data"],
    ["clearGift","trash"],["doPrint","print"],["phonePdf","file"],["toExcel","sheet"],
+   ["photoOpen","camera"],
    ["calcSticky","calc"]].forEach(function(x){
     var e=el(x[0]); if(e&&!e.querySelector("svg")) e.insertAdjacentHTML("afterbegin",icon(x[1]));
   });

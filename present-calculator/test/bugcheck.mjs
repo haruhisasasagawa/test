@@ -177,6 +177,28 @@ let ng=0; const ok=(c,m)=>{ console.log((c?'  OK  ':'  NG  ')+m); if(!c) ng++; }
   ok(/ph-when/.test(h)&&/8\/1[0-9]<\/b>|<b>8\//.test(h), 'T: 期限を大きい数字で出す');
   ok(!/style="[^"]*background/.test(h), 'T: 塗りに頼らない（背景オフのプリンタでも読める）');
 }
+// U: 写真から起こした文字（表の形が崩れたもの）も読める
+{
+  const txt=fs.readFileSync(process.cwd()+'/test/fixtures/gift-photo.txt','utf8');
+  const rows=P.parseGiftText(txt,'2026-08-28');
+  const cat=r=>/サンプリング/.test(r.section)?'sampling':/LV|特別上映/i.test(r.section)?'event':'present';
+  const n=k=>rows.filter(r=>cat(r)===k).length;
+  ok(rows.length===28, `U: 28件を読み取る（実際 ${rows.length}件）`);
+  ok(n('present')===15&&n('event')===10&&n('sampling')===3,
+    `U: 区分 入プレ${n('present')} / LV${n('event')} / サンプ${n('sampling')}`);
+  ok(rows.every(r=>r.start), 'U: 28件すべてに配布開始日が入る');
+  /* 追加入荷の合算 */
+  const bk=rows.find(r=>/バックルームズ/.test(r.title));
+  ok(bk&&bk.qty===1800&&/合計/.test(bk.note), `U: 「1500+300」→ ${bk&&bk.qty}（合算）`);
+  /* 1日あたりの数。少ないほうに倒して注記を残す */
+  const kill=rows.find(r=>/あなたを殺す旅/.test(r.title));
+  ok(kill&&kill.qty===500&&/1日あたり/.test(kill.note), `U: 「各日500づつ」→ ${kill&&kill.qty}＋注記`);
+  /* ■で始まる小見出しを次の件の作品名に取り違えない */
+  const mado=rows.find(r=>/まどか/.test(r.title)&&/第2弾/.test(r.present));
+  ok(mado&&!/納品数ご報告/.test(mado.title), `U: ■の小見出しを作品名にしない → ${mado&&mado.title}`);
+  const chii=rows.find(r=>/ちいかわ/.test(r.title));
+  ok(chii&&chii.qty===7600&&/forms\.gle/.test(chii.note), 'U: フォームのURLは直前の件の備考に付く');
+}
 // M: 重複した上映回を二重に数えない
 {
   const psPath=process.argv[2];
