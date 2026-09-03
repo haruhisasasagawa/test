@@ -182,7 +182,7 @@ PLAN_DOW_ROW = 6                         # 曜日別実績平均ブロックの�
 SIZE_COL = {'B': 'N', 'C': 'O', 'D': 'P', 'E': 'Q', 'F': 'R'}      # 規模区分ブロック
 MONTH_COL = {'B': 'T', 'C': 'U'}                                    # 月別係数ブロック
 SPECIAL_COL = {'E': 'W', 'F': 'X', 'G': 'Y', 'H': 'Z'}              # 特別期間ブロック
-EQUIP_FIRST, EQUIP_LAST = 110, 309       # ⑤保管設備（劇場ブロックの下）
+EQUIP_FIRST, EQUIP_LAST = 114, 313       # ⑤保管設備。劇場ブロック直下の注記3行(107〜109)を避けて114行から
 PI_FIRST_COL = 12                        # 商品マスタのPI値開始列（L列）
 # ⑥発注サイクルは AB列から。列幅はシート単位でしか決められないため、
 # 曜日の○（幅3）を置く列は他のブロックと重ならない位置に逃がしている。
@@ -414,7 +414,7 @@ def build_intro(wb):
         ('t', '', '黄色いセルだけ入力します。それ以外のセルは触らないでください。'),
         ('', '', ''),
         ('s', S_CUR, '在庫システムから出した「今日の在庫一覧CSV」を貼る'),
-        ('t', '', '　CSVを開いて、見出し行を除いたデータ部分をコピーし、A2セルに貼り付けます。'),
+        ('t', '', '　CSVを開いて、見出し行を除いたデータ部分をコピーし、A6セルに貼り付けます。'),
         ('t', '', '　貼り付けたら、シート上部の「該当行数」が0以外になっているか見てください。'),
         ('t', '', '　0のままなら貼り付けに失敗しています。もう一度やり直してください。'),
         ('s', S_TT, '帯を見ながら、黄色の「発注数」に数字を入れる'),
@@ -619,7 +619,7 @@ def build_mechanism(wb):
          f'={Q_SET}!$C$15', '0%', '年1回', '本社'),
         ('GW・大型作品公開などの特別期間', S_CONST, '④ 特別期間（W列）',
          f'=COUNTIF({special_col("E")},"?*")&" 件 登録済み"', None, '都度', '支配人・副支配人'),
-        ('冷蔵庫・ストッカーの容量（常温／冷蔵／冷凍）', S_CONST, '⑤ 保管設備（110行目）',
+        ('冷蔵庫・ストッカーの容量（常温／冷蔵／冷凍）', S_CONST, '⑤ 保管設備（114行目）',
          f'=IF({Q_SET}!$C$4="","",'
          f'TEXT(SUMIFS({equip_col("G")},{equip_col("B")},{Q_SET}!$C$4,'
          f'{equip_col("C")},"常温"),"#,##0")&" ／ "&'
@@ -1062,7 +1062,7 @@ def build_const_master(wb):
     sheet_title(ws, '定数マスタ')
     # 6ブロックを横に並べているため、どこに何があるかを先頭に書いておく
     ws['E2'] = ('ブロックの場所　① 劇場マスタ＝B列　／　② 規模区分＝N列　／　③ 月別係数＝T列'
-                '　／　④ 特別期間＝W列　／　⑤ 保管設備＝110行目　／　⑥ 発注サイクル＝AB列')
+                '　／　④ 特別期間＝W列　／　⑤ 保管設備＝114行目　／　⑥ 発注サイクル＝AB列')
     ws['E2'].font = F_NOTE
 
     # ---------- ① 劇場マスタ（B〜J列） ----------
@@ -1084,10 +1084,10 @@ def build_const_master(wb):
         # 劇場コードが在庫CSVに実在するかの照合。コードの取り違えは
         # 「その劇場だけ何も出ない」という形で出るため、一覧で潰せるようにする
         ws[f'M{r}'] = (
-            f'=IF($B{r}="","",IF(COUNTIF({csv_col(S_CUR, "B")},$B{r})=0,"✖ CSVに無し",'
-            f'IF(INDEX({csv_col(S_CUR, "C")},MATCH($B{r},{csv_col(S_CUR, "B")},0))=$C{r},'
+            f'=IF($B{r}="","",IF(COUNTIF({csv_col(S_CUR, "V")},$B{r})=0,"✖ CSVに無し",'
+            f'IFERROR(IF(INDEX({csv_col(S_CUR, "C")},MATCH($B{r},{csv_col(S_CUR, "V")},0))=$C{r},'
             f'"✔ 一致","△ CSVでは "&INDEX({csv_col(S_CUR, "C")},'
-            f'MATCH($B{r},{csv_col(S_CUR, "B")},0)))))')
+            f'MATCH($B{r},{csv_col(S_CUR, "V")},0))),"△ 照合できません")))')
         style_row(ws, r, 'BCDEFGHL', fill=FILL_INPUT)
         style_row(ws, r, 'IJKM', fill=FILL_AUTO)
         ws[f'B{r}'].number_format = '@'
@@ -1123,7 +1123,7 @@ def build_const_master(wb):
     add_validation(ws, '"' + ','.join(SIZES) + '"', f'D{THEATER_FIRST}:D{THEATER_LAST}')
     add_validation(ws, '"' + ','.join(DRINK_STYLES) + '"', f'E{THEATER_FIRST}:E{THEATER_LAST}')
 
-    # ---------- ② 規模区分の標準値（L〜P列） ----------
+    # ---------- ② 規模区分の標準値（N〜R列） ----------
     ws['N3'] = '② 規模区分の標準値　劇場マスタの個別欄が空のときはこの値を使う'
     ws['N3'].font = F_BOLD
     put_headers(ws, 5, ['規模区分', '来場者数/日', '安全在庫日数', '発注サイクル', '備考'],
@@ -1140,7 +1140,7 @@ def build_const_master(wb):
         ws[f'N{r}'].fill = FILL_AUTO
         ws[f'O{r}'].number_format = FMT_INT
 
-    # ---------- ③ 月別の季節係数（R〜S列） ----------
+    # ---------- ③ 月別の季節係数（T〜U列） ----------
     ws['T3'] = '③ 月別の係数'
     ws['T3'].font = F_BOLD
     put_headers(ws, 5, ['月', '係数'], ['固定', '入力'], start_col=20)
@@ -1152,7 +1152,7 @@ def build_const_master(wb):
         ws[f'T{r}'].fill = FILL_AUTO
         ws[f'U{r}'].number_format = '0%'
 
-    # ---------- ④ 特別期間（U〜X列） ----------
+    # ---------- ④ 特別期間（W〜Z列） ----------
     ws['W3'] = '④ 特別期間　この期間は月別の係数より優先される'
     ws['W3'].font = F_BOLD
     put_headers(ws, 5, ['期間名', '開始日', '終了日', '係数'],
@@ -1355,9 +1355,12 @@ def build_csv_sheet(wb, name, others, label, note='', paste_hint=''):
                 .replace('ّ', ''))
     ws['H2'].font = Font(name=FONT, size=16, bold=True, color=C_INK)
     ws['H2'].alignment = Alignment(horizontal='left', vertical='center')
+    limit = CALC_LAST - CALC_FIRST + 1
     ws['H3'] = (f'=IF({hit}=0,"CSVの見出し行を除いたデータを A{CSV_FIRST} セルに貼り付けてください。'
-                f'貼ったのに0のままなら、劇場コードが数値になっています。",'
-                f'"対象劇場：" & {Q_SET}!$C$4 & "　" & {Q_SET}!$C$5)')
+                f'貼ったのに0のままなら、設定シートの劇場コードとCSVの劇場コードが一致していません。",'
+                f'IF({Q_SET}!$C$19>{limit},"⚠ 取扱商品が "&{Q_SET}!$C$19&" 件あります。'
+                f'計算できるのは {limit} 件までなので、超えた分は発注リストに出ません。",'
+                f'"対象劇場：" & {Q_SET}!$C$4 & "　" & {Q_SET}!$C$5))')
     ws['H3'].font = F_NOTE
     ws.row_dimensions[2].height = 24
     ws.conditional_formatting.add('H2', FormulaRule(
@@ -1403,22 +1406,30 @@ def build_csv_sheet(wb, name, others, label, note='', paste_hint=''):
         cell.fill = FILL_HEAD
         cell.border = BORDER
         cell.alignment = Alignment(horizontal='center', wrap_text=True)
-    helper = ws.cell(CSV_HEAD, 21, '連番(自動)')
-    helper.font = F_HEAD
-    helper.fill = FILL_ACCENT
-    helper.border = BORDER
+    for ci, label in ((21, '連番(自動)'), (22, '劇場コード(自動)'), (23, '商品コード(自動)')):
+        helper = ws.cell(CSV_HEAD, ci, label)
+        helper.font = F_HEAD
+        helper.fill = FILL_ACCENT
+        helper.border = BORDER
 
     for r in range(CSV_FIRST, CSV_LAST + 1):
+        # 正規化列。Excelに貼ると「0761」が 761 に、13桁の商品コードが数値になることが多い。
+        # 文字で比較する側がそのままだと一致せず、ツール全体が黙って空になる。
+        # ここで文字に揃えて、以降の比較はすべてこの2列を見る。
+        ws[f'V{r}'] = f'=IF($B{r}="","",TEXT($B{r},"0000"))'
+        ws[f'W{r}'] = f'=IF($I{r}="","",IF(ISNUMBER($I{r}),TEXT($I{r},"0"),$I{r}))'
+        ws[f'V{r}'].font = F_NOTE
+        ws[f'W{r}'].font = F_NOTE
         if not others:
             # 当日CSV: 対象劇場の行に通し番号を振る
-            ws[f'{CSV_HELPER}{r}'] = f'=IF($B{r}={Q_SET}!$C$4,N({CSV_HELPER}{r-1})+1,N({CSV_HELPER}{r-1}))'
+            ws[f'{CSV_HELPER}{r}'] = f'=IF($V{r}={Q_SET}!$C$4,N({CSV_HELPER}{r-1})+1,N({CSV_HELPER}{r-1}))'
         else:
             # 過去のCSV: 対象劇場の行のうち、より新しいどのCSVにも無い商品だけに番号を振る。
             # これで3枚を順に足すと、重複なしの和集合＝取扱商品の全体になる。
-            dup = '+'.join(f'COUNTIFS({csv_col(o, "B")},$B{r},{csv_col(o, "I")},$I{r})'
+            dup = '+'.join(f'COUNTIFS({csv_col(o, "V")},$V{r},{csv_col(o, "W")},$W{r})'
                            for o in others)
             ws[f'{CSV_HELPER}{r}'] = (
-                f'=IF($B{r}<>{Q_SET}!$C$4,N({CSV_HELPER}{r-1}),'
+                f'=IF($V{r}<>{Q_SET}!$C$4,N({CSV_HELPER}{r-1}),'
                 f'IF({dup}>0,N({CSV_HELPER}{r-1}),N({CSV_HELPER}{r-1})+1))')
         ws[f'{CSV_HELPER}{r}'].font = F_NOTE
         ws[f'B{r}'].number_format = '@'
@@ -1444,9 +1455,9 @@ def build_settings(wb):
     ws.column_dimensions['D'].width = 62
 
     cur_date = (f'IFERROR(DATE(LEFT(TEXT(INDEX({csv_col(S_CUR, "A")},'
-                f'MATCH($C$4,{csv_col(S_CUR, "B")},0)),"00000000"),4),'
-                f'MID(TEXT(INDEX({csv_col(S_CUR, "A")},MATCH($C$4,{csv_col(S_CUR, "B")},0)),"00000000"),5,2),'
-                f'RIGHT(TEXT(INDEX({csv_col(S_CUR, "A")},MATCH($C$4,{csv_col(S_CUR, "B")},0)),"00000000"),2)),"")')
+                f'MATCH($C$4,{csv_col(S_CUR, "V")},0)),"00000000"),4),'
+                f'MID(TEXT(INDEX({csv_col(S_CUR, "A")},MATCH($C$4,{csv_col(S_CUR, "V")},0)),"00000000"),5,2),'
+                f'RIGHT(TEXT(INDEX({csv_col(S_CUR, "A")},MATCH($C$4,{csv_col(S_CUR, "V")},0)),"00000000"),2)),"")')
     prv_date = cur_date.replace(S_CUR, S_PRV)
     mid_date = cur_date.replace(S_CUR, S_MID)
 
@@ -1482,13 +1493,14 @@ def build_settings(wb):
                      f'IFERROR(INDEX({month_col("C")},MONTH($C$6)),1),{special}))',
          '当日基準日が特別期間に該当すればその係数、なければ月別係数です。', FILL_AUTO, '0%'),
         ('発注担当者', None, '発注書・発注管理に記録する担当者名です。', FILL_INPUT, None),
-        ('当日CSV該当行数', f'=COUNTIF({csv_col(S_CUR, "B")},$C$4)',
+        ('当日CSV該当行数', f'=COUNTIF({csv_col(S_CUR, "V")},$C$4)',
          '0のままなら劇場コードが一致していません（先頭ゼロが落ちていないか確認）。', FILL_AUTO, FMT_INT),
-        ('2ヶ月前CSV該当行数', f'=COUNTIF({csv_col(S_PRV, "B")},$C$4)',
+        ('2ヶ月前CSV該当行数', f'=COUNTIF({csv_col(S_PRV, "V")},$C$4)',
          '前回CSVを貼っていない場合は0です（実績消費は算出できません）。', FILL_AUTO, FMT_INT),
         ('取扱商品数', f'=MAX({csv_col(S_CUR, CSV_HELPER)})+MAX({csv_col(S_MID, CSV_HELPER)})'
                        f'+MAX({csv_col(S_PRV, CSV_HELPER)})',
-         '3枚のCSVの和集合です。発注計算シートの行数と一致します。', FILL_AUTO, FMT_INT),
+         f'3枚のCSVの和集合です。計算できるのは {CALC_LAST - CALC_FIRST + 1} 件までです（超えると①に警告が出ます）。',
+         FILL_AUTO, FMT_INT),
         ('動員計画の入力日数', f'=COUNT({col(S_PLAN, "D", PLAN_FIRST, PLAN_LAST)})',
          '0でも動きます（標準来場者数を使用）。読みが変わる日だけ入れてください。', FILL_AUTO, FMT_INT),
         ('動員実績の入力日数', f'=COUNT({col(S_PLAN, "E", PLAN_FIRST, PLAN_LAST)})',
@@ -1509,7 +1521,7 @@ def build_settings(wb):
         # 既存の $C$4〜$C$24 を動かすと参照が全部ずれるため、末尾に足している。
         ('1ヶ月前の基準日', f'={mid_date}',
          '月1回_1ヶ月前の在庫を貼る の対象日付から自動取得します。', FILL_AUTO, FMT_DATE),
-        ('1ヶ月前CSV該当行数', f'=COUNTIF({csv_col(S_MID, "B")},$C$4)',
+        ('1ヶ月前CSV該当行数', f'=COUNTIF({csv_col(S_MID, "V")},$C$4)',
          '3枚そろうと、期中に入れ替わった商品を取りこぼしません。', FILL_AUTO, FMT_INT),
         ('直近1ヶ月の日数', '=IF(OR($C$6="",$C$25=""),"",$C$6-$C$25)',
          '1ヶ月前の基準日から当日基準日までの日数です。', FILL_AUTO, FMT_INT),
@@ -1556,7 +1568,7 @@ def build_settings(wb):
     add_validation(ws, '"' + ','.join(SPAN_OPTIONS) + '"', 'C29')
 
     ws['B34'] = '※ 在庫CSVを貼り替えたら、この画面の該当行数と基準日が想定どおりか必ず確認してください。'
-    ws['B35'].font = F_NOTE
+    ws['B34'].font = F_NOTE
     ws['B35'] = ('※ 動員シートに実績を入れておくと、期間の平均動員が自動で出て、'
                  '商品ごとの実測PI値（来場者100人あたり何個売れたか）も正確になります。'
                  '購買率を人が管理する必要はありません。')
@@ -1591,21 +1603,21 @@ def build_calc(wb):
         # 当日 → 1ヶ月前（当日に無いもの）→ 2ヶ月前（どちらにも無いもの）の順に積む
         ws[f'C{r}'] = (
             f'=IFERROR(IF($B{r}<={n_cur},'
-            f'INDEX({csv_col(S_CUR, "I")},MATCH($B{r},{csv_col(S_CUR, CSV_HELPER)},0)),'
+            f'INDEX({csv_col(S_CUR, "W")},MATCH($B{r},{csv_col(S_CUR, CSV_HELPER)},0)),'
             f'IF($B{r}<={n_cur}+{n_mid},'
-            f'INDEX({csv_col(S_MID, "I")},MATCH($B{r}-{n_cur},{csv_col(S_MID, CSV_HELPER)},0)),'
-            f'INDEX({csv_col(S_PRV, "I")},'
+            f'INDEX({csv_col(S_MID, "W")},MATCH($B{r}-{n_cur},{csv_col(S_MID, CSV_HELPER)},0)),'
+            f'INDEX({csv_col(S_PRV, "W")},'
             f'MATCH($B{r}-{n_cur}-{n_mid},{csv_col(S_PRV, CSV_HELPER)},0)))),"")')
 
         def from_master_or_csv(master_col, csv_letter):
             return (f'=IF($C{r}="","",IFERROR(INDEX({item_col(master_col)},'
                     f'MATCH($C{r},{item_col("B")},0)),'
                     f'IFERROR(INDEX({csv_col(S_CUR, csv_letter)},'
-                    f'MATCH($C{r},{csv_col(S_CUR, "I")},0)),'
+                    f'MATCH($C{r},{csv_col(S_CUR, "W")},0)),'
                     f'IFERROR(INDEX({csv_col(S_MID, csv_letter)},'
-                    f'MATCH($C{r},{csv_col(S_MID, "I")},0)),'
+                    f'MATCH($C{r},{csv_col(S_MID, "W")},0)),'
                     f'IFERROR(INDEX({csv_col(S_PRV, csv_letter)},'
-                    f'MATCH($C{r},{csv_col(S_PRV, "I")},0)),"")))))')
+                    f'MATCH($C{r},{csv_col(S_PRV, "W")},0)),"")))))')
 
         ws[f'D{r}'] = from_master_or_csv('C', 'J')     # 商品名
         ws[f'E{r}'] = from_master_or_csv('D', 'H')     # 商品分類名
@@ -1621,7 +1633,7 @@ def build_calc(wb):
         # 現物を数えたならそれが正しいので、理論値より実棚を採る。
         cr = COUNT_FIRST + (r - CALC_FIRST)
         ws[f'AL{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_CUR, "N")},'
-                        f'{csv_col(S_CUR, "B")},{Q_SET}!$C$4,{csv_col(S_CUR, "I")},$C{r}))')
+                        f'{csv_col(S_CUR, "V")},{Q_SET}!$C$4,{csv_col(S_CUR, "W")},$C{r}))')
         ws[f'AL{r}'].number_format = FMT_INT
         ws[f'AM{r}'] = (f'=IF($C{r}="","",IF({Q_COUNT}!$F{cr}="","",'
                         f'IF({Q_COUNT}!$G{cr}="","",'
@@ -1629,7 +1641,7 @@ def build_calc(wb):
         ws[f'AM{r}'].number_format = FMT_INT
         ws[f'K{r}'] = f'=IF($C{r}="","",IF($AM{r}<>"",N($AM{r}),N($AL{r})))'
         ws[f'L{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_PRV, "N")},'
-                       f'{csv_col(S_PRV, "B")},{Q_SET}!$C$4,{csv_col(S_PRV, "I")},$C{r}))')
+                       f'{csv_col(S_PRV, "V")},{Q_SET}!$C$4,{csv_col(S_PRV, "W")},$C{r}))')
         # 期間納品数: 発注管理の入荷実績（前回基準日〜当日基準日）
         ws[f'M{r}'] = (f'=IF($C{r}="","",IF(OR({Q_SET}!$C$6="",{Q_SET}!$C$7=""),0,'
                        f'SUMIFS({po_col("S")},{po_col("C")},{Q_SET}!$C$4,{po_col("F")},$C{r},'
@@ -1658,7 +1670,7 @@ def build_calc(wb):
         ws[f'Q{r}'] = (f'=IF(OR($C{r}="",$P{r}="",$P{r}=0,{cover}<=0),"",'
                        f'{plan_avg}*$P{r}/100)')
         ws[f'R{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_CUR, "O")},'
-                       f'{csv_col(S_CUR, "B")},{Q_SET}!$C$4,{csv_col(S_CUR, "I")},$C{r}))')
+                       f'{csv_col(S_CUR, "V")},{Q_SET}!$C$4,{csv_col(S_CUR, "W")},$C{r}))')
         ws[f'S{r}'] = (f'=IF($C{r}="","",'
                        f'IF({Q_SET}!$C$9="実績消費",N($O{r}),'
                        f'IF({Q_SET}!$C$9="動員連動",IF(N($AJ{r})>0,N($AJ{r}),N($O{r})),'
@@ -1736,7 +1748,7 @@ def build_calc(wb):
 
         # ---- 1ヶ月前スナップショット。取扱の変化と、消費の急変を見る ----
         ws[f'AN{r}'] = (f'=IF($C{r}="","",SUMIFS({csv_col(S_MID, "N")},'
-                        f'{csv_col(S_MID, "B")},{Q_SET}!$C$4,{csv_col(S_MID, "I")},$C{r}))')
+                        f'{csv_col(S_MID, "V")},{Q_SET}!$C$4,{csv_col(S_MID, "W")},$C{r}))')
         deliv = (f'SUMIFS({po_col("S")},{po_col("C")},{Q_SET}!$C$4,{po_col("F")},$C{r},'
                  f'{po_col("R")},">="&{{a}},{po_col("R")},"<="&{{b}})')
         ws[f'AO{r}'] = (f'=IF(OR($C{r}="",{Q_SET}!$C$26=0),"",'
@@ -1751,9 +1763,9 @@ def build_calc(wb):
         ws[f'AR{r}'] = (f'=IF(OR($AP{r}="",$AQ{r}="",N($AQ{r})<=0),"",'
                         f'N($AP{r})/N($AQ{r})-1)')
         # 3枚のどこに載っていたかで、取扱の変化を言葉にする
-        in_cur = f'COUNTIFS({csv_col(S_CUR, "B")},{Q_SET}!$C$4,{csv_col(S_CUR, "I")},$C{r})>0'
-        in_mid = f'COUNTIFS({csv_col(S_MID, "B")},{Q_SET}!$C$4,{csv_col(S_MID, "I")},$C{r})>0'
-        in_prv = f'COUNTIFS({csv_col(S_PRV, "B")},{Q_SET}!$C$4,{csv_col(S_PRV, "I")},$C{r})>0'
+        in_cur = f'COUNTIFS({csv_col(S_CUR, "V")},{Q_SET}!$C$4,{csv_col(S_CUR, "W")},$C{r})>0'
+        in_mid = f'COUNTIFS({csv_col(S_MID, "V")},{Q_SET}!$C$4,{csv_col(S_MID, "W")},$C{r})>0'
+        in_prv = f'COUNTIFS({csv_col(S_PRV, "V")},{Q_SET}!$C$4,{csv_col(S_PRV, "W")},$C{r})>0'
         ws[f'AS{r}'] = (
             f'=IF($C{r}="","",'
             f'IF(AND({in_cur},{in_mid},{in_prv}),"継続",'
@@ -1832,10 +1844,13 @@ def build_timetable(wb):
     ws['D5'] = '品目に発注が必要です'
     ws['D5'].font = F_HERO_UNIT
     ws['D5'].alignment = Alignment(horizontal='left', vertical='center')
-    ws['B7'] = (f'=IF($B$5=0,"すべての商品が次の発注日を越える在庫を持っています。",'
+    ws['B7'] = (f'=IF({Q_SET}!$C$18=0,'
+                f'"※ 2ヶ月前の在庫CSVが貼られていないため、残り日数（帯）と定数未設定商品の暫定発注は出ません。'
+                f'定数が入っている商品の発注数はそのまま使えます。",'
+                f'IF($B$5=0,"すべての商品が次の発注日を越える在庫を持っています。",'
                 f'"うち "&COUNTIF({state_col},"今日が期限")&'
                 f'"品目は今日発注しないとリードタイムに間に合いません。 "&'
-                f'COUNTIF({state_col},"要発注")&"品目は次の発注日までに在庫が切れます。")')
+                f'COUNTIF({state_col},"要発注")&"品目は次の発注日までに在庫が切れます。"))')
     ws['B7'].font = Font(name=FONT, size=10, color=C_TEXT2)
 
     # ---- 今日はどのグループを発注する日か ----
@@ -2125,8 +2140,8 @@ def build_plan(wb):
     in_period = (f'{date_col},">="&{Q_SET}!$C$7,{date_col},"<="&{Q_SET}!$C$6')
 
     # ---- 曜日別の実績平均。予測を入れていない日の既定値になる ----
-    ws['N4'] = '曜日別の実績平均（前回基準日〜当日基準日）'
-    ws['N4'].font = F_BOLD
+    ws['N3'] = '曜日別の実績平均（前回基準日〜当日基準日）'
+    ws['N3'].font = F_BOLD
     put_headers(ws, PLAN_DOW_ROW - 1, ['曜日', '実績の平均', '日数'],
                 ['自動'] * 3, start_col=14)
     for i, day in enumerate('月火水木金土日'):
@@ -2393,11 +2408,11 @@ def build_all_theaters(wb):
         ws[f'C{r}'] = f'=IF($B{r}="","",{Q_THEATER}!$C{src})'
         ws[f'D{r}'] = f'=IF($B{r}="","",{Q_THEATER}!$D{src})'
         ws[f'E{r}'] = f'=IF($B{r}="","",{Q_THEATER}!$E{src})'
-        ws[f'F{r}'] = (f'=IF($B{r}="","",COUNTIFS({csv_col(S_CUR, "B")},$B{r},'
-                       f'{csv_col(S_CUR, "I")},"<>"))')
-        ws[f'G{r}'] = (f'=IF($B{r}="","",SUMPRODUCT(({csv_col(S_CUR, "B")}=$B{r})*'
+        ws[f'F{r}'] = (f'=IF($B{r}="","",COUNTIFS({csv_col(S_CUR, "V")},$B{r},'
+                       f'{csv_col(S_CUR, "W")},"<>"))')
+        ws[f'G{r}'] = (f'=IF($B{r}="","",SUMPRODUCT(({csv_col(S_CUR, "V")}=$B{r})*'
                        f'{csv_col(S_CUR, "N")}*{csv_col(S_CUR, "Q")}))')
-        ws[f'H{r}'] = (f'=IF($B{r}="","",COUNTIFS({csv_col(S_CUR, "B")},$B{r},'
+        ws[f'H{r}'] = (f'=IF($B{r}="","",COUNTIFS({csv_col(S_CUR, "V")},$B{r},'
                        f'{csv_col(S_CUR, "N")},"<0"))')
         ws[f'I{r}'] = (f'=IF($B{r}="","",COUNTIFS({po_col("C")},$B{r},{po_col("Q")},"発注済"))')
         ws[f'J{r}'] = (f'=IF(OR($B{r}="",{Q_SET}!$C$6=""),"",'
@@ -2699,7 +2714,7 @@ def build_dashboard(wb, categories, vendors):
          '2ヶ月前にだけあった。もう扱っていない', C_TEXT3),
         ('復活（先月は無し）', f'=COUNTIF({calc_change},"復活（先月は無し）")',
          '2ヶ月前と当日にあり、1ヶ月前に無い。要確認', C_WARN),
-        ('定数が発注点より小さい', f'=COUNTIF({calc_status},"*定数が発注点より小さい*")',
+        ('定数が小さい', f'=COUNTIF({calc_status},"*定数が小さい*")',
          '棚を満たしても次の便まで持たない。棚割りか発注頻度の見直しが要る', C_WARN),
         ('マスタ未登録', f'=COUNTIF({calc_status},"*マスタ未登録*")',
          'L/T・ロット・PI値が既定値のまま', C_WARN),
@@ -2726,7 +2741,7 @@ def build_dashboard(wb, categories, vendors):
     ws.cell(note_row, 2,
             '※ 数字は「発注計算」シートの推奨発注数にもとづく金額です（税抜）。').font = F_NOTE
     ws.cell(note_row + 1, 2,
-            '※ グラフの元データは AE 列以降（非表示）にあります。'
+            '※ グラフの元データは AE 列以降（印刷範囲の外）にあります。列を隠すとグラフが描かれなくなるため隠していません。'
             '商品分類や仕入先が増えたらそこに追記してください。').font = F_NOTE
     return ws
 
