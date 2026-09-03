@@ -1,17 +1,16 @@
 """指定シートを1枚ずつPNGにする（LibreOffice経由）。見た目の確認用。
     python3 excel/render.py ホーム ②発注数を決める ...
 """
-import shutil, subprocess, sys
+import os, shutil, subprocess, sys
 from pathlib import Path
 from openpyxl import load_workbook
 import warnings; warnings.filterwarnings('ignore')
 HERE = Path(__file__).resolve().parent
-SRC = HERE / '売店発注ツール_サンプルデータ入り.xlsx'
+SRC = Path(os.environ.get('RENDER_SRC', HERE / '売店発注ツール_サンプルデータ入り.xlsx'))
 OUT = Path('/tmp/claude-0/-home-user-test/6ebcf1c1-1102-5af1-96f9-c94aebb0a201/scratchpad/render')
-AREAS = {'ダッシュボード': 'A1:AC64', '③発注書': 'A1:J40', '発注のしくみ': 'A1:AL86',
-         '②発注数を決める': 'A1:AA36', '随時_動員を入れる': 'A1:P46', '実棚を入れる': 'A1:R42',
-         'つかいかた': 'A1:D62', 'ホーム': 'A1:F37', '①今日の在庫を貼る': 'A1:W20',
-         '定数マスタ': 'A1:AM30', '商品マスタ': 'A1:P30', '設定（最初に1回）': 'A1:D36'}
+AREAS = {'ホーム': 'A1:E42', '①在庫を貼る': 'A1:W20', '②発注する': 'A1:AE44', '③発注書': 'A1:J40',
+         '動員を入れる': 'A1:L46', 'つかいかた': 'A1:D60', '商品マスタ': 'A1:K30', '劇場マスタ': 'A1:G30',
+         '設定': 'A1:F42', '月1回_1ヶ月前の在庫': 'A1:W20'}
 OUT.mkdir(parents=True, exist_ok=True)
 for target in sys.argv[1:]:
     tmp = OUT / 'r.xlsx'
