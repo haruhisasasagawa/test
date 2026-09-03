@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>売店発注ツール</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+    <div class="top__bar">
+        <div class="brand">
+            <div class="brand__mark" aria-hidden="true"></div>
+            <div>
+                <p class="brand__name">売店発注ツール</p>
+                <p class="brand__theater" id="theaterName">劇場名未設定</p>
+            </div>
+        </div>
+        <div class="top__tools">
+            <button class="btn btn--icon btn--quiet" id="themeToggle" title="表示テーマを切り替える" aria-label="表示テーマを切り替える">◐</button>
+        </div>
+    </div>
+    <nav class="tabs" id="tabs">
+        <button class="tab is-active" data-view="runway">タイムテーブル</button>
+        <button class="tab" data-view="stock">棚卸</button>
+        <button class="tab" data-view="items">商品</button>
+        <button class="tab" data-view="history">発注履歴</button>
+        <button class="tab" data-view="settings">設定</button>
+    </nav>
+</header>
+
+<main class="wrap">
+
+    <!-- ================= タイムテーブル ================= -->
+    <section class="view is-active" id="view-runway">
+        <div class="verdict">
+            <div>
+                <p class="u-label">今日の結論</p>
+                <div class="verdict__line">
+                    <span class="verdict__count num" id="vCount">0</span>
+                    <span class="verdict__unit" id="vUnit">品目に発注が必要です</span>
+                </div>
+                <p class="verdict__sub" id="vSub"></p>
+            </div>
+            <div class="verdict__side">
+                <p class="u-label">発注予定額（税抜）</p>
+                <span class="verdict__amount num" id="vAmount">¥0</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="chips" id="catChips">
+                <button class="chip is-on" data-cat="">すべて</button>
+                <button class="chip" data-cat="food">フード</button>
+                <button class="chip" data-cat="drink">ドリンク</button>
+                <button class="chip" data-cat="packaging">包材</button>
+            </div>
+            <div class="chips" id="scopeChips">
+                <button class="chip is-on" data-scope="need">要発注のみ</button>
+                <button class="chip" data-scope="all">全商品</button>
+            </div>
+            <div class="spacer"></div>
+            <button class="btn" id="applyRec">推奨数をまとめて入れる</button>
+            <button class="btn btn--quiet" id="clearQty">クリア</button>
+        </div>
+
+        <div class="timetable">
+            <div class="tt__head">
+                <span>商品</span>
+                <span>状態</span>
+                <span class="tt__scale" id="ttScale"></span>
+                <span class="r">推奨</span>
+                <span class="r">発注数</span>
+                <span class="r">金額</span>
+            </div>
+            <div class="tt__mscale" id="ttScaleMobile" aria-hidden="true"></div>
+            <div id="ttBody"></div>
+            <p class="empty" id="ttEmpty" hidden>条件に合う商品がありません。</p>
+        </div>
+
+        <div class="legend">
+            <span><i class="k-ok"></i>在庫がもつ期間（余裕）</span>
+            <span><i class="k-warn"></i>発注サイクル内に切れる</span>
+            <span><i class="k-crit"></i>リードタイム的に今日が期限</span>
+            <span><i class="k-ghost"></i>発注すると伸びる分</span>
+            <span><i class="k-dl"></i>発注デッドライン</span>
+        </div>
+    </section>
+
+    <!-- ================= 棚卸 ================= -->
+    <section class="view" id="view-stock">
+        <div class="card">
+            <h2 class="card__title">棚卸</h2>
+            <p class="card__note">発注単位の数と端数を入れると、消費単位の在庫数に換算します。</p>
+            <div class="controls">
+                <div class="chips" id="stockCatChips">
+                    <button class="chip is-on" data-cat="">すべて</button>
+                    <button class="chip" data-cat="food">フード</button>
+                    <button class="chip" data-cat="drink">ドリンク</button>
+                    <button class="chip" data-cat="packaging">包材</button>
+                </div>
+                <div class="chips" id="stockStorageChips">
+                    <button class="chip is-on" data-storage="">保管場所すべて</button>
+                    <button class="chip" data-storage="常温">常温</button>
+                    <button class="chip" data-storage="冷蔵">冷蔵</button>
+                    <button class="chip" data-storage="冷凍">冷凍</button>
+                </div>
+                <div class="spacer"></div>
+                <button class="btn btn--primary" id="saveStock">在庫を保存</button>
+            </div>
+            <div class="table-wrap">
+                <table class="grid">
+                    <thead>
+                        <tr>
+                            <th>商品</th><th>保管</th>
+                            <th class="r">発注単位数</th><th class="r">端数</th>
+                            <th class="r">合計</th><th class="r">安全在庫</th><th>最終更新</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= 商品 ================= -->
+    <section class="view" id="view-items">
+        <div class="card">
+            <h2 class="card__title">商品マスタ</h2>
+            <p class="card__note">PI値は来場者100人あたりの消費数です。実績に合わせて更新すると予測が当たるようになります。</p>
+            <div class="controls">
+                <button class="btn btn--primary" id="addItem">商品を追加</button>
+                <button class="btn" id="exportItems">CSVを書き出す</button>
+                <label class="btn btn--file">CSVを読み込む<input type="file" id="importItems" accept=".csv,text/csv"></label>
+            </div>
+            <div class="table-wrap">
+                <table class="grid">
+                    <thead>
+                        <tr>
+                            <th>コード</th><th>商品名</th><th>カテゴリ</th><th>仕入先</th><th>単位</th>
+                            <th class="r">入数</th><th class="r">単価</th><th class="r">PI値</th>
+                            <th class="r">L/T</th><th class="r">ロット</th><th>保管</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= 発注履歴 ================= -->
+    <section class="view" id="view-history">
+        <div class="card">
+            <h2 class="card__title">発注履歴</h2>
+            <p class="card__note">「入荷済にする」を押すと、発注数が在庫に加算されます。</p>
+            <div id="historyList"></div>
+            <p class="empty" id="historyEmpty">まだ発注はありません。</p>
+        </div>
+    </section>
+
+    <!-- ================= 設定 ================= -->
+    <section class="view" id="view-settings">
+        <div class="card">
+            <h2 class="card__title">劇場と発注の条件</h2>
+            <div class="fields">
+                <label class="field"><span>劇場名</span><input type="text" id="setTheater" placeholder="○○シネマズ ○○"></label>
+                <label class="field"><span>担当者名</span><input type="text" id="setStaff" placeholder="発注担当者"></label>
+                <label class="field"><span>発注サイクル（日）</span><input type="number" id="setCycle" min="1" max="30"></label>
+                <label class="field"><span>安全在庫日数（日）</span><input type="number" id="setSafety" min="0" max="30" step="0.5"></label>
+                <label class="field"><span>繁忙係数（%）</span><input type="number" id="setSeason" min="10" max="300" step="5"></label>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="card__title">曜日別の想定来場者数</h2>
+            <p class="card__note">直近の実績平均を入れてください。消費予測の基礎になります。</p>
+            <div class="week" id="weekGrid"></div>
+        </div>
+
+        <div class="card">
+            <h2 class="card__title">データ</h2>
+            <p class="card__note">このブラウザの中にだけ保存されます。端末を移るときはJSONで持ち出してください。</p>
+            <div class="controls">
+                <button class="btn btn--primary" id="saveSettings">設定を保存</button>
+                <button class="btn" id="exportJson">JSONで書き出す</button>
+                <label class="btn btn--file">JSONから戻す<input type="file" id="importJson" accept=".json,application/json"></label>
+                <button class="btn btn--danger" id="resetAll">初期状態に戻す</button>
+            </div>
+        </div>
+    </section>
+</main>
+
+<div class="dock" id="dock">
+    <div class="dock__inner">
+        <div class="dock__sum">
+            <div><b class="num" id="dockCount">0</b> <span>品目</span></div>
+            <div><b class="num" id="dockTotal">¥0</b> <span>税抜</span></div>
+        </div>
+        <button class="btn" id="printOrder">発注書を印刷</button>
+        <button class="btn" id="exportOrderCsv">CSVで書き出す</button>
+        <button class="btn btn--primary" id="submitOrder">発注を確定する</button>
+    </div>
+</div>
+
+<div class="modal" id="itemModal" hidden>
+    <div class="modal__scrim" data-close></div>
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="itemModalTitle">
+        <h2 id="itemModalTitle">商品を追加</h2>
+        <div class="fields">
+            <label class="field"><span>商品コード</span><input type="text" id="f_code"></label>
+            <label class="field"><span>商品名</span><input type="text" id="f_name"></label>
+            <label class="field"><span>カテゴリ</span>
+                <select id="f_category">
+                    <option value="food">フード</option>
+                    <option value="drink">ドリンク</option>
+                    <option value="packaging">包材</option>
+                </select>
+            </label>
+            <label class="field"><span>仕入先</span><input type="text" id="f_vendor" list="vendorList"></label>
+            <label class="field"><span>発注単位</span><input type="text" id="f_unit" placeholder="ケース"></label>
+            <label class="field"><span>入数</span><input type="number" id="f_packSize" min="1"></label>
+            <label class="field"><span>単価（発注単位・税抜）</span><input type="number" id="f_price" min="0"></label>
+            <label class="field"><span>PI値（100人あたり）</span><input type="number" id="f_pi" min="0" step="0.1"></label>
+            <label class="field"><span>リードタイム（日）</span><input type="number" id="f_lead" min="0"></label>
+            <label class="field"><span>発注ロット</span><input type="number" id="f_lot" min="1"></label>
+            <label class="field"><span>保管場所</span>
+                <select id="f_storage">
+                    <option value="常温">常温</option>
+                    <option value="冷蔵">冷蔵</option>
+                    <option value="冷凍">冷凍</option>
+                </select>
+            </label>
+            <label class="field field--check"><input type="checkbox" id="f_active"><span>発注対象にする</span></label>
+        </div>
+        <div class="controls" style="justify-content:flex-end;margin-top:18px;margin-bottom:0">
+            <button class="btn" data-close>やめる</button>
+            <button class="btn btn--primary" id="saveItem">保存</button>
+        </div>
+    </div>
+</div>
+
+<datalist id="vendorList"></datalist>
+<div class="print-only" id="printArea"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="seed.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
