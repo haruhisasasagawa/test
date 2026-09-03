@@ -36,44 +36,60 @@ from openpyxl.worksheet.datavalidation import DataValidation
 # 共通定義
 # ---------------------------------------------------------------------------
 
-FONT = 'Meiryo UI'
+# フォントは BIZ UDPゴシック（Windows 10以降の標準）。UDフォントで小さい数字が読みやすい。
+# 無い環境では Excel が既定フォントに落とす（表示は崩れない）。
+FONT = 'BIZ UDPゴシック'
 
 # 配色は題材から取っている。客席の暗がり、スクリーンに落ちる光、
-# ポップコーンのバター色。バター色は入力欄など「人が触るところ」にだけ使い、
-# 状態を表す色（余裕／要発注／今日が期限）とは層を分けている。
+# ポップコーンのバター色。使う色は3系統だけに絞る。
+#   黄（バター）  … 人が触るところ（入力欄・発注で伸びる帯）
+#   緑／橙／赤     … 状態（余裕／要発注／今日が期限）。3色とも色覚多様性の検証済み
+#   それ以外       … モノトーン。見出しの塗りつぶしは使わず、罫線と太さで階層を出す
 C_INK = 'FF1B1D24'
 C_TEXT2 = 'FF4E5163'
-C_TEXT3 = 'FF7A7D90'
-C_PAPER = 'FFFAF7F0'
-C_LINE = 'FFE2DCCE'
+C_TEXT3 = 'FF8A8D9C'
+C_PAPER = 'FFF7F5F0'
+C_LINE = 'FFE6E2D8'
+C_HAIR = 'FFEFECE5'
 C_BUTTER = 'FFE8B44A'
-C_BUTTER_SOFT = 'FFF9EAC6'
+C_BUTTER_SOFT = 'FFFBF0D6'
 C_OK = 'FF00795A'
 C_WARN = 'FFC9761A'
 C_CRIT = 'FFA32A3C'
-C_OK_SOFT = 'FFDCEBE5'
-C_WARN_SOFT = 'FFF7E7D2'
-C_CRIT_SOFT = 'FFF3DDE1'
+C_OK_SOFT = 'FFE3F0EA'
+C_WARN_SOFT = 'FFF9EBDB'
+C_CRIT_SOFT = 'FFF6E1E4'
+C_WHITE = 'FFFFFFFF'
 
 F_BASE = Font(name=FONT, size=11, color=C_INK)
 F_BOLD = Font(name=FONT, size=11, bold=True, color=C_INK)
-F_TITLE = Font(name=FONT, size=15, bold=True, color=C_INK)
+F_TITLE = Font(name=FONT, size=18, bold=True, color=C_INK)
 F_NOTE = Font(name=FONT, size=9, color=C_TEXT3)
 F_HEAD = Font(name=FONT, size=10, bold=True, color=C_TEXT2)
 F_INPUT = Font(name=FONT, size=11, bold=True, color='FF7A5200')
-F_HERO = Font(name=FONT, size=36, bold=True, color=C_CRIT)
+F_HERO = Font(name=FONT, size=40, bold=True, color=C_CRIT)
 F_HERO_UNIT = Font(name=FONT, size=13, bold=True, color=C_INK)
 F_DAY = Font(name=FONT, size=8, color=C_TEXT3)
+F_LINK = Font(name=FONT, size=11, bold=True, color=C_INK, underline='single')
+F_BAR = Font(name=FONT, size=11, bold=True, color=C_WHITE)
+F_BAR_LINK = Font(name=FONT, size=10, bold=True, color=C_BUTTER, underline='single')
 
-FILL_HEAD = PatternFill('solid', fgColor='FFF1ECE1')
+FILL_HEAD = PatternFill('solid', fgColor='FFF3F1EC')
 FILL_INPUT = PatternFill('solid', fgColor='FFFDF3D8')
-FILL_AUTO = PatternFill('solid', fgColor='FFFBFAF7')
+FILL_AUTO = PatternFill('solid', fgColor='FFFCFBF8')
 FILL_ACCENT = PatternFill('solid', fgColor=C_PAPER)
 FILL_ALERT = PatternFill('solid', fgColor=C_CRIT_SOFT)
-FILL_TRACK = PatternFill('solid', fgColor='FFF4F1EA')
+FILL_TRACK = PatternFill('solid', fgColor='FFF2EFE8')
+FILL_BAR = PatternFill('solid', fgColor=C_INK)
+FILL_CARD = PatternFill('solid', fgColor=C_WHITE)
 
 THIN = Side(style='thin', color=C_LINE)
-BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+HAIR = Side(style='thin', color=C_HAIR)
+RULE = Side(style='medium', color=C_INK)
+BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)      # ブロック・カードの枠
+BORDER_ROW = Border(bottom=HAIR)                                    # 明細行は横罫線だけ
+BORDER_HEAD = Border(bottom=RULE)                                   # 見出しは下線1本
+
 
 FMT_INT = '#,##0_);[Red](#,##0)'
 FMT_DEC = '#,##0.0;[Red]\\-#,##0.0'
@@ -135,7 +151,8 @@ TT_COL = {'no': 'B', 'name': 'C', 'group': 'D', 'par': 'E', 'stock': 'F',
 # シート名。日々の作業順に番号を振り、上から順にたどれば発注が終わるようにしている。
 # シート名は「何をするか」で付ける。毎日さわる3枚に①②③を振り、
 # たまにしか触らないシートは頻度を名前に書いておく。
-S_INTRO = 'はじめに'
+S_HOME = 'ホーム'
+S_INTRO = 'つかいかた'
 S_MECH = '発注のしくみ'
 S_COUNT = '実棚を入れる'
 S_SET = '設定（最初に1回）'
@@ -151,6 +168,25 @@ S_ITEM = '商品マスタ'
 S_CONST = '定数マスタ'
 S_CALC = '発注計算'
 S_ALL = '全劇場サマリ'
+
+# 全シートの1行目に出すアプリバーの文言。シート名 → 表示
+BAR_LABEL = {
+    S_HOME: 'ホーム',
+    S_INTRO: 'つかいかた',
+    S_MECH: '発注のしくみ',
+    S_CUR: 'STEP 1　今日の在庫を貼る',
+    S_TT: 'STEP 2　発注数を決める',
+    S_COUNT: 'STEP 2′　実棚を入れる（★の商品だけ）',
+    S_SHEET: 'STEP 3　発注書を印刷する',
+    S_MID: '月1回　1ヶ月前の在庫を貼る',
+    S_PRV: '月1回　2ヶ月前の在庫を貼る',
+    S_PLAN: '随時　動員を入れる',
+    S_DASH: 'ダッシュボード',
+    S_PO: '発注管理',
+    S_ITEM: '商品マスタ',
+    S_CONST: '定数マスタ',
+    S_SET: '設定（最初に1回）',
+}
 
 # 数式の中では常にシングルクォートで囲む。丸数字などを含む名前でも安全に参照できる。
 Q_SET = f"'{S_SET}'"
@@ -347,6 +383,7 @@ def po_col(letter):
 
 
 def style_row(ws, row, cols, font=F_BASE, fill=None, fmt=None, align=None, border=True):
+    """明細行。横罫線だけにして、行の高さを少し上げて詰まり感を消す。"""
     for c in cols:
         cell = ws[f'{c}{row}']
         cell.font = font
@@ -357,11 +394,13 @@ def style_row(ws, row, cols, font=F_BASE, fill=None, fmt=None, align=None, borde
         if align:
             cell.alignment = Alignment(horizontal=align, vertical='center')
         if border:
-            cell.border = BORDER
+            cell.border = BORDER_ROW
+    if ws.row_dimensions[row].height is None:
+        ws.row_dimensions[row].height = 18
 
 
 def put_headers(ws, row, headers, kinds=None, start_col=2):
-    """見出し行（と、その上の 入力/自動/選択 の区分行）を書く。"""
+    """見出し行（と、その上の 入力/自動/選択 の区分行）を書く。塗りつぶしは使わず下線で示す。"""
     for i, name in enumerate(headers):
         letter = get_column_letter(start_col + i)
         if kinds:
@@ -372,18 +411,51 @@ def put_headers(ws, row, headers, kinds=None, start_col=2):
         cell = ws[f'{letter}{row}']
         cell.value = name
         cell.font = F_HEAD
-        cell.fill = FILL_HEAD
-        cell.border = BORDER
+        cell.border = BORDER_HEAD
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[row].height = 22
+
+
+def app_bar(ws, width=16):
+    """1行目のアプリバー。どの画面にいるか／ホームへ戻る、を全シート共通で出す。"""
+    label = BAR_LABEL.get(ws.title, ws.title)
+    last = get_column_letter(1 + width)
+    ws.merge_cells(f'B1:{last}1')
+    c = ws['B1']
+    c.value = '  ' + label
+    c.font = F_BAR
+    c.fill = FILL_BAR
+    c.alignment = Alignment(horizontal='left', vertical='center')
+    for i in range(2, 2 + width):
+        ws.cell(1, i).fill = FILL_BAR
+    home = ws.cell(1, 2 + width)
+    if ws.title != S_HOME:
+        home.value = '◀ ホーム  '
+        home.hyperlink = f"#'{S_HOME}'!A1"
+        home.font = F_BAR_LINK
+    home.fill = FILL_BAR
+    home.alignment = Alignment(horizontal='right', vertical='center')
+    ws.row_dimensions[1].height = 24
+    ws.sheet_view.showGridLines = False
 
 
 def sheet_title(ws, text, note=None):
+    app_bar(ws)
     ws['B2'] = text
     ws['B2'].font = F_TITLE
+    ws.row_dimensions[2].height = 30
     if note:
         ws['B3'] = note
         ws['B3'].font = F_NOTE
     ws.sheet_view.showGridLines = False
+
+
+def link_cell(cell, sheet, text=None):
+    """シート内ハイパーリンク。押せるところは下線＋太字で揃える。"""
+    cell.value = text if text is not None else sheet
+    cell.hyperlink = f"#'{sheet}'!A1"
+    cell.font = F_LINK
+    return cell
 
 
 def add_validation(ws, formula, cells):
@@ -397,13 +469,144 @@ def add_validation(ws, formula, cells):
 # 各シート
 # ---------------------------------------------------------------------------
 
+def build_home(wb):
+    """
+    ホーム。開いた瞬間に「きょう何をすればいいか」と「いまどこまで進んだか」が分かる画面。
+    3ステップをカードで縦に並べ、各カードにシートへのリンクと生きた数字と完了状態を出す。
+    """
+    ws = wb.create_sheet(S_HOME)
+    app_bar(ws, width=4)
+    for c, w in (('B', 3), ('C', 52), ('D', 20), ('E', 3), ('F', 3)):
+        ws.column_dimensions[c].width = w
+
+    ws['B2'] = '売店発注ツール'
+    ws['B2'].font = Font(name=FONT, size=22, bold=True, color=C_INK)
+    ws.row_dimensions[2].height = 34
+    ws['B3'] = (f'=IF({Q_SET}!$C$6="","在庫CSVを貼ると、ここに日付と劇場が出ます",'
+                f'"きょう "&TEXT({Q_SET}!$C$6,"m/d")&"（"&{weekday_jp(f"{Q_SET}!$C$6")}&"）　"&'
+                f'{Q_SET}!$C$5&"　"&{Q_SET}!$C$4)')
+    ws['B3'].font = Font(name=FONT, size=11, color=C_TEXT2)
+    ws.row_dimensions[3].height = 20
+
+    def section(r, text):
+        ws[f'B{r}'] = text
+        ws[f'B{r}'].font = Font(name=FONT, size=10, bold=True, color=C_TEXT3)
+        ws.row_dimensions[r].height = 22
+
+    def card(r, spine, title, sheet, sub, number, fmt, caption, status):
+        """4行のカード。r=見出し／r+1=説明／r+2=状態。左に色のついた背（spine）。"""
+        for rr in (r, r + 1, r + 2):
+            for cc in 'BCD':
+                ws[f'{cc}{rr}'].fill = FILL_CARD
+            ws[f'B{rr}'].fill = PatternFill('solid', fgColor=spine)
+            ws[f'D{rr}'].border = Border(right=THIN, top=THIN if rr == r else None,
+                                         bottom=THIN if rr == r + 2 else None)
+            ws[f'C{rr}'].border = Border(top=THIN if rr == r else None,
+                                         bottom=THIN if rr == r + 2 else None)
+            ws[f'B{rr}'].border = Border(left=THIN, top=THIN if rr == r else None,
+                                         bottom=THIN if rr == r + 2 else None)
+        t = link_cell(ws[f'C{r}'], sheet, '  ' + title + '  ›')
+        t.font = Font(name=FONT, size=14, bold=True, color=C_INK, underline='single')
+        t.alignment = Alignment(vertical='center')
+        ws[f'C{r + 1}'] = '  ' + sub
+        ws[f'C{r + 1}'].font = Font(name=FONT, size=10, color=C_TEXT2)
+        ws[f'C{r + 1}'].alignment = Alignment(vertical='center')
+        st = ws[f'C{r + 2}']
+        st.value = status
+        st.font = Font(name=FONT, size=10, bold=True, color=C_TEXT2)
+        st.alignment = Alignment(vertical='center')
+        n = ws[f'D{r}']
+        n.value = number
+        n.font = Font(name=FONT, size=24, bold=True, color=C_INK)
+        n.number_format = fmt
+        n.alignment = Alignment(horizontal='right', vertical='center')
+        cap = ws[f'D{r + 1}']
+        cap.value = caption + '  '
+        cap.font = F_NOTE
+        cap.alignment = Alignment(horizontal='right', vertical='center')
+        ws.row_dimensions[r].height = 30
+        ws.row_dimensions[r + 1].height = 18
+        ws.row_dimensions[r + 2].height = 20
+        ws.row_dimensions[r + 3].height = 8
+        # 状態の文字色。✔ は緑、● は赤、それ以外はそのまま
+        ws.conditional_formatting.add(f'C{r + 2}', FormulaRule(
+            formula=[f'LEFT($C${r + 2},3)="  ✔"'],
+            font=Font(name=FONT, size=10, bold=True, color=C_OK), stopIfTrue=True))
+        ws.conditional_formatting.add(f'C{r + 2}', FormulaRule(
+            formula=[f'LEFT($C${r + 2},3)="  ●"'],
+            font=Font(name=FONT, size=10, bold=True, color=C_CRIT), stopIfTrue=True))
+
+    section(5, 'きょうの3ステップ　上から順にやれば発注が終わります')
+    tt_state = col(S_TT, TT_COL['state'], TT_FIRST, TT_LAST)
+    card(6, C_BUTTER, 'STEP 1　今日の在庫を貼る', S_CUR,
+         '在庫システムの在庫一覧CSVを A6 セルに貼る',
+         f'={Q_SET}!$C$17', '#,##0"行"', '読み込めた行',
+         f'=IF({Q_SET}!$C$17=0,"  ● まだ貼れていません","  ✔ 貼れています")')
+    card(10, C_BUTTER, 'STEP 2　発注数を決める', S_TT,
+         '「定数」と「在庫」を見て、黄色の発注数に入れる',
+         f'=COUNTIF({tt_state},"今日が期限")+COUNTIF({tt_state},"要発注")', '#,##0"品目"',
+         '発注が必要',
+         f'=IF({Q_SET}!$C$6="","  ● STEP 1 のあとに",'
+         f'"  "&IF({Q_TT}!$D$2="","",{Q_TT}!$D$2))')
+    card(14, C_TEXT3, 'STEP 2′　実棚を入れる（★の商品だけ）', S_COUNT,
+         '理論値がマイナス・今日発注する・金額が大きい商品だけ数える',
+         f"='{S_COUNT}'!$B$5", '"★ "#,##0"件"', '今日数える商品',
+         f"=IF('{S_COUNT}'!$F$5=0,\"  ● まだ数えていません\",\"  ✔ \"&'{S_COUNT}'!$F$5&\"件 数えました\")")
+    card(18, C_CRIT, 'STEP 3　発注書を印刷する', S_SHEET,
+         '発注先を選んで印刷。②で入れた数量が集まっています',
+         f"=COUNT('{S_SHEET}'!$B$11:$B$110)", '#,##0"行"', '発注書の明細',
+         f'="  発注予定額　"&TEXT({Q_TT}!$G$5,"¥#,##0")&"（税抜）"')
+
+    section(23, '月に1回')
+    monthly = [
+        (S_MID, '1ヶ月前の在庫CSVを貼り替える', f'=IF({Q_SET}!$C$26=0,"● 未貼付","✔ "&{Q_SET}!$C$26&"行")'),
+        (S_PRV, '2ヶ月前の在庫CSVを貼り替える', f'=IF({Q_SET}!$C$18=0,"● 未貼付","✔ "&{Q_SET}!$C$18&"行")'),
+        (S_PLAN, '動員の実績を入れる（まとめてで可）', f'=IF({Q_SET}!$C$21=0,"● 未入力","✔ "&{Q_SET}!$C$21&"日ぶん")'),
+    ]
+    for i, (sheet, text, status) in enumerate(monthly):
+        r = 24 + i
+        link_cell(ws[f'C{r}'], sheet, '  ' + text + '  ›')
+        ws[f'D{r}'] = status
+        ws[f'D{r}'].font = Font(name=FONT, size=10, bold=True, color=C_TEXT2)
+        ws[f'D{r}'].alignment = Alignment(horizontal='right', vertical='center')
+        ws[f'C{r}'].border = BORDER_ROW
+        ws[f'D{r}'].border = BORDER_ROW
+        ws.row_dimensions[r].height = 22
+        ws.conditional_formatting.add(f'D{r}', FormulaRule(
+            formula=[f'LEFT($D${r},1)="✔"'], font=Font(name=FONT, size=10, bold=True, color=C_OK), stopIfTrue=True))
+        ws.conditional_formatting.add(f'D{r}', FormulaRule(
+            formula=[f'LEFT($D${r},1)="●"'], font=Font(name=FONT, size=10, bold=True, color=C_CRIT), stopIfTrue=True))
+
+    section(28, '見る・整える')
+    admin = [
+        (S_DASH, 'ダッシュボード　劇場全体の状況を図で見る'),
+        (S_ITEM, '商品マスタ　最大保管数（定数）・リードタイム・最低ロット'),
+        (S_CONST, '定数マスタ　劇場・規模・季節・保管設備・発注曜日'),
+        (S_SET, '設定　対象劇場と算出基準'),
+        (S_MECH, '発注のしくみ　何を計算しているかの図解'),
+        (S_INTRO, 'つかいかた　最初に1回読む'),
+    ]
+    for i, (sheet, text) in enumerate(admin):
+        r = 29 + i
+        link_cell(ws[f'C{r}'], sheet, '  ' + text + '  ›')
+        ws[f'C{r}'].font = Font(name=FONT, size=10, bold=True, color=C_INK, underline='single')
+        ws[f'C{r}'].border = BORDER_ROW
+        ws[f'D{r}'].border = BORDER_ROW
+        ws.row_dimensions[r].height = 20
+
+    ws['B36'] = '黄色のセルだけ入力します。白いセルは自動で計算されます。困ったら「つかいかた」へ。'
+    ws['B36'].font = F_NOTE
+    ws.freeze_panes = 'A2'
+    return ws
+
+
 def build_intro(wb):
     """
     はじめに。役割ごとに「あなたがやること」を分けて書く。
     毎日の担当者が読むのは最初のブロックだけで済むようにしている。
     """
     ws = wb.create_sheet(S_INTRO)
-    sheet_title(ws, '売店発注ツール')
+    sheet_title(ws, 'つかいかた')
     ws.column_dimensions['B'].width = 4
     ws.column_dimensions['C'].width = 22
     ws.column_dimensions['D'].width = 78
@@ -497,11 +700,9 @@ def build_intro(wb):
     r = 5
     for kind, sheet, text in rows:
         if sheet:
-            c = ws[f'C{r}']
-            c.value = sheet
-            c.font = Font(name=FONT, size=10, bold=True, color=C_INK)
-            c.fill = FILL_INPUT if sheet in (S_CUR, S_TT, S_SHEET) else FILL_HEAD
-            c.border = BORDER
+            c = link_cell(ws[f'C{r}'], sheet, sheet + ' ›')
+            c.font = Font(name=FONT, size=10, bold=True, color=C_INK, underline='single')
+            c.fill = FILL_INPUT if sheet in (S_CUR, S_TT, S_SHEET, S_COUNT) else FILL_HEAD
             c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         cell = ws[f'D{r}']
         cell.value = text
@@ -526,7 +727,7 @@ def build_mechanism(wb):
     自分の劇場の実際の数字で読めるようにしている。
     """
     ws = wb.create_sheet(S_MECH)
-    ws.sheet_view.showGridLines = False
+    app_bar(ws, width=36)
     for i in range(2, 39):                    # B〜AL列を方眼にする
         ws.column_dimensions[get_column_letter(i)].width = 3.3
 
@@ -1342,8 +1543,10 @@ def build_csv_sheet(wb, name, others, label, note='', paste_hint=''):
     貼り付け範囲に案内文を置くと、貼った瞬間に消えてしまうため上に逃がしている。
     """
     ws = wb.create_sheet(name)
+    app_bar(ws, width=12)
     ws['B2'] = label
     ws['B2'].font = F_TITLE
+    ws.row_dimensions[2].height = 30
     ws['B3'] = note
     ws['B3'].font = F_NOTE
     ws['B4'] = paste_hint
@@ -1382,8 +1585,8 @@ def build_csv_sheet(wb, name, others, label, note='', paste_hint=''):
             ('R', '終売（今月から）'), ('T', '終売（先月から）'),
             ('V', '復活（先月は無し）'),
         ]
-        ws['N1'] = '取扱の変化（3枚を突き合わせた結果）'
-        ws['N1'].font = Font(name=FONT, size=10, bold=True, color=C_INK)
+        ws['N4'] = '取扱の変化（3枚を突き合わせた結果）'
+        ws['N4'].font = Font(name=FONT, size=10, bold=True, color=C_INK)
         for letter, name in checks:
             nxt = get_column_letter(ws[f'{letter}1'].column + 1)
             c1 = ws[f'{letter}2']
@@ -1826,9 +2029,10 @@ def build_timetable(wb):
     発注数を入れると、伸びた分がバター色で帯の先に足される。
     """
     ws = wb.create_sheet(S_TT)
-    ws.sheet_view.showGridLines = False
+    app_bar(ws, width=26)
     ws['B2'] = '発注数を決める'
     ws['B2'].font = F_TITLE
+    ws.row_dimensions[2].height = 30
 
     state_col = col(S_TT, TT_COL['state'], TT_FIRST, TT_LAST)
     amount_col = col(S_TT, TT_COL['amt'], TT_FIRST, TT_LAST)
@@ -2229,10 +2433,11 @@ def build_order_sheet(wb, vendors):
     タイムテーブルで入れた発注数のうち、選んだ仕入先の分だけを並べる。
     """
     ws = wb.create_sheet(S_SHEET)
-    ws.sheet_view.showGridLines = False
+    app_bar(ws, width=9)          # 印刷範囲は2行目からなので、紙にはこの帯は出ない
     ws['B2'] = '発 注 書'
     ws['B2'].font = Font(name=FONT, size=18, bold=True, color=C_INK)
-    ws['B3'] = 'タイムテーブルで入れた発注数がここに集まります。発注先を選んで印刷してください。'
+    ws.row_dimensions[2].height = 30
+    ws['B3'] = 'STEP 2 で入れた発注数がここに集まります。発注先を選んで印刷してください。'
     ws['B3'].font = F_NOTE
 
     meta = [
@@ -2443,7 +2648,7 @@ def build_dashboard(wb, categories, vendors):
     グラフとセル塗りだけで構成し、マクロやアドインは使わない。
     """
     ws = wb.create_sheet(S_DASH)
-    ws.sheet_view.showGridLines = False
+    app_bar(ws, width=28)
 
     CANVAS_LAST = 30                       # B列から30列を方眼として使う
     for i in range(2, 2 + CANVAS_LAST):
@@ -2687,11 +2892,23 @@ def build_dashboard(wb, categories, vendors):
     plan_chart.title = None
     plan_chart.legend = None
     plan_chart.height, plan_chart.width = 6.4, 13.0
-    plan_chart.add_data(Reference(ws.parent[S_PLAN], min_col=8,
-                                  min_row=PLAN_FIRST, max_row=PLAN_FIRST + 13),
-                        titles_from_data=False)
-    plan_chart.set_categories(Reference(ws.parent[S_PLAN], min_col=11,
-                                        min_row=PLAN_FIRST, max_row=PLAN_FIRST + 13))
+    # 動員シートの表は「表の開始日」起点で並ぶので、固定行を参照すると
+    # 過去の日付を描いてしまう。当日基準日から14日分を日付で引き直す。
+    plan_date = col(S_PLAN, 'B', PLAN_FIRST, PLAN_LAST)
+    plan_used = col(S_PLAN, 'H', PLAN_FIRST, PLAN_LAST)
+    ws['AE50'] = '日付'
+    ws['AF50'] = '採用動員'
+    for d in range(14):
+        r = 51 + d
+        day = f'{Q_SET}!$C$6+{d}'
+        ws[f'AE{r}'] = (f'=IF({Q_SET}!$C$6="","",TEXT({day},"m/d")&"("&'
+                        f'{weekday_jp(day)}&")")')
+        ws[f'AF{r}'] = (f'=IF({Q_SET}!$C$6="",0,'
+                        f'IFERROR(N(INDEX({plan_used},MATCH({day},{plan_date},0))),0))')
+        ws[f'AE{r}'].font = F_NOTE
+        ws[f'AF{r}'].font = F_NOTE
+    plan_chart.add_data(Reference(ws, min_col=32, min_row=51, max_row=64), titles_from_data=False)
+    plan_chart.set_categories(Reference(ws, min_col=31, min_row=51, max_row=64))
     plan_chart.series[0].graphicalProperties.solidFill = C_INK[2:]
     plan_chart.gapWidth = 35
     plan_chart.plotVisOnly = False
@@ -2700,7 +2917,7 @@ def build_dashboard(wb, categories, vendors):
     # ================= 商品の入れ替わり（発注漏れの防止） =================
     section(plan_row, 20, '商品の入れ替わり')
     ws.cell(plan_row + 1, 20,
-            '3枚の在庫CSV（当日・1ヶ月前・2ヶ月前）を突き合わせた結果です。').font = F_NOTE
+            '3枚の在庫CSVを突き合わせた結果です。').font = F_NOTE
     calc_status = col(S_CALC, 'AB', CALC_FIRST, CALC_LAST)
     calc_change = col(S_CALC, 'AS', CALC_FIRST, CALC_LAST)
     changes = [
@@ -2713,9 +2930,9 @@ def build_dashboard(wb, categories, vendors):
         ('終売（先月から）', f'=COUNTIF({calc_change},"終売（先月から）")',
          '2ヶ月前にだけあった。もう扱っていない', C_TEXT3),
         ('復活（先月は無し）', f'=COUNTIF({calc_change},"復活（先月は無し）")',
-         '2ヶ月前と当日にあり、1ヶ月前に無い。要確認', C_WARN),
+         '1ヶ月前だけ無い。欠品の疑い', C_WARN),
         ('定数が小さい', f'=COUNTIF({calc_status},"*定数が小さい*")',
-         '棚を満たしても次の便まで持たない。棚割りか発注頻度の見直しが要る', C_WARN),
+         '棚を満たしても次の便まで持たない', C_WARN),
         ('マスタ未登録', f'=COUNTIF({calc_status},"*マスタ未登録*")',
          'L/T・ロット・PI値が既定値のまま', C_WARN),
         ('在庫マイナス', f'=COUNTIF({calc_status},"*在庫マイナス*")',
@@ -2775,6 +2992,7 @@ def main():
 
     wb = Workbook()
     wb.remove(wb.active)
+    build_home(wb)
     build_intro(wb)
     build_settings(wb)
     build_calc(wb)
@@ -2804,19 +3022,25 @@ def main():
 
     # 毎日の3枚を左に固め、たまに触るもの・管理者向けを右に置く。
     # 計算だけのシートは非表示にして、触る場所を減らす。
-    order = [S_INTRO, S_MECH, S_CUR, S_TT, S_SHEET, S_COUNT, S_MID, S_PRV, S_PLAN,
+    order = [S_HOME, S_CUR, S_TT, S_COUNT, S_SHEET, S_INTRO, S_MECH, S_MID, S_PRV, S_PLAN,
              S_DASH, S_PO, S_ITEM, S_CONST, S_SET, S_CALC, S_ALL]
     wb._sheets = [wb[n] for n in order]
     for ws in wb.worksheets:
-        if ws.title == S_SHEET:
-            ws.sheet_properties.tabColor = C_CRIT[2:]      # 終着点
+        if ws.title == S_HOME:
+            ws.sheet_properties.tabColor = C_INK[2:]
+        elif ws.title in (S_CUR, S_TT, S_SHEET, S_COUNT):
+            ws.sheet_properties.tabColor = C_BUTTER[2:]    # 毎日さわる
         elif ws.title in (S_INTRO, S_MECH):
             ws.sheet_properties.tabColor = C_OK[2:]        # 読み物
-        elif ws.title in (S_CUR, S_TT):
-            ws.sheet_properties.tabColor = C_BUTTER[2:]    # 毎日さわる
         elif ws.title in (S_CALC, S_ALL):
             ws.sheet_properties.tabColor = C_INK[2:]
             ws.sheet_state = 'hidden'                      # 計算専用。触る必要がない
+        else:
+            ws.sheet_properties.tabColor = C_TEXT3[2:]     # たまに・管理者
+        # BIZ UDPゴシックは Meiryo UI より字幅が広いので、列幅を一律に少し広げる
+        for dim in ws.column_dimensions.values():
+            if dim.width:
+                dim.width = round(dim.width * 1.08, 2)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out)
