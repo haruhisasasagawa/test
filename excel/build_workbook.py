@@ -6,21 +6,25 @@
   1. 在庫CSVを貼る         → 商品ごとの今の在庫が入る
   2. 動員を入れる           → 商品ごとの「減り数のスピード」が決まる
   3. このままだと足りない  → 「○/○ に切れる」とアラートが出る
-  4. 入庫日と入庫数を入れる → 在庫が復活して、切れる日が延びる
+  4. 届く日の列に入庫数を入れる → 在庫が復活して、切れる日が延びる
 
   減り数/日 ＝ 100人あたりの減り数（商品マスタ） × その日の動員 ÷ 100
-  在庫の予測 ＝ MAX(0, 前日の在庫 ＋ その日の入庫 − 減り数)   ※ 0 で止める。切れた後の「架空の赤字」を作らない
+  在庫の予測 ＝ MAX(0, 前日の在庫 ＋ その日の入庫 − 減り数)   ※ 0 で止める
 
-行の並びは商品マスタの順。CSVの順ではない。
-  入庫日・入庫数は行に書くので、CSVの並びが日々変わっても入力が別の商品に付け替わらないよう、
+商品は「仕分け」ページで 冷凍・飲料・常温 に分け、区分ごとに ②冷凍 ②飲料 ②常温 のシートで発注する。
+区分ごとに「納品日（届く曜日、最大7日）」と「発注から納品までの日数」を持つ。
+入庫は 14日の表の、納品日の列に数を入れる（1日1便、最大14日ぶん）。
+
+行の並びは商品マスタの順（CSVの順ではない）。
+  入庫数は行に書くので、CSVの並びが日々変わっても入力が別の商品に付け替わらないよう、
   「商品マスタにある商品を、マスタの順に」並べ、マスタに無い新商品はその後ろに足す。
-  マスタの行の挿入・削除・並べ替えだけは行をずらすので、社員が入庫の無い時にやる（READMEに明記）。
+  マスタの行の挿入・削除・並べ替え、商品の区分の変更は行をずらすので、入庫の無い時に社員がやる。
 
 社歴の浅い社員・アルバイトが触る前提なので、
-  ・入力するセルは黄色だけ（入庫日・入庫数・数えた在庫・動員）
+  ・入力するセルは黄色だけ（入庫数・数えた在庫・動員）
   ・それ以外はシート保護でロック（パスワードなし。校閲→保護の解除で外せる）
-  ・入庫日は表の14日から選ぶ。入庫数は「目安」（定数まで）を超えると入らない
-  ・過去の入庫日・定数超え・減り数未設定・動員未入力・古いCSVは、文字で警告する
+  ・納品日でない列には入庫数が入らない。目安（定数まで）を超える数も入らない
+  ・過去のCSV・定数超え・減り数未設定・動員未入力・未仕分け・納品日未設定は、文字で警告する
 """
 import csv
 import sys
@@ -53,6 +57,7 @@ C_WARN_SOFT = 'FFFBEEDF'
 C_CRIT = 'FFA32A3C'
 C_CRIT_SOFT = 'FFF8E3E6'
 C_WHITE = 'FFFFFFFF'
+C_GREY_SOFT = 'FFEDEBE6'
 
 F_BASE = Font(name=FONT, size=11, color=C_INK)
 F_BOLD = Font(name=FONT, size=11, bold=True, color=C_INK)
@@ -90,10 +95,14 @@ FMT_GRID = '#,##0;"×";"×"'      # 0以下は「×」＝切れている
 # ---------------------------------------------------------------------------
 # シート名と配置
 # ---------------------------------------------------------------------------
+KINDS = ['冷凍', '飲料', '常温']
+KIND_COLOR = {'冷凍': 'FF2E6FB3', '飲料': 'FF00795A', '常温': 'FFC9761A'}
+
 S_HOME = 'ホーム'
 S_CUR = '①在庫を貼る'
-S_ORD = '②発注する'
+S_K = {k: f'②{k}' for k in KINDS}
 S_SHEET = '③発注書'
+S_SORT = '仕分け'
 S_PLAN = '動員を入れる'
 S_INTRO = 'つかいかた'
 S_ITEM = '商品マスタ'
@@ -104,12 +113,15 @@ S_PRV = '月1回_2ヶ月前の在庫'
 S_CALC = '計算'
 
 BAR_LABEL = {
-    S_HOME: 'ホーム', S_CUR: 'STEP 1　在庫を貼る', S_ORD: 'STEP 2　発注する',
-    S_SHEET: 'STEP 3　発注書を印刷する', S_PLAN: '随時　動員を入れる',
+    S_HOME: 'ホーム', S_CUR: 'STEP 1　在庫を貼る',
+    S_SHEET: 'STEP 3　発注書を印刷する', S_SORT: '仕分け（社員）　冷凍・飲料・常温と納品日',
+    S_PLAN: '随時　動員を入れる',
     S_INTRO: 'つかいかた', S_ITEM: '商品マスタ（社員）', S_TH: '劇場マスタ（社員）',
     S_SET: '設定（社員）', S_MID: '月1回　1ヶ月前の在庫を貼る', S_PRV: '月1回　2ヶ月前の在庫を貼る',
     S_CALC: '計算（さわらない）',
 }
+for _k in KINDS:
+    BAR_LABEL[S_K[_k]] = f'STEP 2　{_k} を発注する'
 
 CSV_HEADERS = ['対象日付', '劇場コード', '劇場名', '支払先コード', '支払先名',
                '大分類コード', '小分類コード', '商品分類名', '商品コード', '商品名',
@@ -126,31 +138,44 @@ MASTER_FIRST, MASTER_LAST = 6, 1005
 MASTER_ACTIVE = 'L'     # 取扱中(自動)
 MASTER_SEQ = 'M'        # 並び(自動)
 TH_FIRST, TH_LAST = 6, 105
-CALC_FIRST, CALC_LAST = 6, 405
+CALC_FIRST, CALC_LAST = 10, 409
 N_ITEMS = CALC_LAST - CALC_FIRST + 1
 ORD_FIRST = 10
 ORD_LAST = ORD_FIRST + N_ITEMS - 1
 DAYS = 14
-GRID_FIRST_COL = 16                     # P列から14日分
+NDT = 21                                # 日付・納品日フラグは21日分持つ（次の便の探索用）
+IN_FIRST_COL = 13                       # 区分シート：入庫数の表 M..Z
+PJ_FIRST_COL = IN_FIRST_COL + DAYS      # 区分シート：在庫の見込み AA..AN
+CAP_FIRST_COL = PJ_FIRST_COL + DAYS + 4  # 区分シート：入力上限の補助列 AS..BF
 PLAN_FIRST, PLAN_LAST = 16, 415         # 400日分
 PLAN_DOW_ROW = 6
 SHEET_FIRST, SHEET_LAST = 11, 110
 VENDOR_FIRST, VENDOR_LAST = 4, 40       # 設定シートF列の仕入先一覧（F4＝すべて）
 LT_MAX = 10
 
+# 仕分けシート
+SORT_DELIV_ROW = {'冷凍': 6, '飲料': 7, '常温': 8}     # 納品日の表（C..I＝月..日、J＝発注から納品までの日数）
+SORT_CAT_FIRST, SORT_CAT_LAST = 12, 31                # 分類ごとの区分
+SORT_OV_FIRST = 36                                     # 商品ごとの上書き（商品マスタの行と1対1）
+SORT_OV_LAST = SORT_OV_FIRST + (MASTER_LAST - MASTER_FIRST)
+
 SIZES = ['大規模', '中規模', '小規模']
 
 Q_SET = f"'{S_SET}'"
 Q_CALC = f"'{S_CALC}'"
-Q_ORD = f"'{S_ORD}'"
 Q_SHEET = f"'{S_SHEET}'"
 Q_PLAN = f"'{S_PLAN}'"
+Q_SORT = f"'{S_SORT}'"
+Q_ITEM = f"'{S_ITEM}'"
 
-# ②発注する の列
+# 区分シートの列
 OC = {'no': 'B', 'name': 'C', 'par': 'D', 'stock': 'E', 'use': 'F', 'cut': 'G', 'status': 'H',
-      'in_date': 'I', 'in_qty': 'J', 'unit': 'K', 'guide': 'L', 'in_date2': 'M', 'in_qty2': 'N',
-      'after': 'O', 'counted': 'AD', 'counted_date': 'AE', 'code': 'AF', 'vendor': 'AG'}
-GRID = [get_column_letter(GRID_FIRST_COL + d) for d in range(DAYS)]
+      'next': 'I', 'guide': 'J', 'unit': 'K', 'after': 'L',
+      'counted': get_column_letter(PJ_FIRST_COL + DAYS), 'counted_date': get_column_letter(PJ_FIRST_COL + DAYS + 1),
+      'code': get_column_letter(PJ_FIRST_COL + DAYS + 2), 'vendor': get_column_letter(PJ_FIRST_COL + DAYS + 3)}
+IN_COLS = [get_column_letter(IN_FIRST_COL + d) for d in range(DAYS)]
+PJ_COLS = [get_column_letter(PJ_FIRST_COL + d) for d in range(DAYS)]
+CAP_COLS = [get_column_letter(CAP_FIRST_COL + d) for d in range(DAYS)]
 
 # 在庫CSVの劇場コードは4桁（新宿＝0761）で、公式3桁＋"1" の形になっている。
 THEATER_SEED = [
@@ -179,19 +204,39 @@ THEATER_SEED = [
     ('074', 'アミュプラザおおいた', '大分'), ('033', '与次郎', '鹿児島'),
 ]
 
+# 分類名 → 区分 の初期値。仕分けページで直せる
+DEFAULT_KIND = {
+    'アルコール': '飲料', 'コールド': '飲料', 'コーヒー': '飲料', 'ホット': '飲料', 'その他ドリンク': '飲料',
+    'ポップコーン': '常温', 'コンセ包材': '常温', 'フード調味料': '常温', 'ＳＥＴ作品コンボ': '常温',
+    'ホットドッグ': '冷凍', '軽食系フード': '冷凍', '調理系スイーツ': '冷凍', 'その他フード': '冷凍',
+}
+
 # 計算シートの列。名前で引けるようにして、列ずれのバグを構造的に消す
-_CALC_NAMES = (['no', 'code', 'name', 'cat', 'vendor', 'pack', 'price', 'csv_stock',
-                'counted', 'counted_date', 'stock', 'pi', 'par_case', 'par',
-                'in_date', 'in_qty', 'in_units', 'in_date2', 'in_qty2', 'in_units2']
+_CALC_NAMES = (['no', 'code', 'name', 'cat', 'vendor', 'pack', 'price', 'csv_stock', 'kind',
+                'seq_冷凍', 'seq_飲料', 'seq_常温', 'seq', 'lt',
+                'counted', 'counted_date', 'stock', 'pi', 'par_case', 'par']
+               + [f'dt{d}' for d in range(NDT)]
+               + [f'in{d}' for d in range(DAYS)]
                + [f'use{d}' for d in range(DAYS)]
                + [f'b{d}' for d in range(DAYS)]
                + [f'a{d}' for d in range(DAYS)]
                + [f'k{d}' for d in range(DAYS)]
-               + ['n_before', 'cut_before', 'n_post', 'cut_post', 'use_avg', 'prev1', 'guide',
-                  'over1', 'over2', 'err1', 'err2', 'valid1', 'valid2', 'ordered', 'in_amt',
-                  'post', 'status', 'after', 'unit', 'absent', 'pick1', 'pick2',
+               + [f'ov{d}' for d in range(DAYS)]
+               + [f'valid{d}' for d in range(DAYS)]
+               + [f'cnt{d}' for d in range(DAYS)]
+               + [f'gd{d}' for d in range(DAYS)]
+               + [f'lo{d}' for d in range(DAYS)]
+               + [f'lo2_{d}' for d in range(DAYS)]
+               + [f'bad{d}' for d in range(DAYS)]
+               + [f'od{d}' for d in range(DAYS)]
+               + [f'nd{d}' for d in range(NDT)]
+               + ['n_before', 'cut_before', 'n_post', 'cut_post', 'use_avg', 'n_in', 'first_in', 'last_in',
+                  'next_del', 'last_ok', 'deadline', 'last_ok2', 'deadline2', 'guide', 'n_valid',
+                  'bad_day', 'over_day', 'in_amt', 'post', 'status', 'after', 'unit', 'absent', 'pick',
                   'in_cur', 'in_mid', 'in_prv', 'change'])
 CC = {name: get_column_letter(2 + i) for i, name in enumerate(_CALC_NAMES)}
+DT = [CC[f'dt{d}'] for d in range(NDT)]
+FLAG_ROW = {'冷凍': 5, '飲料': 6, '常温': 7}     # 計算シートの納品日フラグ行
 
 
 # ---------------------------------------------------------------------------
@@ -217,12 +262,20 @@ def calc_col(name):
     return col(S_CALC, CC[name], CALC_FIRST, CALC_LAST)
 
 
-def ord_col(name):
-    return col(S_ORD, OC[name], ORD_FIRST, ORD_LAST)
+def kind_col(kind, letter):
+    return col(S_K[kind], letter, ORD_FIRST, ORD_LAST)
 
 
 def plan_col(letter):
     return col(S_PLAN, letter, PLAN_FIRST, PLAN_LAST)
+
+
+def sort_cat_col(letter):
+    return col(S_SORT, letter, SORT_CAT_FIRST, SORT_CAT_LAST)
+
+
+def sort_ov_col(letter):
+    return col(S_SORT, letter, SORT_OV_FIRST, SORT_OV_LAST)
 
 
 def weekday_jp(date_expr):
@@ -356,8 +409,8 @@ def build_home(wb):
     app_bar(ws, width=3)
     ws.column_dimensions['A'].width = 2
     ws.column_dimensions['B'].width = 3
-    ws.column_dimensions['C'].width = 56
-    ws.column_dimensions['D'].width = 40
+    ws.column_dimensions['C'].width = 60
+    ws.column_dimensions['D'].width = 44
     ws.column_dimensions['E'].width = 3
 
     ws['B2'] = '売店発注ツール'
@@ -392,43 +445,58 @@ def build_home(wb):
         ws[f'C{r + 3}'].font = F_NOTE2
         ws.row_dimensions[r + 3].height = 20
         status_rules(ws, f'C{r + 3}', size=10)
+        return r + 5
 
     hit = f'COUNTIF({csv_col(S_CUR, CSV_TH)},{Q_SET}!$C$4)'
-    card(6, C_BUTTER, 'STEP 1　在庫を貼る', S_CUR,
-         '在庫システムの在庫一覧CSVを貼ります。', f'={hit}', '#,##0"行"', '読み込めた行',
-         f'=IF({hit}=0,"● まだ貼られていません",IF({Q_SET}!$C$6<TODAY()-1,'
-         f'"● 在庫が "&TEXT({Q_SET}!$C$6,"m/d")&" のものです（"&(TODAY()-{Q_SET}!$C$6)&"日前）。今日のCSVを貼ってください",'
-         f'"○ 貼れています（"&TEXT({Q_SET}!$C$6,"m/d")&" の在庫）"))')
-    crit = f'COUNTIF({ord_col("status")},"●*")'
-    warn = f'COUNTIF({ord_col("status")},"△*")'
-    chk = f'COUNTIF({ord_col("after")},"⚠*")'
-    card(11, C_CRIT, 'STEP 2　発注する', S_ORD,
-         '「切れる日」を見て、黄色の「入庫日・入庫数」を入れます。', f'={crit}', '#,##0"品目"',
-         '今日発注が必要',
-         f'=IF({Q_CALC}!$B$3=0,"● 動員が入っていません → 動員を入れる",'
-         f'IF({Q_CALC}!$B$2=1,"● これから14日が動員の表の外です → 動員を入れる の「表の開始日」を直す",'
-         f'IF({crit}>0,"● 赤 "&{crit}&"品目は今日中に発注。橙 "&{warn}&"品目も近く切れます",'
-         f'IF({warn}>0,"△ 今日は急ぎなし。橙 "&{warn}&"品目が近く切れます","○ 14日以内に切れる商品はありません"))))')
-    cnt = f'SUM({calc_col("ordered")})'
+    r = card(6, C_BUTTER, 'STEP 1　在庫を貼る', S_CUR,
+             '在庫システムの在庫一覧CSVを貼ります。', f'={hit}', '#,##0"行"', '読み込めた行',
+             f'=IF({hit}=0,"● まだ貼られていません",IF({Q_SET}!$C$6<TODAY()-1,'
+             f'"● 在庫が "&TEXT({Q_SET}!$C$6,"m/d")&" のものです（"&(TODAY()-{Q_SET}!$C$6)&"日前）。今日のCSVを貼ってください",'
+             f'"○ 貼れています（"&TEXT({Q_SET}!$C$6,"m/d")&" の在庫）"))')
+    for kind in KINDS:
+        st = kind_col(kind, OC['status'])
+        af = kind_col(kind, OC['after'])
+        crit = f'COUNTIF({st},"●*")'
+        warn = f'COUNTIF({st},"△*")'
+        chk = f'COUNTIF({af},"⚠*")'
+        cnt = f'COUNTIF({calc_col("kind")},"{kind}")'
+        r = card(r, KIND_COLOR[kind], f'STEP 2　{kind} を発注する', S_K[kind],
+                 f'="{kind} の商品 "&{cnt}&" 品目。「切れる日」を見て、届く日の列に入庫数を入れます。"',
+                 f'={crit}', '#,##0"品目"', '今日発注が必要',
+                 f'=IF({Q_CALC}!$B$3=0,"● 動員が入っていません → 動員を入れる",'
+                 f'IF({Q_CALC}!$B$2=1,"● これから14日が動員の表の外です → 動員を入れる の「表の開始日」を直す",'
+                 f'IF({chk}>0,"● ⚠ が "&{chk}&"件。直すまで発注書に載りません",'
+                 f'IF({crit}>0,"● 赤 "&{crit}&"品目は今日中に発注。橙 "&{warn}&"品目も近く切れます",'
+                 f'IF({warn}>0,"△ 今日は急ぎなし。橙 "&{warn}&"品目が近く切れます","○ 14日以内に切れる商品はありません")))))')
+    cnt_all = f'COUNTIF({calc_col("n_valid")},">0")'
     amt = f'SUM({calc_col("in_amt")})'
-    card(16, C_INK, 'STEP 3　発注書を印刷する', S_SHEET,
-         '入庫を入れた商品が発注書に集まります。仕入先を選んで印刷。', f'={amt}', FMT_YEN, '発注予定額（税抜）',
-         f'=IF({chk}>0,"● ⚠ が "&{chk}&"件あります。STEP 2 で直すまで発注書に載りません",'
-         f'IF({cnt}=0,"入庫を入れた商品はまだありません","○ "&{cnt}&"品目を発注します"))')
+    r = card(r, C_INK, 'STEP 3　発注書を印刷する', S_SHEET,
+             '入庫を入れた商品が発注書に集まります。区分と仕入先を選んで印刷。', f'={amt}', FMT_YEN, '発注予定額（税抜）',
+             f'=IF({cnt_all}=0,"入庫を入れた商品はまだありません","○ "&{cnt_all}&"品目を発注します")')
 
-    ws['B21'] = '随時'
-    ws['B21'].font = F_BOLD
+    ws[f'B{r}'] = '随時・社員'
+    ws[f'B{r}'].font = F_BOLD
+    r += 1
+    unsorted = f'COUNTIFS({calc_col("code")},"?*",{calc_col("kind")},"")'
+    nodeliv = '+'.join(f'IF(COUNTIF({Q_SORT}!$C${SORT_DELIV_ROW[k]}:$I${SORT_DELIV_ROW[k]},"○")=0,1,0)' for k in KINDS)
+    r = card(r, C_TEXT2, '仕分け', S_SORT,
+             '商品を 冷凍・飲料・常温 に分け、区分ごとの納品日（届く曜日）を決めます。', f'={unsorted}', '#,##0"件"',
+             'まだ仕分けされていない商品',
+             f'=IF({unsorted}>0,"● 未仕分けの商品があります。どのシートにも出ないので、仕分けページで区分を選んでください",'
+             f'IF({nodeliv}>0,"△ 納品日（○）が付いていない区分があります。毎日届く前提で計算しています",'
+             f'"○ 仕分けと納品日は設定済みです"))')
     filled = (f'COUNTIFS({plan_col("B")},">="&N({Q_SET}!$C$6),{plan_col("B")},"<="&(N({Q_SET}!$C$6)+{DAYS - 1}),'
               f'{plan_col("D")},">0")')
-    card(22, C_OK, '動員を入れる', S_PLAN,
-         '予測動員を入れると減り数のスピードが変わります。実績は月1回まとめてでも。', f'={filled}',
-         f'0"/{DAYS}日"', 'これから14日で予測が入っている日',
-         f'=IF({Q_CALC}!$B$2=1,"● これから14日が表の外です。「表の開始日」を今年の日付にしてください",'
-         f'IF({Q_CALC}!$B$3=0,"● 動員が0です。標準の動員（設定）か予測を入れてください",'
-         f'IF({filled}<{DAYS},"△ 予測が無い日は曜日の実績平均（無ければ標準の動員）を使います","○ 14日分そろっています")))')
+    r = card(r, C_OK, '動員を入れる', S_PLAN,
+             '予測動員を入れると減り数のスピードが変わります。実績は月1回まとめてでも。', f'={filled}',
+             f'0"/{DAYS}日"', 'これから14日で予測が入っている日',
+             f'=IF({Q_CALC}!$B$2=1,"● これから14日が表の外です。「表の開始日」を今年の日付にしてください",'
+             f'IF({Q_CALC}!$B$3=0,"● 動員が0です。標準の動員（設定）か予測を入れてください",'
+             f'IF({filled}<{DAYS},"△ 予測が無い日は曜日の実績平均（無ければ標準の動員）を使います","○ 14日分そろっています")))')
 
-    ws['B27'] = '月1回・社員'
-    ws['B27'].font = F_BOLD
+    ws[f'B{r}'] = '月1回・社員'
+    ws[f'B{r}'].font = F_BOLD
+    r += 1
     hit_mid = f'COUNTIF({csv_col(S_MID, CSV_TH)},{Q_SET}!$C$4)'
     hit_prv = f'COUNTIF({csv_col(S_PRV, CSV_TH)},{Q_SET}!$C$4)'
     rows = [
@@ -438,14 +506,13 @@ def build_home(wb):
          f'=IF({hit_prv}=0,"未使用（貼らなくても動きます）","○ 貼れています（"&TEXT({Q_SET}!$C$13,"m/d")&" の在庫）")'),
         (S_ITEM, '定数（最大保管数）と、100人あたりの減り数を商品ごとに決めます。',
          f'=IF({Q_SET}!$C$11=0,"",IF({Q_SET}!$C$17+{Q_SET}!$C$18+{Q_SET}!$C$19>0,'
-         f'"● マスタに無い商品が "&({Q_SET}!$C$17+{Q_SET}!$C$18+{Q_SET}!$C$19)&"件（②の末尾に出ています）→ マスタに追加して減り数を入れる",'
+         f'"● マスタに無い商品が "&({Q_SET}!$C$17+{Q_SET}!$C$18+{Q_SET}!$C$19)&"件（区分シートの末尾に出ています）→ マスタに追加して減り数を入れる",'
          f'IF({Q_SET}!$C$14<{Q_SET}!$C$20,"● 減り数が未設定の商品が "&({Q_SET}!$C$20-{Q_SET}!$C$14)&"件あります",'
          f'"○ 減り数はすべて設定済み（定数 "&{Q_SET}!$C$15&"/"&{Q_SET}!$C$20&"）")))'),
         (S_TH, '劇場コードと名前。CSVの劇場コードと一致しているか照合できます。', ''),
-        (S_SET, '対象劇場・発注から入庫までの日数・標準の動員・担当者・仕入先一覧。', ''),
+        (S_SET, '対象劇場・標準の動員・担当者・仕入先一覧。', ''),
         (S_INTRO, '色の意味と、迷ったときの読み方。', ''),
     ]
-    r = 28
     for sheet, sub, status in rows:
         link_cell(ws[f'C{r}'], sheet, sheet + '  ›')
         ws[f'C{r + 1}'] = sub
@@ -469,7 +536,7 @@ def build_intro(wb):
     sheet_title(ws, 'つかいかた', width=4)
     ws.column_dimensions['B'].width = 3
     ws.column_dimensions['C'].width = 26
-    ws.column_dimensions['D'].width = 96
+    ws.column_dimensions['D'].width = 100
 
     r = 5
 
@@ -499,20 +566,25 @@ def build_intro(wb):
         '貼り替えるときは、前のデータ（A6 から S 列まで）だけを消してから貼ります。右の方の列は消さないでください。',
         '貼れたら上に「✔ ○行 読み込めました」と出ます。✖ のままなら貼る場所か劇場コードが違います。',
     ])
-    step(S_ORD, '「切れる日」を見て、黄色の「入庫日」「入庫数」を入れる', [
-        '左から順に読みます。定数 → 在庫 → 減り数/日 → 切れる日 → このままだと（アラート）。',
+    step(S_K['冷凍'], '②冷凍 ②飲料 ②常温 の順に、「切れる日」を見て、届く日の列に入庫数を入れる', [
+        '左から順に読みます。定数 → 在庫 → 減り数/日 → 切れる日 → このままだと（アラート）→ 次の便 → 目安。',
         '● 赤＝今日中に発注しないと間に合わない。△ 橙＝近く切れる（○/○ までに発注）。○ 緑＝14日以上もつ。',
-        '入庫日は ▼ から届く日を選びます（今日〜13日後）。入庫数はケース入りならケース数、それ以外は個数。',
-        '入庫数は「目安」（定数まで入る数）を超えると入りません。もっと入れたいときは商品マスタの定数を直します。',
-        '入れると右の「入庫を入れると」に結果が出て、14日の表の在庫が復活します（入庫の日は黄色）。',
-        '14日のうちに2便いるときだけ「2便目」に2つ目の入庫日と入庫数を入れます。',
-        '⚠ が出た行は直すまで発注書に載りません（入庫日なし／入庫数なし／過去の日付／目安より多い）。',
-        '入庫日が過ぎた行は、CSVの在庫に反映されているので消してください。',
+        '「入庫を入れる」の表で、届く日の列に数を入れます（ケース入りはケース数、それ以外は個数）。黄色の日が納品日です。',
+        '納品日でない日と、目安（定数まで入る数）を超える数は入りません。もっと入れるなら商品マスタの定数を直します。',
+        '入れると右の「在庫の見込み」の表が復活し、「入庫を入れると」に結果が出ます。× は切れている日です。',
+        '⚠ が出た行は直すまで発注書に載りません（納品日でない日／定数超え）。',
+        '届いた分は翌日のCSVの在庫に入るので、過ぎた日の列は自動で無視されます。',
     ])
-    step(S_SHEET, '仕入先を選んで印刷する', [
-        '入庫を入れた商品だけがここに集まります。仕入先を選ぶとその分だけになります。2便目は別の行に出ます。',
+    step(S_SHEET, '区分と仕入先を選んで印刷する', [
+        '入庫を入れた商品が、届く日ごとに1行ずつ集まります。区分と仕入先で絞れます。',
     ])
-    head('随時・月1回')
+    head('随時・月1回（社員）')
+    step(S_SORT, '商品を 冷凍・飲料・常温 に仕分けする、納品日を決める', [
+        '上の表で、区分ごとの納品日（届く曜日）に ○ を付けます（1日でも7日でも）。「発注から納品までの日数」も入れます。',
+        '「分類ごとの区分」で、CSVの商品分類名ごとにまとめて区分を選びます。ほとんどはこれで決まります。',
+        '例外の商品だけ、下の「商品ごとの上書き」で区分を選びます。空欄なら分類の区分になります。',
+        '区分を変えると、その区分のシートの行が並び直ります。入庫を入れていない朝いちにやってください。',
+    ])
     step(S_PLAN, '動員（来場者数）を入れる', [
         '「予測」は大型作品の公開週など読みが変わる日だけで十分です。空欄はその曜日の実績平均→標準の動員の順で埋まります。',
         '「実績」は毎日でも、月1回まとめてでも構いません。入れるほど曜日の平均が正確になります。',
@@ -522,19 +594,20 @@ def build_intro(wb):
     step(S_MID, '月に1回、1ヶ月前・2ヶ月前の在庫CSVを貼り替える（貼らなくても動きます）', [
         '取扱商品が変わっていないかを見るためのものです。新商品・終売の件数がシートの上に出ます。',
     ])
-    step(S_ITEM, '定数と減り数を決める（社員）', [
+    step(S_ITEM, '定数と減り数を決める', [
         '定数（ケース）＝その商品を棚に置ける最大数。入数を掛けた「定数（個）」が発注画面に出ます。',
         '100人あたりの減り数＝来場者100人につき何個減るか。1ヶ月の減り ÷ 1ヶ月の動員 × 100 で見当を付けます。',
         '減り数が空欄か 0 の商品は「？ 減り数が未設定」と出て、切れる日が計算できません。',
-        '②の行はこのマスタの順に並びます。行の挿入・削除・並べ替えは、入庫を入れていない朝いちにやってください（②の入力がずれます）。',
-        'CSVにあってマスタに無い商品は②の末尾に出ます。マスタに追加して減り数を入れてください。',
+        '区分シートの行はこのマスタの順に並びます。行の挿入・削除・並べ替えは、入庫を入れていない朝いちに。',
+        'CSVにあってマスタに無い商品は区分シートの末尾に出ます。マスタに追加して減り数を入れてください。',
     ])
     head('色と記号の意味')
     for text in [
         '黄色のセル … 入力するところ。それ以外は保護されていて書き換えられません（校閲 → シート保護の解除、パスワード無し）。',
         '● 赤 … 今日発注しないと間に合わない／入庫が遅い　　△ 橙 … 近く切れる、欠品の期間がある　　○ 緑 … 14日以上もつ',
-        '⚠ … 直すところ（直すまで発注書に載らない）　　？ … 減り数か動員が未設定で計算できない　　－ … 今日のCSVに無い商品（終売の可能性）',
-        '14日の表 … 数字はその日の終わりの在庫。× は切れている。黄色の日は入庫の日。',
+        '⚠ … 直すところ（直すまで発注書に載らない）　　？ … 未仕分け・減り数か動員が未設定で計算できない　　－ … 今日のCSVに無い商品',
+        '入庫を入れる の表 … 黄色の列が納品日。灰色の列には入りません。',
+        '在庫の見込み の表 … 数字はその日の終わりの在庫。× は切れている。入庫のある日は太字。',
         '在庫が緑 … 「数えた在庫」を使っています（数えた日が今日のとき）。数えた日が古いと橙になり、CSVの在庫に戻ります。',
     ]:
         ws[f'D{r}'] = '　' + text
@@ -620,14 +693,13 @@ def build_csv_sheet(wb, name, others, label, note, paste_hint):
     ws['U4'] = '← この右の3列は自動です。消さないでください（消えたら社員に）。'
     ws['U4'].font = F_NOTE
 
-    not_in_master = f'COUNTIF({item_col("B")},$W{{r}})=0'
     for r in range(CSV_FIRST, CSV_LAST + 1):
         # 貼ると「0761」が 761 に、商品コードが数値になることがある。文字に揃えてから比較する
         ws[f'V{r}'] = f'=IF($B{r}="","",TEXT($B{r},"0000"))'
         ws[f'W{r}'] = f'=IF($I{r}="","",IF(ISNUMBER($I{r}),TEXT($I{r},"0"),$I{r}))'
         ws[f'V{r}'].font = F_NOTE
         ws[f'W{r}'].font = F_NOTE
-        nim = not_in_master.replace('{r}', str(r))
+        nim = f'COUNTIF({item_col("B")},$W{r})=0'
         prev = f'N({CSV_HELPER}{r - 1})'
         if not others:
             # 当日CSV: 対象劇場の行のうち、商品マスタに無い商品だけに番号を振る（マスタの商品はマスタ順で並ぶ）
@@ -656,7 +728,7 @@ def build_csv_sheet(wb, name, others, label, note, paste_hint):
 def build_settings(wb, vendors):
     ws = wb.create_sheet(S_SET)
     sheet_title(ws, '設定', '黄色のセルだけ入力します。最初に1回、劇場コードを選んでください。', width=6)
-    ws.column_dimensions['B'].width = 32
+    ws.column_dimensions['B'].width = 34
     ws.column_dimensions['C'].width = 20
     ws.column_dimensions['D'].width = 64
     ws.column_dimensions['E'].width = 3
@@ -675,7 +747,7 @@ def build_settings(wb, vendors):
         # 6
         ('当日基準日', f'={csv_date(S_CUR)}', '①に貼った在庫CSVの日付から自動。発注画面の「今日」になります。', FILL_AUTO, FMT_DATE),
         # 7
-        ('発注から入庫までの日数', None, f'今日発注すると何日後に入るか（0〜{LT_MAX}）。「今日発注！」の判定に使います。', FILL_INPUT, '0"日"'),
+        ('発注から納品までの日数（既定）', None, f'仕分けページで区分ごとに空欄のときに使う日数（0〜{LT_MAX}）。', FILL_INPUT, '0"日"'),
         # 8
         ('標準の動員/日', None, '動員シートに予測も実績も無い日に使う来場者数。', FILL_INPUT, FMT_INT),
         # 9
@@ -683,7 +755,7 @@ def build_settings(wb, vendors):
         # 10
         ('当日CSVの該当行数', f'=COUNTIF({csv_col(S_CUR, CSV_TH)},$C$4)', '0なら劇場コードが一致していません。', FILL_AUTO, FMT_INT),
         # 11
-        ('取扱商品数（②の行数）', '=$C$20+$C$17+$C$18+$C$19', f'マスタの取扱商品＋マスタに無い商品。計算できるのは {N_ITEMS} 件まで。', FILL_AUTO, FMT_INT),
+        ('取扱商品数', '=$C$20+$C$17+$C$18+$C$19', f'マスタの取扱商品＋マスタに無い商品。計算できるのは {N_ITEMS} 件まで。', FILL_AUTO, FMT_INT),
         # 12
         ('1ヶ月前の基準日', f'={csv_date(S_MID)}', '月1回_1ヶ月前の在庫 の日付から自動。', FILL_AUTO, FMT_DATE),
         # 13
@@ -695,7 +767,7 @@ def build_settings(wb, vendors):
         # 16
         ('これから14日の動員（平均）', f'=IF({Q_CALC}!$B$3=0,0,ROUND({Q_CALC}!$B$3/{DAYS},0))', '0なら減り数が計算できません。', FILL_AUTO, FMT_INT),
         # 17
-        ('当日CSVにあってマスタに無い商品数', f'=MAX({csv_col(S_CUR, CSV_HELPER)})', '②の末尾に出ます。マスタに追加してください。', FILL_AUTO, FMT_INT),
+        ('当日CSVにあってマスタに無い商品数', f'=MAX({csv_col(S_CUR, CSV_HELPER)})', '区分シートの末尾に出ます。マスタに追加してください。', FILL_AUTO, FMT_INT),
         # 18
         ('1ヶ月前だけにあってマスタに無い商品数', f'=MAX({csv_col(S_MID, CSV_HELPER)})', '', FILL_AUTO, FMT_INT),
         # 19
@@ -786,15 +858,15 @@ def build_item_master(wb, items):
     ws = wb.create_sheet(S_ITEM)
     sheet_title(ws, '商品マスタ',
                 '「定数（ケース）」と「100人あたりの減り数」を入れると発注画面が動きます。'
-                '②発注する はこの表の順に並びます。行の挿入・削除・並べ替えは入庫を入れていない朝いちに。', width=12)
+                '区分シートはこの表の順に並びます。行の挿入・削除・並べ替えは入庫を入れていない朝いちに。', width=13)
     headers = ['商品コード', '商品名', '商品分類名', '支払先名', '入数', '税抜単価',
-               '定数（ケース）', '定数（個）', '100人あたりの減り数', '備考', '取扱中', '並び', '当日CSVの行数']
-    kinds = ['入力', '入力', '入力', '入力', '入力', '入力', '入力', '自動', '入力', '入力', '自動', '自動', '自動']
+               '定数（ケース）', '定数（個）', '100人あたりの減り数', '備考', '取扱中', '並び', '当日CSVの行数', '区分']
+    kinds = ['入力', '入力', '入力', '入力', '入力', '入力', '入力', '自動', '入力', '入力', '自動', '自動', '自動', '自動']
     put_headers(ws, 5, headers, kinds)
     th = f'{Q_SET}!$C$4'
     for r in range(MASTER_FIRST, MASTER_LAST + 1):
         style_row(ws, r, 'BCDEFGHJK', fill=FILL_INPUT)
-        style_row(ws, r, 'ILMN', fill=FILL_AUTO)
+        style_row(ws, r, 'ILMNO', fill=FILL_AUTO)
         for letter in 'BCDEFGHJK':
             ws[f'{letter}{r}'].protection = UNLOCKED
         ws[f'B{r}'].number_format = '@'
@@ -806,7 +878,7 @@ def build_item_master(wb, items):
         ws[f'J{r}'].number_format = '0.00'
         ws[f'H{r}'].font = F_INPUT
         ws[f'J{r}'].font = F_INPUT
-        # 3枚のCSVのどれかに載っていれば取扱中。②はこの並び番号の順に商品を出す
+        # 3枚のCSVのどれかに載っていれば取扱中。区分シートはこの並び番号の順に商品を出す
         ws[f'{MASTER_ACTIVE}{r}'] = (
             f'=IF($B{r}="",0,IF(COUNTIFS({csv_col(S_CUR, CSV_TH)},{th},{csv_col(S_CUR, CSV_CODE)},$B{r})'
             f'+COUNTIFS({csv_col(S_MID, CSV_TH)},{th},{csv_col(S_MID, CSV_CODE)},$B{r})'
@@ -814,9 +886,9 @@ def build_item_master(wb, items):
         prev = f'N({MASTER_SEQ}{r - 1})' if r > MASTER_FIRST else '0'
         ws[f'{MASTER_SEQ}{r}'] = f'={prev}+${MASTER_ACTIVE}{r}'
         ws[f'N{r}'] = f'=IF($B{r}="",0,COUNTIFS({csv_col(S_CUR, CSV_TH)},{th},{csv_col(S_CUR, CSV_CODE)},$B{r}))'
-        ws[f'N{r}'].font = F_NOTE
-        ws[f'{MASTER_ACTIVE}{r}'].font = F_NOTE
-        ws[f'{MASTER_SEQ}{r}'].font = F_NOTE
+        ws[f'O{r}'] = f'=IF($B{r}="","",{Q_SORT}!$G{SORT_OV_FIRST + r - MASTER_FIRST})'
+        for letter in 'LMN':
+            ws[f'{letter}{r}'].font = F_NOTE
     for i, it in enumerate(items[:MASTER_LAST - MASTER_FIRST + 1]):
         r = MASTER_FIRST + i
         ws[f'B{r}'] = it['商品コード']
@@ -829,18 +901,134 @@ def build_item_master(wb, items):
                       'ケース数を 0 以上の数で入れてください。')
     number_validation(ws, f'J{MASTER_FIRST}:J{MASTER_LAST}', 'decimal', 0, 9999, '減り数',
                       '来場者100人あたりの減り数を 0 より大きい数で入れてください（例 6.5）。')
-    # 1日で定数以上減る計算になる減り数は、1日あたりの数を入れた可能性が高い
     ws.conditional_formatting.add(f'J{MASTER_FIRST}:J{MASTER_LAST}', FormulaRule(
         formula=[f'AND($J{MASTER_FIRST}<>"",$I{MASTER_FIRST}<>"",$J{MASTER_FIRST}*N({Q_SET}!$C$8)/100>$I{MASTER_FIRST})'],
         fill=PatternFill('solid', bgColor=C_WARN_SOFT), font=Font(name=FONT, size=11, bold=True, color=C_WARN)))
-    ws['O5'] = '減り数が橙＝1日で定数以上減る計算です。「1日の減り数」を入れていませんか（100人あたりに直す）'
-    ws['O5'].font = F_NOTE
+    ws['P5'] = '減り数が橙＝1日で定数以上減る計算です。「1日の減り数」を入れていませんか（100人あたりに直す）。区分は仕分けページで決めます。'
+    ws['P5'].font = F_NOTE
     for letter, w in (('B', 16), ('C', 32), ('D', 16), ('E', 24), ('F', 7), ('G', 11),
-                      ('H', 12), ('I', 10), ('J', 16), ('K', 26), ('L', 7), ('M', 6), ('N', 8)):
+                      ('H', 12), ('I', 10), ('J', 16), ('K', 26), ('L', 7), ('M', 6), ('N', 8), ('O', 8)):
         ws.column_dimensions[letter].width = w
     ws.freeze_panes = 'D6'
-    ws.auto_filter.ref = f'B5:N{MASTER_LAST}'
+    ws.auto_filter.ref = f'B5:O{MASTER_LAST}'
     protect(ws, allow_filter=True)
+    return ws
+
+
+# ---------------------------------------------------------------------------
+# 仕分け（区分・納品日）
+# ---------------------------------------------------------------------------
+def build_sort(wb, categories):
+    ws = wb.create_sheet(S_SORT)
+    sheet_title(ws, '仕分け',
+                '商品を 冷凍・飲料・常温 に分けます。区分ごとに納品日（届く曜日）を ○ で付けます（1日でも7日でも）。', width=10)
+
+    # ---- 納品日 ----
+    ws['B4'] = '納品日（届く曜日に ○）と、発注から納品までの日数'
+    ws['B4'].font = F_BOLD
+    put_headers(ws, 5, ['区分', '月', '火', '水', '木', '金', '土', '日', '発注から納品まで'],
+                ['', '選択', '選択', '選択', '選択', '選択', '選択', '選択', '入力'])
+    for kind in KINDS:
+        r = SORT_DELIV_ROW[kind]
+        ws[f'B{r}'] = kind
+        ws[f'B{r}'].font = Font(name=FONT, size=11, bold=True, color=KIND_COLOR[kind])
+        ws[f'B{r}'].border = BORDER_ROW
+        for letter in 'CDEFGHI':
+            c = ws[f'{letter}{r}']
+            c.fill = FILL_INPUT
+            c.font = F_INPUT
+            c.border = BORDER_ROW
+            c.alignment = Alignment(horizontal='center')
+            c.protection = UNLOCKED
+        j = ws[f'J{r}']
+        j.fill = FILL_INPUT
+        j.font = F_INPUT
+        j.border = BORDER_ROW
+        j.number_format = '0"日"'
+        j.alignment = Alignment(horizontal='center')
+        j.protection = UNLOCKED
+        ws[f'K{r}'] = (f'=IF(COUNTIF($C{r}:$I{r},"○")=0,"⚠ ○ が無いので、毎日届く前提で計算しています",'
+                       f'"○ 納品日 "&COUNTIF($C{r}:$I{r},"○")&"日／週　"&IF($J{r}="","日数は設定の既定（"&{Q_SET}!$C$7&"日）","発注から "&$J{r}&"日で届く"))')
+        ws[f'K{r}'].font = F_NOTE2
+        status_rules(ws, f'K{r}', size=10)
+        ws.row_dimensions[r].height = 20
+    list_validation(ws, '"○"', f'C{SORT_DELIV_ROW["冷凍"]}:I{SORT_DELIV_ROW["常温"]}', '納品日',
+                    '届く曜日に ○ を入れます。届かない曜日は空欄にします。')
+    number_validation(ws, f'J{SORT_DELIV_ROW["冷凍"]}:J{SORT_DELIV_ROW["常温"]}', 'whole', 0, LT_MAX, '日数',
+                      f'発注してから届くまでの日数を 0〜{LT_MAX} で入れてください。')
+
+    # ---- 分類ごとの区分 ----
+    ws['B10'] = '分類ごとの区分（まとめて仕分け）　CSVの「商品分類名」ごとに区分を選びます'
+    ws['B10'].font = F_BOLD
+    put_headers(ws, SORT_CAT_FIRST - 1, ['商品分類名', '区分', '商品数'], ['入力', '選択', '自動'])
+    for r in range(SORT_CAT_FIRST, SORT_CAT_LAST + 1):
+        style_row(ws, r, 'BC', fill=FILL_INPUT)
+        style_row(ws, r, 'D', fill=FILL_AUTO)
+        ws[f'B{r}'].protection = UNLOCKED
+        ws[f'C{r}'].protection = UNLOCKED
+        ws[f'C{r}'].alignment = Alignment(horizontal='center')
+        ws[f'D{r}'] = f'=IF($B{r}="","",COUNTIF({item_col("D")},$B{r}))'
+        ws[f'D{r}'].number_format = FMT_INT
+    for i, cat in enumerate(categories[:SORT_CAT_LAST - SORT_CAT_FIRST + 1]):
+        ws[f'B{SORT_CAT_FIRST + i}'] = cat
+        ws[f'C{SORT_CAT_FIRST + i}'] = DEFAULT_KIND.get(cat, '')
+    list_validation(ws, '"' + ','.join(KINDS) + '"', f'C{SORT_CAT_FIRST}:C{SORT_CAT_LAST}', '区分',
+                    '冷凍・飲料・常温 から選んでください。')
+
+    # ---- まとめ ----
+    ws['F10'] = '区分ごとの商品数'
+    ws['F10'].font = F_BOLD
+    for i, kind in enumerate(KINDS):
+        r = SORT_CAT_FIRST + i
+        link_cell(ws[f'F{r}'], S_K[kind], f'{kind} ›')
+        ws[f'G{r}'] = f'=COUNTIF({calc_col("kind")},"{kind}")'
+        ws[f'G{r}'].number_format = '#,##0"品目"'
+        ws[f'G{r}'].font = F_BOLD
+    r = SORT_CAT_FIRST + 3
+    ws[f'F{r}'] = '未仕分け'
+    ws[f'F{r}'].font = Font(name=FONT, size=11, bold=True, color=C_CRIT)
+    ws[f'G{r}'] = f'=COUNTIFS({calc_col("code")},"?*",{calc_col("kind")},"")'
+    ws[f'G{r}'].number_format = '#,##0"品目"'
+    ws[f'G{r}'].font = Font(name=FONT, size=11, bold=True, color=C_CRIT)
+    ws[f'F{r + 1}'] = '未仕分けの商品はどのシートにも出ません。下の表で「区分」が空の行を探して、分類の区分か上書きを入れてください。'
+    ws[f'F{r + 1}'].font = F_NOTE
+    ws[f'F{r + 3}'] = '区分を変えると、その区分のシートの行が並び直ります。'
+    ws[f'F{r + 4}'] = '入庫を入れていない朝いちに、社員が行ってください。'
+    for rr in (r + 3, r + 4):
+        ws[f'F{rr}'].font = Font(name=FONT, size=10, bold=True, color=C_WARN)
+
+    # ---- 商品ごとの上書き（商品マスタの行と1対1） ----
+    ws[f'B{SORT_OV_FIRST - 3}'] = '商品ごとの上書き（例外だけ）　空欄なら分類の区分になります。行は商品マスタと同じ並びです'
+    ws[f'B{SORT_OV_FIRST - 3}'].font = F_BOLD
+    put_headers(ws, SORT_OV_FIRST - 1, ['商品コード', '商品名', '商品分類名', '分類の区分', '上書き', '区分（決定）'],
+                ['自動', '自動', '自動', '自動', '選択', '自動'])
+    for r in range(SORT_OV_FIRST, SORT_OV_LAST + 1):
+        mr = MASTER_FIRST + (r - SORT_OV_FIRST)
+        ws[f'B{r}'] = f'=IF({Q_ITEM}!$B{mr}="","",{Q_ITEM}!$B{mr})'
+        ws[f'C{r}'] = f'=IF($B{r}="","",{Q_ITEM}!$C{mr})'
+        ws[f'D{r}'] = f'=IF($B{r}="","",{Q_ITEM}!$D{mr})'
+        ws[f'E{r}'] = (f'=IF($B{r}="","",IFERROR(IF(INDEX({sort_cat_col("C")},MATCH($D{r},{sort_cat_col("B")},0))="","",'
+                       f'INDEX({sort_cat_col("C")},MATCH($D{r},{sort_cat_col("B")},0))),""))')
+        ws[f'G{r}'] = f'=IF($B{r}="","",IF($F{r}<>"",$F{r},$E{r}))'
+        style_row(ws, r, 'BCDEG', fill=FILL_AUTO)
+        style_row(ws, r, 'F', fill=FILL_INPUT)
+        ws[f'F{r}'].protection = UNLOCKED
+        ws[f'F{r}'].alignment = Alignment(horizontal='center')
+        ws[f'G{r}'].alignment = Alignment(horizontal='center')
+        ws[f'B{r}'].font = F_NOTE
+    list_validation(ws, '"' + ','.join(KINDS) + '"', f'F{SORT_OV_FIRST}:F{SORT_OV_LAST}', '区分',
+                    '冷凍・飲料・常温 から選んでください。空欄なら分類の区分です。')
+    ws.conditional_formatting.add(f'B{SORT_OV_FIRST}:G{SORT_OV_LAST}', FormulaRule(
+        formula=[f'AND($B{SORT_OV_FIRST}<>"",$G{SORT_OV_FIRST}="")'],
+        fill=PatternFill('solid', bgColor=C_CRIT_SOFT), font=Font(name=FONT, size=11, bold=True, color=C_CRIT)))
+    for kind in KINDS:
+        ws.conditional_formatting.add(f'G{SORT_OV_FIRST}:G{SORT_OV_LAST}', FormulaRule(
+            formula=[f'$G{SORT_OV_FIRST}="{kind}"'], font=Font(name=FONT, size=11, bold=True, color=KIND_COLOR[kind])))
+    for letter, w in (('B', 22), ('C', 30), ('D', 16), ('E', 12), ('F', 10), ('G', 12), ('H', 8), ('I', 8),
+                      ('J', 16), ('K', 44)):
+        ws.column_dimensions[letter].width = w
+    ws.freeze_panes = f'B{SORT_OV_FIRST}'
+    protect(ws, allow_filter=False)
     return ws
 
 
@@ -874,7 +1062,6 @@ def build_plan(wb):
     date_c = plan_col('B')
     dow_c = plan_col('C')
     act_c = plan_col('E')
-    # 基準日が空（CSV未貼付）でも #VALUE! にならないよう N() で数値にしておく
     recent = f'{date_c},">="&(N({Q_SET}!$C$6)-56),{date_c},"<"&N({Q_SET}!$C$6)'
     ws['J5'] = '曜日ごとの実績平均（直近8週）'
     ws['J5'].font = F_BOLD
@@ -942,29 +1129,33 @@ def build_calc(wb):
     ws['B1'].font = F_NOTE
     ws['A2'] = '動員の表の範囲外なら1'
     ws['A3'] = '動員合計'
-    ws['A4'] = '動員'
+    ws['A4'] = '動員（日付は dt 列の3行目）'
+    for kind in KINDS:
+        ws[f'A{FLAG_ROW[kind]}'] = f'納品日フラグ {kind}'
     th = f'{Q_SET}!$C$4'
     base = f'{Q_SET}!$C$6'
-    lt = f'N({Q_SET}!$C$7)'
     cur_v, cur_w = csv_col(S_CUR, CSV_TH), csv_col(S_CUR, CSV_CODE)
     mid_v, mid_w = csv_col(S_MID, CSV_TH), csv_col(S_MID, CSV_CODE)
     prv_v, prv_w = csv_col(S_PRV, CSV_TH), csv_col(S_PRV, CSV_CODE)
     cur_u, mid_u, prv_u = csv_col(S_CUR, CSV_HELPER), csv_col(S_MID, CSV_HELPER), csv_col(S_PRV, CSV_HELPER)
 
     for name, letter in CC.items():
-        ws[f'{letter}5'] = name
-        ws[f'{letter}5'].font = F_NOTE
-    use_letters = [CC[f'use{d}'] for d in range(DAYS)]
-    # 3行目＝日付、4行目＝その日の採用動員（全商品共通）
-    for d, L in enumerate(use_letters):
+        ws[f'{letter}{CALC_FIRST - 1}'] = name
+        ws[f'{letter}{CALC_FIRST - 1}'].font = F_NOTE
+    # 3行目＝日付、4行目＝その日の採用動員、5〜7行目＝区分ごとの納品日フラグ（21日分）
+    for d, L in enumerate(DT):
         ws[f'{L}3'] = f'=IF({base}="","",{base}+{d})'
         ws[f'{L}3'].number_format = FMT_MD
         ws[f'{L}4'] = (f'=IF({L}3="",0,IFERROR(N(INDEX({plan_col("G")},MATCH({L}3,{plan_col("B")},0))),'
                        f'N({Q_SET}!$C$8)))')
-    ws['B3'] = f'=SUM({use_letters[0]}4:{use_letters[-1]}4)'
+        for kind in KINDS:
+            wk = f'{Q_SORT}!$C${SORT_DELIV_ROW[kind]}:$I${SORT_DELIV_ROW[kind]}'
+            ws[f'{L}{FLAG_ROW[kind]}'] = (f'=IF({L}3="",1,IF(COUNTIF({wk},"○")=0,1,'
+                                          f'IF(INDEX({wk},WEEKDAY({L}3,2))="○",1,0)))')
+    ws['B3'] = f'=SUM({DT[0]}4:{DT[DAYS - 1]}4)'
     ws['B2'] = (f'=IF({base}="",0,IF(OR({base}<N({Q_PLAN}!$B${PLAN_FIRST}),'
                 f'{base}+{DAYS - 1}>N({Q_PLAN}!$B${PLAN_LAST})),1,0))')
-    dates = f'${use_letters[0]}$3:${use_letters[-1]}$3'
+    dates14 = f'${DT[0]}$3:${DT[DAYS - 1]}$3'
 
     def from_csv_text(letter):
         return (f'IFERROR(INDEX({csv_col(S_CUR, letter)},MATCH($C{{r}},{cur_w},0)),'
@@ -972,7 +1163,6 @@ def build_calc(wb):
                 f'IFERROR(INDEX({csv_col(S_PRV, letter)},MATCH($C{{r}},{prv_w},0)),"")))')
 
     def from_csv_num(letter):
-        """対象劇場の行から数値を取る（他劇場の規定数・入数を拾わないように）。"""
         parts = []
         for sheet, v, w in ((S_CUR, cur_v, cur_w), (S_MID, mid_v, mid_w), (S_PRV, prv_v, prv_w)):
             cnt = f'COUNTIFS({v},{th},{w},$C{{r}})'
@@ -981,25 +1171,20 @@ def build_calc(wb):
                 f'IF({parts[2][0]}>0,{parts[2][1]},0)))')
 
     def from_master(letter, fallback):
-        """マスタにあって空欄なら、CSVの値を使う（マスタに行だけ足したときに 0 と出ないように）。"""
         idx = f'INDEX({item_col(letter)},MATCH($C{{r}},{item_col("B")},0))'
         return f'IFERROR(IF({idx}="",{fallback},{idx}),{fallback})'
 
     def master_pos(letter):
-        """正の数だけを採用。空欄・0 は未設定として ""。"""
         idx = f'INDEX({item_col(letter)},MATCH($C{{r}},{item_col("B")},0))'
         return f'IFERROR(IF(N({idx})>0,{idx},""),"")'
 
     for i in range(N_ITEMS):
         r = CALC_FIRST + i
-        ro = ORD_FIRST + i
         c = lambda n: f'${CC[n]}{r}'          # noqa: E731
-        o = lambda n: f'{Q_ORD}!${OC[n]}{ro}'   # noqa: E731
         blank = f'$C{r}=""'
         R = lambda s: s.replace('{r}', str(r))   # noqa: E731
         f = {}
         f['no'] = f'=IF({i + 1}<={Q_SET}!$C$11,{i + 1},"")'
-        # 並び：商品マスタの取扱中の商品（マスタ順）→ 当日CSVだけの商品 → 1ヶ月前だけ → 2ヶ月前だけ
         f['code'] = (f'=IF($B{r}="","",IF($B{r}<={Q_SET}!$C$20,INDEX({item_col("B")},MATCH($B{r},{item_col(MASTER_SEQ)},0)),'
                      f'IF($B{r}<={Q_SET}!$C$20+{Q_SET}!$C$17,INDEX({cur_w},MATCH($B{r}-{Q_SET}!$C$20,{cur_u},0)),'
                      f'IF($B{r}<={Q_SET}!$C$20+{Q_SET}!$C$17+{Q_SET}!$C$18,'
@@ -1012,8 +1197,29 @@ def build_calc(wb):
         f['price'] = R(f'=IF({blank},"",N({from_master("G", from_csv_num("Q"))}))')
         f['csv_stock'] = (f'=IF({blank},"",IF(COUNTIFS({cur_v},{th},{cur_w},$C{r})=0,"",'
                           f'SUMIFS({csv_col(S_CUR, "N")},{cur_v},{th},{cur_w},$C{r})))')
-        f['counted'] = f'=IF({blank},"",IF({o("counted")}="","",{o("counted")}))'
-        f['counted_date'] = f'=IF({blank},"",IF({o("counted_date")}="","",{o("counted_date")}))'
+        # 区分：マスタにある商品は仕分けページの「区分（決定）」、無い商品は分類の区分
+        by_cat = (f'IFERROR(IF(INDEX({sort_cat_col("C")},MATCH({c("cat")},{sort_cat_col("B")},0))="","",'
+                  f'INDEX({sort_cat_col("C")},MATCH({c("cat")},{sort_cat_col("B")},0))),"")')
+        f['kind'] = (f'=IF({blank},"",IFERROR(IF(INDEX({sort_ov_col("G")},MATCH($C{r},{item_col("B")},0))="",'
+                     f'{by_cat},INDEX({sort_ov_col("G")},MATCH($C{r},{item_col("B")},0))),{by_cat}))')
+        for kind in KINDS:
+            prev = f'N(${CC[f"seq_{kind}"]}{r - 1})' if i else '0'
+            f[f'seq_{kind}'] = f'=IF({c("kind")}="{kind}",{prev}+1,{prev})'
+        f['seq'] = (f'=IF({c("kind")}="冷凍",{c("seq_冷凍")},IF({c("kind")}="飲料",{c("seq_飲料")},'
+                    f'IF({c("kind")}="常温",{c("seq_常温")},"")))')
+
+        def lt_cell(k):
+            cell = f'{Q_SORT}!$J${SORT_DELIV_ROW[k]}'
+            return f'IF({cell}="",N({Q_SET}!$C$7),{cell})'
+        f['lt'] = (f'=IF({c("kind")}="冷凍",{lt_cell("冷凍")},IF({c("kind")}="飲料",{lt_cell("飲料")},'
+                   f'IF({c("kind")}="常温",{lt_cell("常温")},N({Q_SET}!$C$7))))')
+
+        def from_sheet(letter):
+            """区分シートの、この商品の行にある値。"""
+            parts = ','.join(f'IF({c("kind")}="{k}",INDEX({kind_col(k, letter)},{c("seq")})' for k in KINDS)
+            return f'IF({c("seq")}="","",{parts},""' + ')' * (len(KINDS) + 1)
+        f['counted'] = f'=IF({blank},"",IF({from_sheet(OC["counted"])}="","",{from_sheet(OC["counted"])}))'
+        f['counted_date'] = f'=IF({blank},"",IF({from_sheet(OC["counted_date"])}="","",{from_sheet(OC["counted_date"])}))'
         f['stock'] = (f'=IF({blank},"",IF(AND(ISNUMBER({c("counted")}),ISNUMBER({c("counted_date")}),'
                       f'{c("counted_date")}>={base}),{c("counted")},N({c("csv_stock")})))')
         f['pi'] = R(f'=IF({blank},"",{master_pos("J")})')
@@ -1021,108 +1227,105 @@ def build_calc(wb):
         csv_par = R(f'N({from_csv_num("O")})')
         f['par'] = (f'=IF({blank},"",IF({c("par_case")}<>"",{c("par_case")}*{c("pack")},'
                     f'IF({csv_par}>0,{csv_par},"")))')
-        for k, (dn, qn, un) in enumerate((('in_date', 'in_qty', 'in_units'), ('in_date2', 'in_qty2', 'in_units2'))):
-            f[dn] = f'=IF({blank},"",IF({o(dn)}="","",{o(dn)}))'
-            f[qn] = f'=IF({blank},"",IF({o(qn)}="","",{o(qn)}))'
-            f[un] = (f'=IF({blank},0,IF(AND(ISNUMBER({c(dn)}),ISNUMBER({c(qn)})),'
-                     f'MAX(0,{c(qn)})*{c("pack")},0))')
+        lt = c('lt')
+
+        def flag(d):
+            return (f'IF({c("kind")}="冷凍",{DT[d]}$5,IF({c("kind")}="飲料",{DT[d]}$6,'
+                    f'IF({c("kind")}="常温",{DT[d]}$7,1)))')
         start = f'MAX(0,N({c("stock")}))'
         for d in range(DAYS):
-            L = use_letters[d]
+            L = DT[d]
+            f[f'in{d}'] = f'=IF({blank},0,MAX(0,N({from_sheet(IN_COLS[d])})))'
             f[f'use{d}'] = f'=IF({blank},0,IF({c("pi")}="",0,MAX(0,{c("pi")})*MAX(0,{L}$4)/100))'
-            arrive = (f'IF({c("in_date")}={L}$3,{c("in_units")},0)+'
-                      f'IF({c("in_date2")}={L}$3,{c("in_units2")},0)')
             prev_b = start if d == 0 else c(f'b{d - 1}')
             prev_a = start if d == 0 else c(f'a{d - 1}')
-            # 0 で止める。切れた後も引き続けると、入庫が「架空の赤字」に食われる
+            units = f'{c(f"in{d}")}*{c("pack")}'
             f[f'b{d}'] = f'=IF({blank},0,MAX(0,{prev_b}-{c(f"use{d}")}))'
-            f[f'a{d}'] = f'=IF({blank},0,MAX(0,{prev_a}+{arrive}-{c(f"use{d}")}))'
-            # 最後の入庫日以降で、最初に切れる日（1個未満＝切れ）
-            last_in = f'MAX(N({c("in_date")}),N({c("in_date2")}))'
-            f[f'k{d}'] = f'=IF({blank},99,IF(AND({c(f"a{d}")}<1,{L}$3>={last_in}),{d},99))'
-        b_rng = f'${CC["b0"]}{r}:${CC[f"b{DAYS - 1}"]}{r}'
-        a_rng = f'${CC["a0"]}{r}:${CC[f"a{DAYS - 1}"]}{r}'
-        k_rng = f'${CC["k0"]}{r}:${CC[f"k{DAYS - 1}"]}{r}'
-        use_rng = f'${use_letters[0]}{r}:${use_letters[-1]}{r}'
+            f[f'a{d}'] = f'=IF({blank},0,MAX(0,{prev_a}+{units}-{c(f"use{d}")}))'
+            f[f'k{d}'] = f'=IF({blank},99,IF(AND({c(f"a{d}")}<1,{L}$3>={c("last_in")}),{d},99))'
+            f[f'ov{d}'] = (f'=IF(OR({blank},{c("par")}="",{c(f"in{d}")}=0),0,'
+                           f'ROUNDUP(MAX(0,{prev_a}+{units}-{c("par")})/{c("pack")},0))')
+            f[f'valid{d}'] = f'=IF(AND({c(f"in{d}")}>0,{flag(d)}=1,{c(f"ov{d}")}=0),1,0)'
+            prev_cnt = '0' if d == 0 else c(f'cnt{d - 1}')
+            f[f'cnt{d}'] = f'={prev_cnt}+{c(f"valid{d}")}'
+            # その日に入れられる上限（ケース）。納品日でなければ 0
+            f[f'gd{d}'] = (f'=IF({blank},0,IF({flag(d)}=0,0,IF({c("par")}="",9999,'
+                           f'IF({c("par")}-{prev_b}<=0,0,ROUNDUP(({c("par")}-{prev_b})/{c("pack")},0)))))')
+            f[f'lo{d}'] = f'=IF(AND({c("cut_before")}<>"",{L}$3<={c("cut_before")},{flag(d)}=1),{L}$3,0)'
+            f[f'lo2_{d}'] = f'=IF(AND({c("cut_post")}<>"",{L}$3<={c("cut_post")},{flag(d)}=1),{L}$3,0)'
+            f[f'bad{d}'] = f'=IF(AND({c(f"in{d}")}>0,{flag(d)}=0),{L}$3,99999)'
+            f[f'od{d}'] = f'=IF({c(f"ov{d}")}>0,{L}$3,99999)'
+        for d in range(NDT):
+            L = DT[d]
+            f[f'nd{d}'] = f'=IF(AND({L}$3<>"",{L}$3>=N({base})+{lt},{flag(d)}=1),{L}$3,99999)'
+
+        def rng(prefix, n=DAYS):
+            return f'${CC[f"{prefix}0"]}{r}:${CC[f"{prefix}{n - 1}"]}{r}'
+        in_rng, b_rng, k_rng = rng('in'), rng('b'), rng('k')
         f['n_before'] = f'=IF(OR({blank},{c("pi")}=""),"",COUNTIF({b_rng},">=1"))'
         f['cut_before'] = f'=IF({c("n_before")}="","",IF({c("n_before")}>={DAYS},"",{base}+{c("n_before")}))'
         f['n_post'] = f'=IF(OR({blank},{c("pi")}=""),"",MIN({k_rng}))'
         f['cut_post'] = f'=IF({c("n_post")}="","",IF({c("n_post")}>=99,"",{base}+{c("n_post")}))'
-        f['use_avg'] = f'=IF(OR({blank},{c("pi")}=""),"",AVERAGE({use_rng}))'
-        # 1便目が届く日の朝の在庫（入庫日が無ければ「今日＋発注から入庫までの日数」）
-        target = f'IF(ISNUMBER({c("in_date")}),{c("in_date")},{base}+{lt})'
-        pos = f'MATCH({target},{dates},0)'
-        f['prev1'] = f'=IF({blank},"",IFERROR(IF({pos}=1,{start},INDEX({b_rng},{pos}-1)),""))'
-        # 目安＝定数まで入る数（ケース）。少しでも入るなら 1 以上にする（切り上げ）
-        f['guide'] = (f'=IF(OR({blank},{c("par")}="",{c("prev1")}=""),"",'
-                      f'IF({c("par")}-{c("prev1")}<=0,0,ROUNDUP(({c("par")}-{c("prev1")})/{c("pack")},0)))')
-        f['over1'] = (f'=IF(OR({blank},{c("guide")}="",NOT(ISNUMBER({c("in_qty")}))),0,'
-                      f'MAX(0,{c("in_qty")}-{c("guide")}))')
-        pos2 = f'MATCH({c("in_date2")},{dates},0)'
-        prev2 = f'IF({pos2}=1,{start},INDEX({a_rng},{pos2}-1))'
-        f['over2'] = (f'=IF(OR({blank},{c("par")}="",{c("in_units2")}=0),0,'
-                      f'IFERROR(ROUNDUP(MAX(0,{prev2}+{c("in_units2")}-{c("par")})/{c("pack")},0),0))')
-
-        def pair_err(dn, qn, over, label, over_text='目安より "&{o}&" 多い（定数を超える）→ 減らす'):
-            return (f'IF(AND({c(dn)}="",{c(qn)}=""),"",'
-                    f'IF({c(dn)}="","⚠ {label}入庫日を ▼ から選んでください",'
-                    f'IF(NOT(ISNUMBER({c(dn)})),"⚠ {label}入庫日は ▼ から選んでください",'
-                    f'IF({c(dn)}<N({base}),"⚠ {label}入庫日が過去です（もう在庫に入っています）→ 消してください",'
-                    f'IF({c(dn)}>N({base})+{DAYS - 1},"⚠ {label}入庫日が14日より先です",'
-                    f'IF(N({c(qn)})<=0,"⚠ {label}入庫数を入れてください",'
-                    f'IF({c(over)}>0,"⚠ {label}' + over_text.replace('{o}', c(over)) + '","")))))))')
-        f['err1'] = f'=IF({blank},"",{pair_err("in_date", "in_qty", "over1", "")})'
-        over2_text = '定数を "&{o}&" ケース超える → 減らす'
-        f['err2'] = (f'=IF({blank},"",{pair_err("in_date2", "in_qty2", "over2", "2便目：", over2_text)})')
-        f['valid1'] = (f'=IF(AND({c("err1")}="",N({c("in_qty")})>0,ISNUMBER({c("in_date")})),1,0)')
-        f['valid2'] = (f'=IF(AND({c("err2")}="",N({c("in_qty2")})>0,ISNUMBER({c("in_date2")})),1,0)')
-        f['ordered'] = f'=IF(OR({c("valid1")}=1,{c("valid2")}=1),1,0)'
-        f['in_amt'] = (f'=IF({blank},0,({c("valid1")}*{c("in_units")}+{c("valid2")}*{c("in_units2")})'
-                       f'*N({c("price")}))')
+        f['use_avg'] = f'=IF(OR({blank},{c("pi")}=""),"",AVERAGE({rng("use")}))'
+        f['n_in'] = f'=IF({blank},0,COUNTIF({in_rng},">0"))'
+        f['first_in'] = f'=IF({c("n_in")}=0,"",SUMPRODUCT(MIN(({in_rng}>0)*{dates14}+({in_rng}<=0)*99999)))'
+        f['last_in'] = f'=IF({c("n_in")}=0,0,SUMPRODUCT(MAX(({in_rng}>0)*{dates14})))'
+        f['next_del'] = f'=IF({blank},"",IF(MIN({rng("nd", NDT)})>=99999,"",MIN({rng("nd", NDT)})))'
+        f['last_ok'] = f'=IF({c("cut_before")}="",0,MAX({rng("lo")}))'
+        f['deadline'] = f'=IF({c("last_ok")}=0,"",{c("last_ok")}-{lt})'
+        f['last_ok2'] = f'=IF({c("cut_post")}="",0,MAX({rng("lo2_")}))'
+        f['deadline2'] = f'=IF({c("last_ok2")}=0,"",{c("last_ok2")}-{lt})'
+        pos = f'MATCH({c("next_del")},{dates14},0)'
+        f['guide'] = (f'=IF(OR({blank},{c("par")}="",{c("next_del")}=""),"",'
+                      f'IFERROR(INDEX({rng("gd")},{pos}),""))')
+        f['n_valid'] = f'=IF({blank},0,{c(f"cnt{DAYS - 1}")})'
+        f['bad_day'] = f'=IF(MIN({rng("bad")})>=99999,"",MIN({rng("bad")}))'
+        f['over_day'] = f'=IF(MIN({rng("od")})>=99999,"",MIN({rng("od")}))'
+        f['in_amt'] = f'=IF({blank},0,SUMPRODUCT({rng("valid")},{in_rng})*{c("pack")}*N({c("price")}))'
         f['unit'] = f'=IF({blank},"",IF({c("pack")}>1,"ｹｰｽ("&{c("pack")}&"入)","個"))'
-        f['absent'] = f'=IF({blank},0,IF(COUNTIFS({cur_v},{th},{cur_w},$C{r})=0,1,0))'
+        f['absent'] = f'=IF({blank},0,IF(COUNTIFS({cur_v},{th},{cur_w},$C{r})>0,0,1))'
         cut_b = md(c('cut_before'))
-        dl_b = md(f'{c("cut_before")}-{lt}')
         cut_p = md(c('cut_post'))
-        dl_p = md(f'{c("cut_post")}-{lt}')
         f['post'] = (f'=IF({blank},"",IF({c("cut_post")}="","入庫後は 14日以上もつ",'
-                     f'IF({c("cut_post")}-{lt}<={base},"入庫後も "&{cut_p}&" に切れる　もう1便を至急発注",'
-                     f'"入庫後も "&{cut_p}&" に切れる　"&{dl_p}&" までに次を発注")))')
+                     f'IF({c("deadline2")}="","入庫後も "&{cut_p}&" に切れる（それまでに便が無い）　もう1便を至急発注",'
+                     f'IF({c("deadline2")}<={base},"入庫後も "&{cut_p}&" に切れる　もう1便を至急発注（"&{md(c("last_ok2"))}&" 便）",'
+                     f'"入庫後も "&{cut_p}&" に切れる　"&{md(c("deadline2"))}&" までに次を発注（"&{md(c("last_ok2"))}&" 便）"))))')
         f['status'] = (
             f'=IF({blank},"",'
             f'IF({base}="","？ ①在庫を貼る に今日のCSVが貼られていない",'
             f'IF({c("absent")}=1,"－ 今日のCSVに無い（終売？）",'
+            f'IF({c("kind")}="","？ 未仕分け（仕分けページで区分を選ぶ）",'
             f'IF({c("stock")}<0,"● 在庫がマイナス　数えて「数えた在庫」に入れる",'
             f'IF({c("stock")}=0,"● 在庫なし　至急発注",'
             f'IF({c("pi")}="","？ 減り数が未設定（商品マスタ）",'
             f'IF($B$3=0,"？ 動員が未入力（動員を入れる）",'
             f'IF({c("cut_before")}="","○ 14日以上もつ",'
-            f'IF({c("n_before")}<{lt},"● "&{cut_b}&" に切れる　至急発注",'
-            f'IF({c("n_before")}={lt},"● "&{cut_b}&" に切れる　今日発注",'
-            f'"△ "&{cut_b}&" に切れる　"&{dl_b}&" までに発注"))))))))))')
-        gap = f'AND({c("cut_before")}<>"",{c("in_date")}>{c("cut_before")})'
-        day_before_in = md(f'{c("in_date")}-1')
+            f'IF({c("deadline")}="","● "&{cut_b}&" に切れる　それまでに便が無い　至急発注",'
+            f'IF({c("deadline")}<{base},"● "&{cut_b}&" に切れる　至急発注（"&{md(c("last_ok"))}&" 便）",'
+            f'IF({c("deadline")}={base},"● "&{cut_b}&" に切れる　今日発注（"&{md(c("last_ok"))}&" 便）",'
+            f'"△ "&{cut_b}&" に切れる　"&{md(c("deadline"))}&" までに発注（"&{md(c("last_ok"))}&" 便）"))))))))))))')
+        gap = f'AND({c("cut_before")}<>"",{c("first_in")}>{c("cut_before")})'
+        earlier = f'AND({c("next_del")}<>"",{c("next_del")}<{c("first_in")},{c("next_del")}<={c("cut_before")})'
+        fi_prev = md(f'{c("first_in")}-1')
         f['after'] = (
             f'=IF({blank},"",'
-            f'IF(AND({c("in_date")}="",{c("in_qty")}="",{c("in_date2")}="",{c("in_qty2")}=""),"",'
-            f'IF(AND({c("in_date")}="",{c("in_qty")}=""),"⚠ 先に1便目（左の入庫日・入庫数）に入れてください",'
-            f'IF({c("err1")}<>"",{c("err1")},'
-            f'IF({c("err2")}<>"",{c("err2")},'
+            f'IF({c("n_in")}=0,"",'
+            f'IF({c("bad_day")}<>"","⚠ "&{md(c("bad_day"))}&" は納品日ではありません → その列を消す",'
+            f'IF({c("over_day")}<>"","⚠ "&{md(c("over_day"))}&" の入庫が定数を超えます → 減らす",'
             f'IF({c("pi")}="","？ 減り数が未設定（発注書には載ります）",'
             f'IF($B$3=0,"？ 動員が未入力（発注書には載ります）",'
             f'IF({gap},'
-            f'IF({c("in_date")}>{base}+{lt},'
-            f'"● "&{md(c("in_date"))}&" の入庫では間に合わない（"&{cut_b}&" に切れる）　入庫日を早める",'
-            f'"△ 欠品 "&{cut_b}&"〜"&{day_before_in}&"　"&{c("post")}),'
-            f'IF({c("cut_post")}="","○ "&{md(c("in_date"))}&" 入庫で 14日以上もつ",'
-            f'IF({c("cut_post")}-{lt}<={base},'
-            f'"● 入庫しても "&{cut_p}&" に切れる　もう1便を至急発注（2便目に入れる）",'
-            f'"△ 入庫しても "&{cut_p}&" に切れる　"&{dl_p}&" までに次を発注（2便目に入れる）"))))))))))')
-        sel = f'{Q_SHEET}!$C$4'
-        vend_ok = f'OR({sel}="すべて",{sel}="",{c("vendor")}={sel})'
-        for pk, vd in (('pick1', 'valid1'), ('pick2', 'valid2')):
-            prev_pick = f'N(${CC[pk]}{r - 1})' if i else '0'
-            f[pk] = f'=IF(AND({c(vd)}=1,{vend_ok}),{prev_pick}+1,{prev_pick})'
+            f'IF({earlier},"● "&{cut_b}&" に切れる　"&{md(c("next_del"))}&" の便に入れてください",'
+            f'"△ 欠品 "&{cut_b}&"〜"&{fi_prev}&"　"&{c("post")}),'
+            f'IF({c("cut_post")}="","○ 入庫で 14日以上もつ",'
+            f'IF({c("deadline2")}="","● 入庫しても "&{cut_p}&" に切れる（それまでに便が無い）　もう1便を至急発注",'
+            f'IF({c("deadline2")}<={base},"● 入庫しても "&{cut_p}&" に切れる　もう1便を至急発注（"&{md(c("last_ok2"))}&" 便）",'
+            f'"△ 入庫しても "&{cut_p}&" に切れる　"&{md(c("deadline2"))}&" までに次を発注（"&{md(c("last_ok2"))}&" 便）"))))))))))')
+        sel_v = f'{Q_SHEET}!$C$4'
+        sel_k = f'{Q_SHEET}!$C$5'
+        prev_pick = f'N(${CC["pick"]}{r - 1})' if i else '0'
+        f['pick'] = (f'=IF(AND({c("n_valid")}>0,OR({sel_v}="すべて",{sel_v}="",{c("vendor")}={sel_v}),'
+                     f'OR({sel_k}="すべて",{sel_k}="",{c("kind")}={sel_k})),{prev_pick}+{c("n_valid")},{prev_pick})')
         f['in_cur'] = f'=IF({blank},0,IF(COUNTIFS({cur_v},{th},{cur_w},$C{r})>0,1,0))'
         f['in_mid'] = f'=IF({blank},0,IF(COUNTIFS({mid_v},{th},{mid_w},$C{r})>0,1,0))'
         f['in_prv'] = f'=IF({blank},0,IF(COUNTIFS({prv_v},{th},{prv_w},$C{r})>0,1,0))'
@@ -1138,7 +1341,8 @@ def build_calc(wb):
             f'IF(AND({cu}=1,{mi}=0,{pv}=1),"復活（先月は無し）","")))))))')
         for name, formula in f.items():
             ws[f'{CC[name]}{r}'] = formula
-        for name in ('cut_before', 'cut_post', 'in_date', 'in_date2', 'counted_date'):
+        for name in ('cut_before', 'cut_post', 'counted_date', 'first_in', 'last_in', 'next_del',
+                     'last_ok', 'deadline', 'last_ok2', 'deadline2', 'bad_day', 'over_day'):
             ws[f'{CC[name]}{r}'].number_format = FMT_MD
     ws.sheet_state = 'hidden'
     protect(ws, allow_filter=False)
@@ -1146,24 +1350,34 @@ def build_calc(wb):
 
 
 # ---------------------------------------------------------------------------
-# ②発注する
+# ②冷凍 ②飲料 ②常温
 # ---------------------------------------------------------------------------
-def build_order(wb):
-    ws = wb.create_sheet(S_ORD)
-    grid = GRID
-    last_grid = grid[-1]
-    app_bar(ws, width=32)
-    ws['B2'] = '発注する'
-    ws['B2'].font = F_TITLE
+def build_category(wb, kind):
+    ws = wb.create_sheet(S_K[kind])
+    last_in, last_pj = IN_COLS[-1], PJ_COLS[-1]
+    app_bar(ws, width=PJ_FIRST_COL + DAYS + 2)
+    ws['B2'] = f'{kind} を発注する'
+    ws['B2'].font = Font(name=FONT, size=18, bold=True, color=KIND_COLOR[kind])
     ws.row_dimensions[2].height = 30
     ws['E2'] = (f'=IF({Q_SET}!$C$6="","← まず ①在庫を貼る",'
                 f'IF({Q_SET}!$C$6<TODAY()-1,"⚠ 在庫が "&TEXT({Q_SET}!$C$6,"m/d")&" のものです（"&(TODAY()-{Q_SET}!$C$6)&"日前）'
                 f'→ 今日のCSVを ①在庫を貼る に貼ってください",'
                 f'"きょう "&{md(f"{Q_SET}!$C$6")}&"　"&{Q_SET}!$C$5&"　　CSV "&{Q_SET}!$C$10&"行"))')
     ws['E2'].font = F_NOTE2
-    ws['E2'].alignment = Alignment(vertical='center')
     ws.conditional_formatting.add('E2', FormulaRule(
         formula=['LEFT($E$2,1)="⚠"'], font=Font(name=FONT, size=11, bold=True, color=C_WARN)))
+    drow = SORT_DELIV_ROW[kind]
+    wk = f'{Q_SORT}!$C${drow}:$I${drow}'
+    ws['L2'] = (f'=IF(COUNTIF({wk},"○")=0,"⚠ {kind} の納品日（曜日）が未設定。毎日届く前提で計算しています → 仕分けページで ○ を付ける",'
+                f'"納品日："&IF({Q_SORT}!$C${drow}="○","月・","")&IF({Q_SORT}!$D${drow}="○","火・","")&IF({Q_SORT}!$E${drow}="○","水・","")'
+                f'&IF({Q_SORT}!$F${drow}="○","木・","")&IF({Q_SORT}!$G${drow}="○","金・","")&IF({Q_SORT}!$H${drow}="○","土・","")'
+                f'&IF({Q_SORT}!$I${drow}="○","日・","")&"　発注から "&IF({Q_SORT}!$J${drow}="",{Q_SET}!$C$7,{Q_SORT}!$J${drow})&"日で届く")')
+    ws['L2'].font = F_NOTE2
+    ws.conditional_formatting.add('L2', FormulaRule(
+        formula=['LEFT($L$2,1)="⚠"'], font=Font(name=FONT, size=11, bold=True, color=C_WARN)))
+    others = [k for k in KINDS if k != kind]
+    for j, k in enumerate(others):
+        link_cell(ws.cell(2, PJ_FIRST_COL + DAYS - 6 + j * 3), S_K[k], f'{k} ›')
 
     # ---- 上のまとめ ----
     st = f'${OC["status"]}${ORD_FIRST}:${OC["status"]}${ORD_LAST}'
@@ -1171,14 +1385,14 @@ def build_order(wb):
     crit = f'COUNTIF({st},"●*")'
     warn = f'COUNTIF({st},"△*")'
     chk = f'COUNTIF({af},"⚠*")'
-    cnt = f'SUM({calc_col("ordered")})'
-    amt = f'SUM({calc_col("in_amt")})'
+    cnt = f'COUNTIFS({calc_col("kind")},"{kind}",{calc_col("n_valid")},">0")'
+    amt = f'SUMIFS({calc_col("in_amt")},{calc_col("kind")},"{kind}")'
     cards = [
         ('C', 'C', '● 今日発注しないと間に合わない', f'={crit}', '#,##0"品目"', C_CRIT),
         ('D', 'G', '△ 近く切れる', f'={warn}', '#,##0"品目"', C_WARN),
         ('H', 'H', '⚠ 直すところ（直すまで発注書に載らない）', f'={chk}', '#,##0"件"', C_WARN),
-        ('I', 'L', '入庫を入れた（発注書に載る）', f'={cnt}', '#,##0"品目"', C_INK),
-        ('M', 'O', '発注予定額（税抜）', f'={amt}', FMT_YEN, C_INK),
+        ('I', 'K', '入庫を入れた（発注書に載る）', f'={cnt}', '#,##0"品目"', C_INK),
+        ('L', 'L', f'{kind} の発注予定額（税抜）', f'={amt}', FMT_YEN, C_INK),
     ]
     for c1, c2, label, formula, fmt, color in cards:
         if c1 != c2:
@@ -1196,98 +1410,120 @@ def build_order(wb):
                 ws.cell(rr, ci).fill = FILL_ACCENT
     ws.row_dimensions[4].height = 16
     ws.row_dimensions[5].height = 30
-    ws.merge_cells(f'{grid[0]}4:{last_grid}5')
-    ws[f'{grid[0]}4'] = (
+    ws.merge_cells(f'{IN_COLS[0]}4:{last_pj}5')
+    ws[f'{IN_COLS[0]}4'] = (
         f'=IF({Q_CALC}!$B$2=1,"⚠ これから14日が動員の表の外です。「動員を入れる」の表の開始日を今年の日付にしてください。",'
         f'IF({Q_CALC}!$B$3=0,"⚠ 動員が入っていません。減り数が計算できないので「動員を入れる」か「設定」の標準の動員を入れてください。",'
         f'"これから14日の動員：平均 "&TEXT({Q_SET}!$C$16,"#,##0")&" 人/日　　"'
-        f'&"数字はその日の終わりの在庫。× は切れている。黄色は入庫の日。"))')
-    ws[f'{grid[0]}4'].font = F_NOTE2
-    ws[f'{grid[0]}4'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    ws.conditional_formatting.add(f'{grid[0]}4', FormulaRule(
-        formula=[f'LEFT({grid[0]}$4,1)="⚠"'], fill=PatternFill('solid', bgColor=C_WARN_SOFT),
+        f'&"左の表：届く日の列に入庫数を入れる（黄色＝納品日）。右の表：その日の終わりの在庫。× は切れている。"))')
+    ws[f'{IN_COLS[0]}4'].font = F_NOTE2
+    ws[f'{IN_COLS[0]}4'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    ws.conditional_formatting.add(f'{IN_COLS[0]}4', FormulaRule(
+        formula=[f'LEFT({IN_COLS[0]}$4,1)="⚠"'], fill=PatternFill('solid', bgColor=C_WARN_SOFT),
         font=Font(name=FONT, size=10, bold=True, color=C_WARN)))
-    ws['B7'] = ('読み方：左から順に。「このままだと」が ● か △ なら、黄色の入庫日（▼で選ぶ）と入庫数を入れる → 「入庫を入れると」で結果を確認。'
-                '迷ったら「目安」の数。⚠ は直す。2便目は14日のうちに2回入るときだけ。')
+    ws['B7'] = ('読み方：左から順に。「このままだと」が ● か △ なら、「入庫を入れる」の届く日の列（黄色）に数を入れる。'
+                '迷ったら「次の便」の日に「目安」の数。⚠ は直す。')
     ws['B7'].font = F_NOTE2
+    ws[f'{IN_COLS[0]}6'] = '入庫を入れる（届く日の列に数を入れる）'
+    ws[f'{IN_COLS[0]}6'].font = F_BOLD
+    ws[f'{PJ_COLS[0]}6'] = '在庫の見込み（その日の終わり）'
+    ws[f'{PJ_COLS[0]}6'].font = F_BOLD
 
     # ---- 見出し ----
     headers = ['No', '商品名', '定数(個)', '在庫(個)', '減り数/日', '切れる日', 'このままだと',
-               '入庫日\n(届く日)', '入庫数', '単位', '目安', '2便目\n入庫日', '2便目\n入庫数', '入庫を入れると']
-    kinds = ['', '', '自動', '自動', '自動', '自動', '自動', '入力', '入力', '自動', '自動', '任意', '任意', '自動']
-    put_headers(ws, ORD_FIRST - 1, headers, kinds)
-    for d, L in enumerate(grid):
-        h = ws[f'{L}{ORD_FIRST - 1}']
-        h.value = f'=IF({Q_SET}!$C$6="","",{Q_SET}!$C$6+{d})'
-        h.number_format = FMT_MD
-        h.font = F_HEAD
-        h.border = BORDER_HEAD
-        h.alignment = Alignment(horizontal='center', vertical='center')
-        w = ws[f'{L}{ORD_FIRST - 2}']
-        w.value = f'=IF({L}{ORD_FIRST - 1}="","",{weekday_jp(f"{L}{ORD_FIRST - 1}")})'
-        w.font = F_NOTE
-        w.alignment = Alignment(horizontal='center')
-        a = ws[f'{L}{ORD_FIRST - 3}']
-        a.value = f'=IF({L}{ORD_FIRST - 1}="","",{Q_CALC}!{CC[f"use{d}"]}$4)'
-        a.number_format = '#,##0'
-        a.font = F_SMALL
-        a.alignment = Alignment(horizontal='center')
+               '次の便', '目安', '単位', '入庫を入れると']
+    kinds_row = ['', '', '自動', '自動', '自動', '自動', '自動', '自動', '自動', '自動', '自動']
+    put_headers(ws, ORD_FIRST - 1, headers, kinds_row)
+    for cols in (IN_COLS, PJ_COLS):
+        for d, L in enumerate(cols):
+            h = ws[f'{L}{ORD_FIRST - 1}']
+            h.value = f'=IF({Q_SET}!$C$6="","",{Q_SET}!$C$6+{d})'
+            h.number_format = FMT_MD
+            h.font = F_HEAD
+            h.border = BORDER_HEAD
+            h.alignment = Alignment(horizontal='center', vertical='center')
+            w = ws[f'{L}{ORD_FIRST - 2}']
+            w.value = f'=IF({L}{ORD_FIRST - 1}="","",{weekday_jp(f"{L}{ORD_FIRST - 1}")})'
+            w.font = F_NOTE
+            w.alignment = Alignment(horizontal='center')
+            a = ws[f'{L}{ORD_FIRST - 3}']
+            a.value = f'=IF({L}{ORD_FIRST - 1}="","",{Q_CALC}!{DT[d]}$4)'
+            a.number_format = '#,##0'
+            a.font = F_SMALL
+            a.alignment = Alignment(horizontal='center')
     ws[f'{OC["after"]}{ORD_FIRST - 3}'] = '動員 →'
     ws[f'{OC["after"]}{ORD_FIRST - 3}'].font = F_SMALL
     ws[f'{OC["after"]}{ORD_FIRST - 3}'].alignment = Alignment(horizontal='right')
     put_headers(ws, ORD_FIRST - 1, ['数えた在庫', '数えた日', '商品コード', '仕入先'],
-                ['任意', '任意', '自動', '自動'], start_col=GRID_FIRST_COL + DAYS)
-    ws.conditional_formatting.add(f'{grid[0]}{ORD_FIRST - 1}:{last_grid}{ORD_FIRST - 1}', FormulaRule(
-        formula=[f'AND({grid[0]}${ORD_FIRST - 1}<>"",OR(WEEKDAY({grid[0]}${ORD_FIRST - 1})=1,WEEKDAY({grid[0]}${ORD_FIRST - 1})=7))'],
+                ['任意', '任意', '自動', '自動'], start_col=PJ_FIRST_COL + DAYS)
+    for d, L in enumerate(CAP_COLS):
+        h = ws[f'{L}{ORD_FIRST - 1}']
+        h.value = f'上限{d}'
+        h.font = F_NOTE
+    ws[f'{CAP_COLS[0]}{ORD_FIRST - 2}'] = '← 入庫数の上限（自動）。さわらない'
+    ws[f'{CAP_COLS[0]}{ORD_FIRST - 2}'].font = F_NOTE
+    flag_row = f'{Q_CALC}!{DT[0]}${FLAG_ROW[kind]}'
+    ws.conditional_formatting.add(f'{IN_COLS[0]}{ORD_FIRST - 1}:{last_in}{ORD_FIRST - 1}', FormulaRule(
+        formula=[f'AND({IN_COLS[0]}${ORD_FIRST - 1}<>"",{flag_row}=1)'],
+        fill=PatternFill('solid', bgColor=C_BUTTER), font=Font(name=FONT, size=10, bold=True, color=C_INK)))
+    ws.conditional_formatting.add(f'{IN_COLS[0]}{ORD_FIRST - 1}:{last_in}{ORD_FIRST - 1}', FormulaRule(
+        formula=[f'AND({IN_COLS[0]}${ORD_FIRST - 1}<>"",{flag_row}=0)'],
+        fill=PatternFill('solid', bgColor=C_GREY_SOFT), font=Font(name=FONT, size=10, color=C_TEXT3)))
+    ws.conditional_formatting.add(f'{PJ_COLS[0]}{ORD_FIRST - 1}:{last_pj}{ORD_FIRST - 1}', FormulaRule(
+        formula=[f'AND({PJ_COLS[0]}${ORD_FIRST - 1}<>"",OR(WEEKDAY({PJ_COLS[0]}${ORD_FIRST - 1})=1,WEEKDAY({PJ_COLS[0]}${ORD_FIRST - 1})=7))'],
         fill=PatternFill('solid', bgColor='FFF3F1EC')))
 
     # ---- 明細 ----
-    inputs = [OC['in_date'], OC['in_qty'], OC['in_date2'], OC['in_qty2'], OC['counted'], OC['counted_date']]
+    seq_col = calc_col(f'seq_{kind}')
     for i in range(N_ITEMS):
         r = ORD_FIRST + i
-        rc = CALC_FIRST + i
-        src = lambda n: f'{Q_CALC}!${CC[n]}{rc}'      # noqa: E731
-        blank = f'{Q_CALC}!$C{rc}=""'
+        j = i + 1
+        rc = f'MATCH({j},{seq_col},0)'
+        exists = f'{j}<=MAX({seq_col})'
 
-        def auto(n):
-            return f'=IF({blank},"",{src(n)})'
-        for name in ('no', 'name', 'par', 'stock', 'cut', 'status', 'unit', 'guide', 'after', 'code', 'vendor'):
-            calc_name = {'cut': 'cut_before', 'use': 'use_avg'}.get(name, name)
-            ws[f'{OC[name]}{r}'] = auto(calc_name)
-        ws[f'{OC["use"]}{r}'] = auto('use_avg')
-        for d, L in enumerate(grid):
-            ws[f'{L}{r}'] = f'=IF({blank},"",IF({src("pi")}="","",{src(f"a{d}")}))'
+        def take(name):
+            return f'=IF({exists},INDEX({calc_col(name)},{rc}),"")'
+        ws[f'{OC["no"]}{r}'] = f'=IF({exists},{j},"")'
+        for name, cn in (('name', 'name'), ('par', 'par'), ('stock', 'stock'), ('use', 'use_avg'),
+                         ('cut', 'cut_before'), ('status', 'status'), ('next', 'next_del'), ('guide', 'guide'),
+                         ('unit', 'unit'), ('after', 'after'), ('code', 'code'), ('vendor', 'vendor')):
+            ws[f'{OC[name]}{r}'] = take(cn)
+        for d, L in enumerate(PJ_COLS):
+            ws[f'{L}{r}'] = f'=IF({exists},IF(INDEX({calc_col("pi")},{rc})="","",INDEX({calc_col(f"a{d}")},{rc})),"")'
+        for d, L in enumerate(CAP_COLS):
+            ws[f'{L}{r}'] = f'=IF({exists},INDEX({calc_col(f"gd{d}")},{rc}),0)'
+            ws[f'{L}{r}'].font = F_NOTE
 
-        auto_cols = [OC[n] for n in ('no', 'name', 'par', 'stock', 'use', 'cut', 'status', 'unit',
-                                     'guide', 'after', 'code', 'vendor')] + grid
+        auto_cols = [OC[n] for n in ('no', 'name', 'par', 'stock', 'use', 'cut', 'status', 'next', 'guide',
+                                     'unit', 'after', 'code', 'vendor')] + PJ_COLS
         style_row(ws, r, auto_cols, fill=FILL_AUTO)
-        for L in inputs:
+        for L in IN_COLS + [OC['counted'], OC['counted_date']]:
             cell = ws[f'{L}{r}']
             cell.fill = FILL_INPUT
             cell.font = F_INPUT
             cell.border = BORDER_ROW
             cell.protection = UNLOCKED
             cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.number_format = '0'
         ws[f'{OC["no"]}{r}'].alignment = Alignment(horizontal='center')
         ws[f'{OC["no"]}{r}'].font = F_NOTE2
         ws[f'{OC["par"]}{r}'].number_format = FMT_INT
         ws[f'{OC["stock"]}{r}'].number_format = FMT_INT
         ws[f'{OC["stock"]}{r}'].font = F_BOLD
         ws[f'{OC["use"]}{r}'].number_format = FMT_DEC1
-        ws[f'{OC["cut"]}{r}'].number_format = FMT_MD
-        ws[f'{OC["cut"]}{r}'].font = F_BOLD
-        ws[f'{OC["cut"]}{r}'].alignment = Alignment(horizontal='center')
-        for n in ('in_date', 'in_date2', 'counted_date'):
+        for n in ('cut', 'next'):
             ws[f'{OC[n]}{r}'].number_format = FMT_MD
-        for n in ('in_qty', 'in_qty2', 'guide'):
-            ws[f'{OC[n]}{r}'].number_format = '0'
-        ws[f'{OC["counted"]}{r}'].number_format = FMT_INT
-        ws[f'{OC["unit"]}{r}'].font = F_NOTE2
+            ws[f'{OC[n]}{r}'].alignment = Alignment(horizontal='center')
+        ws[f'{OC["cut"]}{r}'].font = F_BOLD
+        ws[f'{OC["guide"]}{r}'].number_format = '0'
         ws[f'{OC["guide"]}{r}'].alignment = Alignment(horizontal='center')
-        ws[f'{OC["guide"]}{r}'].font = F_NOTE2
+        ws[f'{OC["guide"]}{r}'].font = F_BOLD
+        ws[f'{OC["unit"]}{r}'].font = F_NOTE2
+        ws[f'{OC["counted"]}{r}'].number_format = FMT_INT
+        ws[f'{OC["counted_date"]}{r}'].number_format = FMT_MD
         ws[f'{OC["code"]}{r}'].font = F_NOTE
         ws[f'{OC["vendor"]}{r}'].font = F_NOTE
-        for L in grid:
+        for L in PJ_COLS:
             ws[f'{L}{r}'].number_format = FMT_GRID
             ws[f'{L}{r}'].alignment = Alignment(horizontal='center')
             ws[f'{L}{r}'].font = Font(name=FONT, size=10, color=C_TEXT2)
@@ -1296,60 +1532,50 @@ def build_order(wb):
     R1, RL = ORD_FIRST, ORD_LAST
     status_rules(ws, f'{OC["status"]}{R1}:{OC["status"]}{RL}')
     status_rules(ws, f'{OC["after"]}{R1}:{OC["after"]}{RL}')
-    # 今日のCSVに無い商品は行ごと薄くする
     ws.conditional_formatting.add(f'{OC["no"]}{R1}:{OC["cut"]}{RL}', FormulaRule(
         formula=[f'LEFT(${OC["status"]}{R1},1)="－"'], font=Font(name=FONT, size=11, color=C_TEXT3)))
-    # 切れる日：● なら赤字、△ なら橙
     for mark, color in (('●', C_CRIT), ('△', C_WARN)):
         ws.conditional_formatting.add(f'{OC["cut"]}{R1}:{OC["cut"]}{RL}', FormulaRule(
             formula=[f'LEFT(${OC["status"]}{R1},1)="{mark}"'], font=Font(name=FONT, size=11, bold=True, color=color)))
-    # 在庫：数えた数を使っているときは緑
     ws.conditional_formatting.add(f'{OC["stock"]}{R1}:{OC["stock"]}{RL}', FormulaRule(
         formula=[f'AND(${OC["counted"]}{R1}<>"",ISNUMBER(${OC["counted_date"]}{R1}),${OC["counted_date"]}{R1}>={Q_SET}!$C$6)'],
         fill=PatternFill('solid', bgColor=C_OK_SOFT), font=Font(name=FONT, size=11, bold=True, color=C_OK)))
-    # 数えた在庫があるのに数えた日が古い／無い → 橙（使われていないことに気づく）
     ws.conditional_formatting.add(f'{OC["counted"]}{R1}:{OC["counted_date"]}{RL}', FormulaRule(
         formula=[f'AND(${OC["counted"]}{R1}<>"",NOT(AND(ISNUMBER(${OC["counted_date"]}{R1}),${OC["counted_date"]}{R1}>={Q_SET}!$C$6)))'],
         fill=PatternFill('solid', bgColor=C_WARN_SOFT), font=Font(name=FONT, size=11, bold=True, color=C_WARN)))
-    # 入庫を入れた行は商品名を太字＋薄黄にして「どの商品に入れたか」を見せる
     ws.conditional_formatting.add(f'{OC["name"]}{R1}:{OC["name"]}{RL}', FormulaRule(
-        formula=[f'OR(${OC["in_date"]}{R1}<>"",${OC["in_qty"]}{R1}<>"",${OC["in_date2"]}{R1}<>"",${OC["in_qty2"]}{R1}<>"")'],
+        formula=[f'COUNTIF(${IN_COLS[0]}{R1}:${last_in}{R1},">0")>0'],
         fill=PatternFill('solid', bgColor=C_BUTTER_SOFT), font=Font(name=FONT, size=11, bold=True, color=C_INK)))
-    # 入力を促す：● △ の行で入庫数が空なら、入力セルを濃い黄色に
-    for L in (OC['in_date'], OC['in_qty']):
-        ws.conditional_formatting.add(f'{L}{R1}:{L}{RL}', FormulaRule(
-            formula=[f'AND(OR(LEFT(${OC["status"]}{R1},1)="●",LEFT(${OC["status"]}{R1},1)="△"),${OC["in_qty"]}{R1}="")'],
-            fill=PatternFill('solid', bgColor=C_BUTTER_STRONG)))
-    # 14日の表：切れていれば赤、入庫の日は黄色
-    grid_rng = f'{grid[0]}{R1}:{last_grid}{RL}'
-    ws.conditional_formatting.add(grid_rng, FormulaRule(
-        formula=[f'AND({grid[0]}{R1}<>"",{grid[0]}{R1}<1)'],
+    in_rng = f'{IN_COLS[0]}{R1}:{last_in}{RL}'
+    ws.conditional_formatting.add(in_rng, FormulaRule(
+        formula=[f'{Q_CALC}!{DT[0]}${FLAG_ROW[kind]}=0'],
+        fill=PatternFill('solid', bgColor=C_GREY_SOFT), font=Font(name=FONT, size=10, color=C_TEXT3), stopIfTrue=True))
+    ws.conditional_formatting.add(in_rng, FormulaRule(
+        formula=[f'{IN_COLS[0]}{R1}>0'],
+        fill=PatternFill('solid', bgColor=C_BUTTER), font=Font(name=FONT, size=11, bold=True, color=C_INK), stopIfTrue=True))
+    ws.conditional_formatting.add(in_rng, FormulaRule(
+        formula=[f'AND(${OC["next"]}{R1}<>"",{IN_COLS[0]}${ORD_FIRST - 1}=${OC["next"]}{R1},'
+                 f'OR(LEFT(${OC["status"]}{R1},1)="●",LEFT(${OC["status"]}{R1},1)="△"))'],
+        fill=PatternFill('solid', bgColor=C_BUTTER_STRONG), stopIfTrue=True))
+    pj_rng = f'{PJ_COLS[0]}{R1}:{last_pj}{RL}'
+    ws.conditional_formatting.add(pj_rng, FormulaRule(
+        formula=[f'AND({PJ_COLS[0]}{R1}<>"",{PJ_COLS[0]}{R1}<1)'],
         fill=PatternFill('solid', bgColor=C_CRIT), font=Font(name=FONT, size=10, bold=True, color=C_WHITE),
         stopIfTrue=True))
-    ws.conditional_formatting.add(grid_rng, FormulaRule(
-        formula=[f'OR(AND(${OC["in_date"]}{R1}<>"",{grid[0]}${ORD_FIRST - 1}=${OC["in_date"]}{R1}),'
-                 f'AND(${OC["in_date2"]}{R1}<>"",{grid[0]}${ORD_FIRST - 1}=${OC["in_date2"]}{R1}))'],
-        fill=PatternFill('solid', bgColor=C_BUTTER), font=Font(name=FONT, size=10, bold=True, color=C_INK),
+    ws.conditional_formatting.add(pj_rng, FormulaRule(
+        formula=[f'{IN_COLS[0]}{R1}>0'],
+        fill=PatternFill('solid', bgColor=C_BUTTER_SOFT), font=Font(name=FONT, size=10, bold=True, color=C_INK),
         stopIfTrue=True))
 
-    # ---- 入力規則 ----
-    date_list = f'=${grid[0]}${ORD_FIRST - 1}:${last_grid}${ORD_FIRST - 1}'
-    for L, label in ((OC['in_date'], '入庫日'), (OC['in_date2'], '2便目の入庫日')):
-        dv = DataValidation(type='list', formula1=date_list, allow_blank=True, showErrorMessage=True,
-                            errorTitle=label, error=f'表にある14日のどれかを ▼ から選んでください（今日〜{DAYS - 1}日後）。',
-                            showInputMessage=True, promptTitle=f'{label}（届く日）', prompt='▼ から届く日を選びます。')
+    # ---- 入力規則：納品日でない列には入らない、上限は目安 ----
+    for d, L in enumerate(IN_COLS):
+        dv = DataValidation(type='whole', operator='between', formula1='0', formula2=f'${CAP_COLS[d]}{R1}',
+                            showErrorMessage=True, errorTitle='入庫数',
+                            error='この日は納品日でないか、定数まで在庫があります（上限 0）。納品日の列に、「目安」までの整数で入れてください。'
+                                  '定数を超えて入れるなら商品マスタの定数を増やしてください。',
+                            showInputMessage=True, promptTitle='入庫数', prompt='届く日の列に「単位」の数で。迷ったら「目安」の数。')
         ws.add_data_validation(dv)
         dv.add(f'{L}{R1}:{L}{RL}')
-    # 入庫数の上限＝目安（定数まで）。商品の無い行には入らない。定数が無い商品は 9999 まで
-    number_validation(ws, f'{OC["in_qty"]}{R1}:{OC["in_qty"]}{RL}', 'whole', 0,
-                      f'IF(${OC["name"]}{R1}="",0,IF(${OC["guide"]}{R1}="",9999,${OC["guide"]}{R1}))',
-                      '入庫数',
-                      '「目安」（定数まで入る数）までを整数で入れてください。目安が 0 の商品は定数まで在庫があります。'
-                      'それでも入れるなら、商品マスタの定数を増やしてください。',
-                      '入庫数', '「単位」の数で。迷ったら「目安」の数。')
-    number_validation(ws, f'{OC["in_qty2"]}{R1}:{OC["in_qty2"]}{RL}', 'whole', 0,
-                      f'IF(${OC["name"]}{R1}="",0,9999)', '2便目の入庫数',
-                      '整数で入れてください。定数を超えると ⚠ が出ます。', '2便目の入庫数', '14日のうちに2便いるときだけ。')
     number_validation(ws, f'{OC["counted"]}{R1}:{OC["counted"]}{RL}', 'whole', 0, 999999,
                       '数えた在庫', '個数を整数で入れてください。')
     dv = DataValidation(type='date', operator='between', formula1=f'N({Q_SET}!$C$6)-30', formula2=f'N({Q_SET}!$C$6)',
@@ -1358,21 +1584,24 @@ def build_order(wb):
     ws.add_data_validation(dv)
     dv.add(f'{OC["counted_date"]}{R1}:{OC["counted_date"]}{RL}')
 
-    widths = {'A': 2, 'B': 5, 'C': 30, 'D': 9, 'E': 9, 'F': 9, 'G': 9, 'H': 44, 'I': 10, 'J': 8,
-              'K': 10, 'L': 6, 'M': 9, 'N': 7, 'O': 56, 'AD': 10, 'AE': 10, 'AF': 15, 'AG': 20}
-    for L in grid:
+    widths = {'A': 2, 'B': 5, 'C': 30, 'D': 9, 'E': 9, 'F': 9, 'G': 9, 'H': 46, 'I': 9, 'J': 6, 'K': 10, 'L': 60,
+              OC['counted']: 10, OC['counted_date']: 10, OC['code']: 15, OC['vendor']: 20}
+    for L in IN_COLS + PJ_COLS:
         widths[L] = 6.4
+    for L in CAP_COLS:
+        widths[L] = 4
     for L, w in widths.items():
         ws.column_dimensions[L].width = w
     ws.freeze_panes = f'D{ORD_FIRST}'
     ws.auto_filter.ref = f'B{ORD_FIRST - 1}:{OC["vendor"]}{ORD_LAST}'
     ws.print_title_rows = f'{ORD_FIRST - 1}:{ORD_FIRST - 1}'
-    ws.print_area = f'B2:{last_grid}{ORD_LAST}'
+    ws.print_area = f'B2:{last_pj}{ORD_LAST}'
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.tabColor = KIND_COLOR[kind][2:]
     protect(ws, allow_filter=True)
     return ws
 
@@ -1382,16 +1611,15 @@ def build_order(wb):
 # ---------------------------------------------------------------------------
 def build_order_sheet(wb):
     ws = wb.create_sheet(S_SHEET)
-    app_bar(ws, width=9)
+    app_bar(ws, width=10)
     ws['B2'] = '発 注 書'
     ws['B2'].font = Font(name=FONT, size=22, bold=True, color=C_INK)
     ws.row_dimensions[2].height = 34
-    ws['B3'] = 'STEP 2 で入庫を入れた商品がここに集まります（⚠ の行は載りません）。仕入先を選んで印刷してください。'
+    ws['B3'] = 'STEP 2 で入庫を入れた商品が、届く日ごとに1行ずつ集まります（⚠ の行は載りません）。区分と仕入先を選んで印刷してください。'
     ws['B3'].font = F_NOTE2
 
-    labels = [('仕入先', None, FILL_INPUT), ('発注日', f'={Q_SET}!$C$6', FILL_AUTO),
-              ('発注元', f'={Q_SET}!$C$4&"　"&{Q_SET}!$C$5', FILL_AUTO),
-              ('担当者', f'={Q_SET}!$C$9', FILL_AUTO)]
+    labels = [('仕入先', None, FILL_INPUT), ('区分', None, FILL_INPUT), ('発注日', f'={Q_SET}!$C$6', FILL_AUTO),
+              ('発注元', f'={Q_SET}!$C$4&"　"&{Q_SET}!$C$5', FILL_AUTO), ('担当者', f'={Q_SET}!$C$9', FILL_AUTO)]
     for i, (label, formula, fill) in enumerate(labels):
         r = 4 + i
         ws[f'B{r}'] = label
@@ -1407,53 +1635,63 @@ def build_order_sheet(wb):
         c.font = F_INPUT if fill is FILL_INPUT else F_BASE
         c.alignment = Alignment(horizontal='left', vertical='center')
     ws['C4'] = 'すべて'
+    ws['C5'] = 'すべて'
     ws['C4'].protection = UNLOCKED
-    ws['C5'].number_format = FMT_DATE
+    ws['C5'].protection = UNLOCKED
+    ws['C6'].number_format = FMT_DATE
     ws['G4'] = '← ここを選ぶ'
     ws['G4'].font = F_NOTE
+    ws['G5'] = '← ここを選ぶ'
+    ws['G5'].font = F_NOTE
     list_validation(ws, f"='{S_SET}'!$F${VENDOR_FIRST}:$F${VENDOR_LAST}", 'C4', '仕入先',
                     '一覧から選んでください（一覧は 設定 シートの F 列）。')
-    ws['H8'] = '合計（税抜）'
-    ws['H8'].font = F_BOLD
-    ws['H8'].alignment = Alignment(horizontal='right')
-    ws['J8'] = f'=SUM($J${SHEET_FIRST}:$J${SHEET_LAST})'
-    ws['J8'].font = Font(name=FONT, size=14, bold=True, color=C_INK)
-    ws['J8'].number_format = FMT_YEN
+    list_validation(ws, '"すべて,' + ','.join(KINDS) + '"', 'C5', '区分', 'すべて・冷凍・飲料・常温 から選んでください。')
+    ws['I9'] = '合計（税抜）'
+    ws['I9'].font = F_BOLD
+    ws['I9'].alignment = Alignment(horizontal='right')
+    ws['K9'] = f'=SUM($K${SHEET_FIRST}:$K${SHEET_LAST})'
+    ws['K9'].font = Font(name=FONT, size=14, bold=True, color=C_INK)
+    ws['K9'].number_format = FMT_YEN
 
-    headers = ['No', '仕入先', '商品コード', '商品名', '入庫日(届く日)', '単位', '発注数', '単価', '金額']
+    headers = ['No', '仕入先', '区分', '商品コード', '商品名', '入庫日(届く日)', '単位', '発注数', '単価', '金額']
     put_headers(ws, SHEET_FIRST - 1, headers)
-    p1, p2 = calc_col('pick1'), calc_col('pick2')
-    n1 = f'MAX({p1})'
+    pick = calc_col('pick')
+    cnt_block = f"'{S_CALC}'!${CC['cnt0']}${CALC_FIRST}:${CC[f'cnt{DAYS - 1}']}${CALC_LAST}"
+    in_block = f"'{S_CALC}'!${CC['in0']}${CALC_FIRST}:${CC[f'in{DAYS - 1}']}${CALC_LAST}"
+    dates14 = f"'{S_CALC}'!${DT[0]}$3:${DT[DAYS - 1]}$3"
     for k in range(1, SHEET_LAST - SHEET_FIRST + 2):
         r = SHEET_FIRST + k - 1
-        m1 = f'MATCH({k},{p1},0)'
-        m2 = f'MATCH({k}-{n1},{p2},0)'
-        ws[f'B{r}'] = f'=IF({k}<={n1}+MAX({p2}),{k},"")'
+        # pick は「その行までの有効な入庫の累計」。k 番目の入庫が属する商品は、累計 < k の行数 + 1
+        prow = f'(COUNTIF({pick},"<"&{k})+1)'
+        prev = f'IF({prow}=1,0,INDEX({pick},{prow}-1))'
+        m = f'({k}-{prev})'
+        dpos = f'MATCH({m},INDEX({cnt_block},{prow},0),0)'
+        ws[f'B{r}'] = f'=IF({k}<=MAX({pick}),{k},"")'
 
-        def take(name1, name2=None, suffix=''):
-            name2 = name2 or name1
-            return (f'=IF($B{r}="","",IF({k}<={n1},IFERROR(INDEX({calc_col(name1)},{m1}){suffix},""),'
-                    f'IFERROR(INDEX({calc_col(name2)},{m2}){suffix},"")))')
+        def take(name):
+            return f'=IF($B{r}="","",IFERROR(INDEX({calc_col(name)},{prow}),""))'
         ws[f'C{r}'] = take('vendor')
-        ws[f'D{r}'] = take('code', suffix='&""')
-        ws[f'E{r}'] = take('name')
-        ws[f'F{r}'] = take('in_date', 'in_date2')
-        ws[f'G{r}'] = take('unit')
-        ws[f'H{r}'] = take('in_qty', 'in_qty2')
-        ws[f'I{r}'] = take('price')
-        ws[f'J{r}'] = f'=IF($B{r}="","",N($H{r})*IFERROR(INDEX({calc_col("pack")},IF({k}<={n1},{m1},{m2})),1)*N($I{r}))'
-        style_row(ws, r, 'BCDEFGHIJ')
+        ws[f'D{r}'] = take('kind')
+        ws[f'E{r}'] = f'=IF($B{r}="","",IFERROR(INDEX({calc_col("code")},{prow})&"",""))'
+        ws[f'F{r}'] = take('name')
+        ws[f'G{r}'] = f'=IF($B{r}="","",IFERROR(INDEX({dates14},{dpos}),""))'
+        ws[f'H{r}'] = take('unit')
+        ws[f'I{r}'] = f'=IF($B{r}="","",IFERROR(INDEX(INDEX({in_block},{prow},0),{dpos}),""))'
+        ws[f'J{r}'] = take('price')
+        ws[f'K{r}'] = f'=IF($B{r}="","",N($I{r})*IFERROR(INDEX({calc_col("pack")},{prow}),1)*N($J{r}))'
+        style_row(ws, r, 'BCDEFGHIJK')
         ws[f'B{r}'].alignment = Alignment(horizontal='center')
-        ws[f'F{r}'].number_format = FMT_MD
-        ws[f'F{r}'].alignment = Alignment(horizontal='center')
-        ws[f'H{r}'].number_format = FMT_INT
-        ws[f'H{r}'].font = F_BOLD
-        ws[f'I{r}'].number_format = FMT_YEN
+        ws[f'D{r}'].alignment = Alignment(horizontal='center')
+        ws[f'G{r}'].number_format = FMT_MD
+        ws[f'G{r}'].alignment = Alignment(horizontal='center')
+        ws[f'I{r}'].number_format = FMT_INT
+        ws[f'I{r}'].font = F_BOLD
         ws[f'J{r}'].number_format = FMT_YEN
-    for letter, w in (('B', 5), ('C', 24), ('D', 16), ('E', 32), ('F', 12), ('G', 11),
-                      ('H', 9), ('I', 11), ('J', 13)):
+        ws[f'K{r}'].number_format = FMT_YEN
+    for letter, w in (('B', 5), ('C', 22), ('D', 7), ('E', 16), ('F', 30), ('G', 12), ('H', 11),
+                      ('I', 9), ('J', 11), ('K', 13)):
         ws.column_dimensions[letter].width = w
-    ws.print_area = f'B2:J{SHEET_LAST}'
+    ws.print_area = f'B2:K{SHEET_LAST}'
     ws.page_setup.orientation = 'portrait'
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -1474,16 +1712,19 @@ def load_items(csv_path):
             seen.add(code)
             items.append(r)
     vendor_count = {}
+    categories = []
     for r in rows:
         vendor_count[r['支払先名']] = vendor_count.get(r['支払先名'], 0) + 1
+        if r['商品分類名'] not in categories:
+            categories.append(r['商品分類名'])
     vendors = sorted(vendor_count, key=lambda v: -vendor_count[v])
-    return items, vendors
+    return items, vendors, categories
 
 
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('売店発注ツール.xlsx')
     src = Path(sys.argv[2]) if len(sys.argv) > 2 else None
-    items, vendors = load_items(src) if src else ([], ['仕入先A'])
+    items, vendors, categories = load_items(src) if src else ([], ['仕入先A'], list(DEFAULT_KIND))
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -1492,8 +1733,10 @@ def main():
                     '在庫システムから出した「今日の在庫一覧CSV」を貼ります。これが今の在庫になります。',
                     f'CSVの見出し行を除いたデータを、A{CSV_FIRST} セルに貼り付けてください。'
                     f'貼り替えは A{CSV_FIRST} から S 列までを消してから。')
-    build_order(wb)
+    for kind in KINDS:
+        build_category(wb, kind)
     build_order_sheet(wb)
+    build_sort(wb, categories)
     build_plan(wb)
     build_intro(wb)
     build_csv_sheet(wb, S_MID, [S_CUR], '1ヶ月前の在庫を貼る（月1回・任意）',
@@ -1507,15 +1750,18 @@ def main():
     build_settings(wb, vendors)
     build_calc(wb)
 
-    order = [S_HOME, S_CUR, S_ORD, S_SHEET, S_PLAN, S_INTRO, S_MID, S_PRV, S_ITEM, S_TH, S_SET, S_CALC]
+    order = ([S_HOME, S_CUR] + [S_K[k] for k in KINDS]
+             + [S_SHEET, S_SORT, S_PLAN, S_INTRO, S_MID, S_PRV, S_ITEM, S_TH, S_SET, S_CALC])
     wb._sheets = [wb[n] for n in order]
     for ws in wb.worksheets:
         if ws.title == S_HOME:
             ws.sheet_properties.tabColor = C_INK[2:]
-        elif ws.title in (S_CUR, S_ORD, S_SHEET):
+        elif ws.title in (S_CUR, S_SHEET):
             ws.sheet_properties.tabColor = C_BUTTER[2:]
-        elif ws.title in (S_PLAN, S_INTRO):
+        elif ws.title in (S_PLAN, S_INTRO, S_SORT):
             ws.sheet_properties.tabColor = C_OK[2:]
+        elif ws.title in [S_K[k] for k in KINDS]:
+            pass
         else:
             ws.sheet_properties.tabColor = C_TEXT3[2:]
         for dim in ws.column_dimensions.values():

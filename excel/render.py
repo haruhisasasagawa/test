@@ -8,9 +8,9 @@ import warnings; warnings.filterwarnings('ignore')
 HERE = Path(__file__).resolve().parent
 SRC = Path(os.environ.get('RENDER_SRC', HERE / '売店発注ツール_サンプルデータ入り.xlsx'))
 OUT = Path('/tmp/claude-0/-home-user-test/6ebcf1c1-1102-5af1-96f9-c94aebb0a201/scratchpad/render')
-AREAS = {'ホーム': 'A1:E42', '①在庫を貼る': 'A1:W20', '②発注する': 'A1:AE44', '③発注書': 'A1:J40',
-         '動員を入れる': 'A1:L46', 'つかいかた': 'A1:D60', '商品マスタ': 'A1:K30', '劇場マスタ': 'A1:G30',
-         '設定': 'A1:F42', '月1回_1ヶ月前の在庫': 'A1:W20'}
+AREAS = {'ホーム': 'A1:E52', '①在庫を貼る': 'A1:W20', '②冷凍': 'A1:AR40', '②飲料': 'A1:AR40', '②常温': 'A1:AR40',
+         '③発注書': 'A1:K40', '仕分け': 'A1:K60', '動員を入れる': 'A1:L46', 'つかいかた': 'A1:D64',
+         '商品マスタ': 'A1:O30', '劇場マスタ': 'A1:G30', '設定': 'A1:F42', '月1回_1ヶ月前の在庫': 'A1:W20'}
 OUT.mkdir(parents=True, exist_ok=True)
 for target in sys.argv[1:]:
     tmp = OUT / 'r.xlsx'

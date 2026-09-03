@@ -169,98 +169,106 @@ for i in range(220):
         plan.cell(r, 6, titles[d])
 
 wb['設定']['C9'] = '笹川'
-wb.save(OUT)
 print(f'sample built: 当日{len(cur_rows)}行 / 1ヶ月前{len(mid_rows)}行 / 2ヶ月前{len(prv_rows)}行')
+
+# ---- 仕分け：納品日と発注から納品までの日数 ----
+so = wb['仕分け']
+DELIV = {'冷凍': ('月', '水', '金'), '飲料': ('月', '火', '水', '木', '金', '土'), '常温': ('木',)}
+LT = {'冷凍': 2, '飲料': 1, '常温': 3}
+WD = '月火水木金土日'
+for kind, row in (('冷凍', 6), ('飲料', 7), ('常温', 8)):
+    for i, w in enumerate(WD):
+        so.cell(row, 3 + i, '○' if w in DELIV[kind] else None)
+    so.cell(row, 10, LT[kind])
+# 商品ごとの上書きの例：1件だけ常温の商品を冷凍に
+so.cell(36 + 3, 6, '冷凍')
+
+wb.save(OUT)
+
 
 # ---- 入庫の例：一度計算して「このままだと」を読んでから入れる ----
 def recalc(path, tries=3):
     """LibreOffice はまれに起動でつまずいて時間切れになるので、何度か試す。"""
     import time
     for _ in range(tries):
-        # 前回が時間切れだと LibreOffice のロックファイルが残り、次からずっと止まる
         lock = Path(path).parent / f'.~lock.{Path(path).name}#'
         if lock.exists():
             lock.unlink()
-        out = subprocess.run([sys.executable, RECALC, path, '120'], capture_output=True, text=True).stdout
+        out = subprocess.run([sys.executable, RECALC, path, '240'], capture_output=True, text=True).stdout
         if '"total_formulas"' in out:
             return True
         time.sleep(3)
     raise SystemExit('再計算に失敗しました: ' + out[-300:])
 
 
-# 再計算は控えのコピーで行う。LibreOffice で保存したファイルはフォントとリンクが書き換わるので、
-# 納品するファイル（OUT）は openpyxl が書いたままにしておく（Excel が開くときに計算する）。
+# 再計算は控えのコピーで行う。納品するファイル（OUT）は openpyxl が書いたままにしておく。
 import shutil
 TMP = str(Path(S) / 'sample_calc.xlsx')
 shutil.copy(OUT, TMP)
 recalc(TMP)
 vals = openpyxl.load_workbook(TMP, data_only=True)
-ord_v = vals['②発注する']
-status = {r: (ord_v.cell(r, 8).value or '') for r in range(ORD_FIRST, ORD_FIRST + 400)}
-guide = {r: ord_v.cell(r, 12).value for r in range(ORD_FIRST, ORD_FIRST + 400)}
-cut = {r: ord_v.cell(r, 7).value for r in range(ORD_FIRST, ORD_FIRST + 400)}
-
 wb2 = openpyxl.load_workbook(OUT)
-o = wb2['②発注する']
-crit = [r for r, s in status.items() if s.startswith('●') and isinstance(guide[r], (int, float)) and guide[r] > 0]
-warn = [r for r, s in status.items() if s.startswith('△') and isinstance(guide[r], (int, float)) and guide[r] > 0]
 demo = []
-# ● の行：発注から入庫までの日数（3日）後に目安どおり入庫 → 延命の見え方
-# 「目安」は入庫日を入れる前は「今日＋3日」で計算されているので、その日に入れると定数ちょうどになる
-for k, r in enumerate(crit[:5]):
-    o.cell(r, 9, BASE + datetime.timedelta(days=3))
-    o.cell(r, 10, int(guide[r]))
-    demo.append(('目安どおり', r))
-# ● の行：入庫が少なすぎて、入庫しても切れる
-if len(crit) > 5:
-    r = crit[5]
-    o.cell(r, 9, BASE + datetime.timedelta(days=1))
-    o.cell(r, 10, 1)
-    demo.append(('入庫が少ない', r))
-# △ の行：切れる日より後に入庫 → 「入庫が遅い」
-late = [r for r in warn if cut[r] is not None][:1]
-for r in late:
-    c = cut[r]
-    c = c.date() if hasattr(c, 'date') else c
-    o.cell(r, 9, min(c + datetime.timedelta(days=2), BASE + datetime.timedelta(days=13)))
-    o.cell(r, 10, int(guide[r]))
-    demo.append(('入庫が遅い', r))
-# △ の行：定数を超える数を入れる → ⚠
-if len(warn) > 1:
-    r = warn[1]
-    o.cell(r, 9, BASE + datetime.timedelta(days=2))
-    o.cell(r, 10, int(guide[r]) + 5)
-    demo.append(('定数超え', r))
-# 過去の入庫日を消し忘れた行 → ⚠
-if len(warn) > 2:
-    r = warn[2]
-    o.cell(r, 9, BASE - datetime.timedelta(days=2))
-    o.cell(r, 10, 2)
-    demo.append(('過去の入庫日', r))
-# 入庫数だけ入れて日付を忘れた行 → ⚠
-if len(warn) > 3:
-    r = warn[3]
-    o.cell(r, 10, 3)
-    demo.append(('入庫日なし', r))
-# 数えた在庫：今日数えた行を2つ、古い日付の行を1つ
-ok_rows = [r for r, s in status.items() if s.startswith('○')]
-for r in ok_rows[:2]:
-    o.cell(r, 30, 5)                 # AD 数えた在庫
-    o.cell(r, 31, BASE)              # AE 数えた日
-    demo.append(('数えた在庫', r))
-if len(ok_rows) > 2:
-    r = ok_rows[2]
-    o.cell(r, 30, 40)
-    o.cell(r, 31, BASE - datetime.timedelta(days=9))
-    demo.append(('数えた日が古い', r))
-# 2便目：1便目を目安どおり、2便目を10日後に
-if len(warn) > 4:
-    r = warn[4]
-    o.cell(r, 9, BASE + datetime.timedelta(days=3))
-    o.cell(r, 10, int(guide[r]))
-    o.cell(r, 13, BASE + datetime.timedelta(days=10))   # M 2便目 入庫日
-    o.cell(r, 14, max(1, int(guide[r]) // 2))            # N 2便目 入庫数
-    demo.append(('2便目', r))
+IN_FIRST = 13
+for kind in ('冷凍', '飲料', '常温'):
+    ov = vals[f'②{kind}']
+    o = wb2[f'②{kind}']
+    hdr_dates = [ov.cell(9, IN_FIRST + d).value for d in range(14)]
+    hdr_dates = [h.date() if hasattr(h, 'date') else h for h in hdr_dates]
+    rows = []
+    for r in range(ORD_FIRST, ORD_FIRST + 400):
+        s_ = ov.cell(r, 8).value or ''
+        nxt = ov.cell(r, 9).value
+        g = ov.cell(r, 10).value
+        if not s_:
+            break
+        rows.append((r, s_, nxt.date() if hasattr(nxt, 'date') else nxt, g))
+    crit = [x for x in rows if x[1].startswith('●') and isinstance(x[3], (int, float)) and x[3] > 0 and x[2] in hdr_dates]
+    warn = [x for x in rows if x[1].startswith('△') and isinstance(x[3], (int, float)) and x[3] > 0 and x[2] in hdr_dates]
+    # ● の行：次の便に目安どおり
+    for r, _, nxt, g in crit[:4]:
+        o.cell(r, IN_FIRST + hdr_dates.index(nxt), int(g))
+        demo.append((f'{kind} 目安どおり', r))
+    # ● の行：次の便に少なすぎる数
+    if len(crit) > 4:
+        r, _, nxt, g = crit[4]
+        o.cell(r, IN_FIRST + hdr_dates.index(nxt), 1)
+        demo.append((f'{kind} 少ない', r))
+    # △ の行：納品日でない日に入れてしまう → ⚠
+    if warn:
+        r, _, nxt, g = warn[0]
+        idx = hdr_dates.index(nxt)
+        for d in range(idx + 1, 14):
+            if ov.cell(r, 45 + d).value == 0:     # 上限0＝納品日でない
+                o.cell(r, IN_FIRST + d, int(g))
+                demo.append((f'{kind} 納品日でない', r))
+                break
+    # △ の行：目安より多い → ⚠
+    if len(warn) > 1:
+        r, _, nxt, g = warn[1]
+        o.cell(r, IN_FIRST + hdr_dates.index(nxt), int(g) + 3)
+        demo.append((f'{kind} 定数超え', r))
+    # △ の行：2便に分けて入れる
+    if len(warn) > 2:
+        r, _, nxt, g = warn[2]
+        idx = hdr_dates.index(nxt)
+        o.cell(r, IN_FIRST + idx, max(1, int(g) // 2))
+        for d in range(idx + 1, 14):
+            if ov.cell(r, 45 + d).value not in (0, None):
+                o.cell(r, IN_FIRST + d, max(1, int(g) // 2))
+                break
+        demo.append((f'{kind} 2便', r))
+    # 数えた在庫
+    ok_rows = [x for x in rows if x[1].startswith('○')]
+    for r, *_ in ok_rows[:1]:
+        o.cell(r, 41, 5)
+        o.cell(r, 42, BASE)
+        demo.append((f'{kind} 数えた在庫', r))
+    if len(ok_rows) > 1:
+        r = ok_rows[1][0]
+        o.cell(r, 41, 40)
+        o.cell(r, 42, BASE - datetime.timedelta(days=9))
+        demo.append((f'{kind} 数えた日が古い', r))
 wb2.calculation.fullCalcOnLoad = True
 wb2.save(OUT)
 print('入庫の例:', ', '.join(f'{k}=行{r}' for k, r in demo))
